@@ -141,7 +141,7 @@ export interface UpdateDimensionsOptions {
 }
 
 /**
- * Atualiza as dimensões físicas de um nó no PDM garantindo validação e proporção.
+ * Atualiza as dimensões físicas de um nó no PDM garantindo validação e proporção simétrica (W ou H como entrada).
  */
 export function updateNodeDimensions(
   doc: PrexyonDocument,
@@ -154,30 +154,48 @@ export function updateNodeDimensions(
   const rasterNode = node as RasterNode;
   const keepAspect = options.keepAspectRatio ?? true;
 
+  const currentRatio =
+    rasterNode.aspectRatio > 0
+      ? rasterNode.aspectRatio
+      : rasterNode.naturalWidth / rasterNode.naturalHeight;
+
   let newWidth = rasterNode.physicalWidth_mm;
   let newHeight = rasterNode.physicalHeight_mm;
+  let newAspectRatio = currentRatio;
 
-  if (options.physicalWidth_mm !== undefined) {
-    const valResult = validatePhysicalDimension(options.physicalWidth_mm, 'Largura');
-    if (!valResult.valid) throw new Error(valResult.error);
+  // Caso 1: Ambas as dimensões foram fornecidas simultaneamente
+  if (options.physicalWidth_mm !== undefined && options.physicalHeight_mm !== undefined) {
+    const valW = validatePhysicalDimension(options.physicalWidth_mm, 'Largura');
+    if (!valW.valid) throw new Error(valW.error);
+    const valH = validatePhysicalDimension(options.physicalHeight_mm, 'Altura');
+    if (!valH.valid) throw new Error(valH.error);
+
+    newWidth = roundPrecision(options.physicalWidth_mm, 2);
+    newHeight = roundPrecision(options.physicalHeight_mm, 2);
+    newAspectRatio = newWidth / newHeight;
+  }
+  // Caso 2: Apenas a Largura (Width) foi informada como dimensão de entrada
+  else if (options.physicalWidth_mm !== undefined) {
+    const valW = validatePhysicalDimension(options.physicalWidth_mm, 'Largura');
+    if (!valW.valid) throw new Error(valW.error);
 
     newWidth = roundPrecision(options.physicalWidth_mm, 2);
     if (keepAspect) {
-      newHeight = roundPrecision(
-        calculateHeightFromWidth(newWidth, rasterNode.aspectRatio),
-        2
-      );
+      newHeight = roundPrecision(calculateHeightFromWidth(newWidth, currentRatio), 2);
+    } else {
+      newAspectRatio = newWidth / newHeight;
     }
-  } else if (options.physicalHeight_mm !== undefined) {
-    const valResult = validatePhysicalDimension(options.physicalHeight_mm, 'Altura');
-    if (!valResult.valid) throw new Error(valResult.error);
+  }
+  // Caso 3: Apenas a Altura (Height) foi informada como dimensão de entrada
+  else if (options.physicalHeight_mm !== undefined) {
+    const valH = validatePhysicalDimension(options.physicalHeight_mm, 'Altura');
+    if (!valH.valid) throw new Error(valH.error);
 
     newHeight = roundPrecision(options.physicalHeight_mm, 2);
     if (keepAspect) {
-      newWidth = roundPrecision(
-        calculateWidthFromHeight(newHeight, rasterNode.aspectRatio),
-        2
-      );
+      newWidth = roundPrecision(calculateWidthFromHeight(newHeight, currentRatio), 2);
+    } else {
+      newAspectRatio = newWidth / newHeight;
     }
   }
 
@@ -185,6 +203,7 @@ export function updateNodeDimensions(
     ...rasterNode,
     physicalWidth_mm: newWidth,
     physicalHeight_mm: newHeight,
+    aspectRatio: newAspectRatio,
   };
 
   return {

@@ -93,6 +93,34 @@ describe('Prexyon Document Model (PDM) & Unit Engine — Testes Automatizados', 
       expect(updated.physicalHeight_mm).toBe(35); // 70 / 2 = 35 mm
     });
 
+    it('deve atualizar ALTURA como entrada com proporção ligada (H=30mm -> W=60mm para ratio 2:1)', () => {
+      let doc = createDocument({ width_mm: 100, height_mm: 100 });
+      const raster = createRasterNode({
+        name: 'Logo Teste Altura',
+        src: 'data:image/png;base64,dummy',
+        naturalWidth: 800,
+        naturalHeight: 400, // Proporção 2:1
+        physicalWidth_mm: 50,
+        physicalHeight_mm: 25,
+        position_mm: { x: 25, y: 37.5 },
+        mimeType: 'image/png',
+        fileSize_bytes: 1024,
+        fileName: 'logo.png',
+      });
+
+      doc = addNode(doc, raster);
+
+      // Altera altura para 30 mm com proporção ligada -> largura deve virar 60 mm
+      doc = updateNodeDimensions(doc, raster.id, {
+        physicalHeight_mm: 30,
+        keepAspectRatio: true,
+      });
+
+      const updated = doc.nodes[raster.id] as typeof raster;
+      expect(updated.physicalHeight_mm).toBe(30);
+      expect(updated.physicalWidth_mm).toBe(60); // 30 * 2 = 60 mm
+    });
+
     it('deve permitir alterar largura sem manter proporção quando solicitado', () => {
       let doc = createDocument({ width_mm: 100, height_mm: 100 });
       const raster = createRasterNode({
@@ -117,6 +145,60 @@ describe('Prexyon Document Model (PDM) & Unit Engine — Testes Automatizados', 
       const updated = doc.nodes[raster.id] as typeof raster;
       expect(updated.physicalWidth_mm).toBe(60);
       expect(updated.physicalHeight_mm).toBe(25); // Permanece inalterada
+    });
+
+    it('deve permitir alterar ALTURA sem manter proporção quando solicitado (W inalterada)', () => {
+      let doc = createDocument({ width_mm: 100, height_mm: 100 });
+      const raster = createRasterNode({
+        name: 'Logo Teste Altura Livre',
+        src: 'data:image/png;base64,dummy',
+        naturalWidth: 800,
+        naturalHeight: 400,
+        physicalWidth_mm: 60,
+        physicalHeight_mm: 20,
+        position_mm: { x: 20, y: 40 },
+        mimeType: 'image/png',
+        fileSize_bytes: 1024,
+        fileName: 'logo.png',
+      });
+
+      doc = addNode(doc, raster);
+      // Altera altura para 40 mm com proporção desligada -> largura deve continuar 60 mm
+      doc = updateNodeDimensions(doc, raster.id, {
+        physicalHeight_mm: 40,
+        keepAspectRatio: false,
+      });
+
+      const updated = doc.nodes[raster.id] as typeof raster;
+      expect(updated.physicalWidth_mm).toBe(60);
+      expect(updated.physicalHeight_mm).toBe(40);
+    });
+
+    it('deve permitir alterar ambas as dimensões simultaneamente (W=60mm, H=40mm)', () => {
+      let doc = createDocument({ width_mm: 100, height_mm: 100 });
+      const raster = createRasterNode({
+        name: 'Logo Ambas',
+        src: 'data:image/png;base64,dummy',
+        naturalWidth: 800,
+        naturalHeight: 400,
+        physicalWidth_mm: 50,
+        physicalHeight_mm: 25,
+        position_mm: { x: 25, y: 37.5 },
+        mimeType: 'image/png',
+        fileSize_bytes: 1024,
+        fileName: 'logo.png',
+      });
+
+      doc = addNode(doc, raster);
+      doc = updateNodeDimensions(doc, raster.id, {
+        physicalWidth_mm: 60,
+        physicalHeight_mm: 40,
+        keepAspectRatio: false,
+      });
+
+      const updated = doc.nodes[raster.id] as typeof raster;
+      expect(updated.physicalWidth_mm).toBe(60);
+      expect(updated.physicalHeight_mm).toBe(40);
     });
   });
 
@@ -227,6 +309,40 @@ describe('Prexyon Document Model (PDM) & Unit Engine — Testes Automatizados', 
       expect(nodeReconstruido.naturalWidth).toBe(1200);
       expect(nodeReconstruido.naturalHeight).toBe(600);
       expect(nodeReconstruido.aspectRatio).toBe(2);
+    });
+
+    it('deve preservar altura e largura alteradas independentemente após serialização e reconstrução PDM', () => {
+      let doc = createDocument({ width_mm: 100, height_mm: 100 });
+      const raster = createRasterNode({
+        name: 'Logo Customizada',
+        src: 'data:image/png;base64,teste123',
+        naturalWidth: 800,
+        naturalHeight: 400,
+        physicalWidth_mm: 50,
+        physicalHeight_mm: 25,
+        position_mm: { x: 10, y: 10 },
+        mimeType: 'image/png',
+        fileSize_bytes: 1024,
+        fileName: 'logo.png',
+      });
+
+      doc = addNode(doc, raster);
+
+      // Define W = 60 mm e H = 40 mm (livre)
+      doc = updateNodeDimensions(doc, raster.id, {
+        physicalWidth_mm: 60,
+        physicalHeight_mm: 40,
+        keepAspectRatio: false,
+      });
+
+      // Serializa e reconstrói
+      const json = serializeDocument(doc);
+      const docReconstruido = deserializeDocument(json);
+      const nodeReconstruido = docReconstruido.nodes[raster.id] as typeof raster;
+
+      expect(nodeReconstruido.physicalWidth_mm).toBe(60);
+      expect(nodeReconstruido.physicalHeight_mm).toBe(40);
+      expect(nodeReconstruido.aspectRatio).toBe(1.5);
     });
   });
 

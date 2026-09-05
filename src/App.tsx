@@ -41,8 +41,12 @@ export const App: React.FC = () => {
     (payload: NodeTransformPayload) => {
       // Atualiza posição no PDM
       actions.setNodePosition(payload.nodeId, payload.position_mm);
-      // Atualiza dimensões físicas no PDM
-      actions.setNodeWidth(payload.nodeId, payload.physicalWidth_mm);
+      // Atualiza dimensões físicas de largura e altura no PDM
+      actions.setNodeDimensions(
+        payload.nodeId,
+        payload.physicalWidth_mm,
+        payload.physicalHeight_mm
+      );
     },
     [actions]
   );
@@ -86,6 +90,7 @@ export const App: React.FC = () => {
             onUpdateHeight={actions.setNodeHeight}
             onUpdatePosition={actions.setNodePosition}
             onUpdateName={actions.setNodeName}
+            onResetAspectRatio={actions.resetNodeAspectRatio}
             onToggleVisibility={actions.toggleNodeVisibility}
             onToggleLock={actions.toggleNodeLock}
             onDeleteNode={actions.deleteNode}

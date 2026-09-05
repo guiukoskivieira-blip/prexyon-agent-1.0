@@ -26,6 +26,7 @@ import {
 } from '../core/pdm/document';
 import { validateRasterFile, validatePhysicalDimension } from '../core/pdm/validation';
 import { calculateInitialRasterDimensions } from '../core/pdm/policy';
+import { roundPrecision } from '../core/pdm/units';
 
 export interface ToastMessage {
   id: string;
@@ -65,7 +66,6 @@ export function useEditorStore() {
       }
 
       try {
-        // Lê o arquivo para Data URL
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
@@ -73,7 +73,6 @@ export function useEditorStore() {
           reader.readAsDataURL(file);
         });
 
-        // Carrega em imagem temporária para ler dimensões naturais em pixels
         const { naturalWidth, naturalHeight } = await new Promise<{
           naturalWidth: number;
           naturalHeight: number;
@@ -86,16 +85,14 @@ export function useEditorStore() {
           img.src = dataUrl;
         });
 
-        // Calcula tamanho físico nominal inicial e centralização (política explícita da Etapa 2)
         const initial = calculateInitialRasterDimensions(
           naturalWidth,
           naturalHeight,
           doc.dimensions
         );
 
-        // Cria o RasterNode no PDM
         const rasterNode = createRasterNode({
-          name: file.name.replace(/\.[^/.]+$/, ''), // Nome limpo sem extensão
+          name: file.name.replace(/\.[^/.]+$/, ''),
           src: dataUrl,
           naturalWidth,
           naturalHeight,
@@ -107,7 +104,6 @@ export function useEditorStore() {
           fileName: file.name,
         });
 
-        // Registra no PDM
         setDoc((prev) => addNode(prev, rasterNode));
         setSelectedNodeId(rasterNode.id);
         addToast(
@@ -162,6 +158,62 @@ export function useEditorStore() {
       );
     },
     [keepAspectRatio, addToast]
+  );
+
+  /**
+   * Atualiza ambas as dimensões físicas de um nó simultaneamente (ex: canvas transform).
+   */
+  const setNodeDimensions = useCallback(
+    (nodeId: string, width_mm: number, height_mm: number) => {
+      const valW = validatePhysicalDimension(width_mm, 'Largura');
+      if (!valW.valid) {
+        addToast('error', valW.error || 'Largura inválida.');
+        return;
+      }
+      const valH = validatePhysicalDimension(height_mm, 'Altura');
+      if (!valH.valid) {
+        addToast('error', valH.error || 'Altura inválida.');
+        return;
+      }
+
+      setDoc((prev) =>
+        updateNodeDimensions(prev, nodeId, {
+          physicalWidth_mm: width_mm,
+          physicalHeight_mm: height_mm,
+          keepAspectRatio: false,
+        })
+      );
+    },
+    [addToast]
+  );
+
+  /**
+   * Restaura a proporção natural da imagem original a partir da resolução nativa em pixels.
+   */
+  const resetNodeAspectRatio = useCallback(
+    (nodeId: string) => {
+      setDoc((prev) => {
+        const node = prev.nodes[nodeId];
+        if (!node || node.type !== 'raster_image') return prev;
+        const raster = node as RasterNode;
+        const naturalRatio = raster.naturalWidth / raster.naturalHeight;
+        const newHeight = roundPrecision(raster.physicalWidth_mm / naturalRatio, 2);
+        return {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [nodeId]: {
+              ...raster,
+              physicalHeight_mm: newHeight,
+              aspectRatio: naturalRatio,
+            },
+          },
+          updatedAt: new Date().toISOString(),
+        };
+      });
+      addToast('info', 'Proporção natural restaurada.');
+    },
+    [addToast]
   );
 
   /**
@@ -254,6 +306,8 @@ export function useEditorStore() {
       importRasterFile,
       setNodeWidth,
       setNodeHeight,
+      setNodeDimensions,
+      resetNodeAspectRatio,
       setNodePosition,
       setNodeName,
       toggleNodeVisibility,
@@ -269,6 +323,8 @@ export function useEditorStore() {
       importRasterFile,
       setNodeWidth,
       setNodeHeight,
+      setNodeDimensions,
+      resetNodeAspectRatio,
       setNodePosition,
       setNodeName,
       toggleNodeVisibility,

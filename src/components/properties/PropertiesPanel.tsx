@@ -11,7 +11,8 @@ import {
   Link, 
   Unlink, 
   Image as ImageIcon,
-  Check
+  Check,
+  RotateCcw
 } from 'lucide-react';
 import { PrexyonDocument, RasterNode } from '@/core/pdm/types';
 import { calculateEffectiveDpi, roundPrecision } from '@/core/pdm/units';
@@ -26,6 +27,7 @@ interface PropertiesPanelProps {
   onUpdateHeight: (nodeId: string, height_mm: number) => void;
   onUpdatePosition: (nodeId: string, pos: { x?: number; y?: number }) => void;
   onUpdateName: (nodeId: string, name: string) => void;
+  onResetAspectRatio: (nodeId: string) => void;
   onToggleVisibility: (nodeId: string) => void;
   onToggleLock: (nodeId: string) => void;
   onDeleteNode: (nodeId: string) => void;
@@ -42,6 +44,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onUpdateHeight,
   onUpdatePosition,
   onUpdateName,
+  onResetAspectRatio,
   onToggleVisibility,
   onToggleLock,
   onDeleteNode,
@@ -56,7 +59,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const [posYInput, setPosYInput] = useState<string>('');
   const [nameInput, setNameInput] = useState<string>('');
 
-  // Sincroniza inputs locais quando a seleção ou o nó mudar no PDM
+  // Sincroniza inputs locais sempre que selectedNode mudar no PDM
   useEffect(() => {
     if (selectedNode) {
       setWidthInput(selectedNode.physicalWidth_mm.toString());
@@ -65,7 +68,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       setPosYInput(selectedNode.position_mm.y.toString());
       setNameInput(selectedNode.name);
     }
-  }, [selectedNode]);
+  }, [
+    selectedNode?.id,
+    selectedNode?.physicalWidth_mm,
+    selectedNode?.physicalHeight_mm,
+    selectedNode?.position_mm.x,
+    selectedNode?.position_mm.y,
+    selectedNode?.name,
+  ]);
 
   const handleWidthBlur = () => {
     if (!selectedNode) return;
@@ -120,6 +130,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const effectiveDpi = selectedNode
     ? calculateEffectiveDpi(selectedNode.naturalWidth, selectedNode.physicalWidth_mm)
     : 0;
+
+  // Verifica se a proporção atual diverge da proporção original da imagem
+  const naturalRatio = selectedNode
+    ? selectedNode.naturalWidth / selectedNode.naturalHeight
+    : 1;
+  const isRatioDistorted = selectedNode
+    ? Math.abs(selectedNode.aspectRatio - naturalRatio) > 0.01
+    : false;
 
   return (
     <aside className="w-80 h-full bg-surface-panel border-l border-surface-border flex flex-col select-none">
@@ -253,7 +271,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     <span className="text-[11px] font-semibold text-slate-300">Tamanho em Milímetros</span>
                     <button
                       onClick={onToggleKeepAspectRatio}
-                      title={keepAspectRatio ? 'Proporção travada' : 'Proporção livre'}
+                      title={keepAspectRatio ? 'Proporção travada (clique para liberar)' : 'Proporção livre (clique para travar)'}
                       className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border transition-colors ${
                         keepAspectRatio
                           ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
@@ -261,14 +279,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       }`}
                     >
                       {keepAspectRatio ? <Link className="w-3 h-3" /> : <Unlink className="w-3 h-3" />}
-                      <span>Manter proporção</span>
+                      <span>{keepAspectRatio ? 'Proporcional' : 'Livre'}</span>
                     </button>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <label className="text-[10px] text-slate-400 flex items-center justify-between">
-                        <span>Largura (W)</span>
+                        <span className="font-semibold text-indigo-300">Largura (W)</span>
                         <span className="text-slate-500 font-mono">mm</span>
                       </label>
                       <input
@@ -279,13 +297,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                         onChange={(e) => setWidthInput(e.target.value)}
                         onBlur={handleWidthBlur}
                         onKeyDown={(e) => e.key === 'Enter' && handleWidthBlur()}
-                        className="w-full bg-surface-base border border-surface-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 text-right"
+                        className="w-full bg-surface-base border border-surface-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 text-right font-medium"
                       />
                     </div>
 
                     <div className="space-y-1">
                       <label className="text-[10px] text-slate-400 flex items-center justify-between">
-                        <span>Altura (H)</span>
+                        <span className="font-semibold text-indigo-300">Altura (H)</span>
                         <span className="text-slate-500 font-mono">mm</span>
                       </label>
                       <input
@@ -296,32 +314,72 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                         onChange={(e) => setHeightInput(e.target.value)}
                         onBlur={handleHeightBlur}
                         onKeyDown={(e) => e.key === 'Enter' && handleHeightBlur()}
-                        className="w-full bg-surface-base border border-surface-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 text-right"
+                        className="w-full bg-surface-base border border-surface-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 text-right font-medium"
                       />
                     </div>
                   </div>
 
-                  {/* Atalhos Rápidos de Teste para o Usuário Homologar */}
-                  <div className="pt-1 flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-500">Ajuste rápido:</span>
-                    <button
-                      onClick={() => onUpdateWidth(selectedNode.id, 50)}
-                      className="px-2 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-[10px] font-mono text-slate-300"
-                    >
-                      50 mm
-                    </button>
-                    <button
-                      onClick={() => onUpdateWidth(selectedNode.id, 70)}
-                      className="px-2 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-[10px] font-mono text-slate-300"
-                    >
-                      70 mm
-                    </button>
-                    <button
-                      onClick={() => onUpdateWidth(selectedNode.id, 85)}
-                      className="px-2 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-[10px] font-mono text-slate-300"
-                    >
-                      85 mm
-                    </button>
+                  {/* Atalhos Rápidos com Identificação Clara */}
+                  <div className="pt-1.5 space-y-1.5 border-t border-surface-border/50 text-[10px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Largura rápida (W):</span>
+                      <div className="flex items-center gap-1 font-mono">
+                        <button
+                          onClick={() => onUpdateWidth(selectedNode.id, 50)}
+                          className="px-1.5 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-slate-300 hover:text-white"
+                        >
+                          50 mm
+                        </button>
+                        <button
+                          onClick={() => onUpdateWidth(selectedNode.id, 70)}
+                          className="px-1.5 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-slate-300 hover:text-white"
+                        >
+                          70 mm
+                        </button>
+                        <button
+                          onClick={() => onUpdateWidth(selectedNode.id, 85)}
+                          className="px-1.5 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-slate-300 hover:text-white"
+                        >
+                          85 mm
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Altura rápida (H):</span>
+                      <div className="flex items-center gap-1 font-mono">
+                        <button
+                          onClick={() => onUpdateHeight(selectedNode.id, 30)}
+                          className="px-1.5 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-slate-300 hover:text-white"
+                        >
+                          30 mm
+                        </button>
+                        <button
+                          onClick={() => onUpdateHeight(selectedNode.id, 40)}
+                          className="px-1.5 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-slate-300 hover:text-white"
+                        >
+                          40 mm
+                        </button>
+                        <button
+                          onClick={() => onUpdateHeight(selectedNode.id, 50)}
+                          className="px-1.5 py-0.5 rounded bg-surface-base hover:bg-surface-hover border border-surface-border text-slate-300 hover:text-white"
+                        >
+                          50 mm
+                        </button>
+                      </div>
+                    </div>
+
+                    {isRatioDistorted && (
+                      <div className="pt-1 flex justify-end">
+                        <button
+                          onClick={() => onResetAspectRatio(selectedNode.id)}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20 transition-colors text-[10px]"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>Restaurar proporção original</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -388,7 +446,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     </span>
                   </div>
                   <div className="flex justify-between py-0.5">
-                    <span>Proporção (Aspect):</span>
+                    <span>Proporção Atual:</span>
                     <span className="font-mono text-slate-200">
                       {roundPrecision(selectedNode.aspectRatio, 3)}
                     </span>
