@@ -1,5 +1,5 @@
 /**
- * Prexyon Document Manager — Pure PDM Operations
+ * Prexyon Document Manager — Pure PDM Operations (v0.2)
  *
  * Todas as funções deste arquivo são imutáveis e puras.
  * Nenhuma função altera os objetos diretamente; elas retornam uma nova versão do documento.
@@ -10,6 +10,8 @@ import {
   DocumentDimensions,
   DocumentNode,
   RasterNode,
+  VectorGroupNode,
+  VectorPathNode,
   Position_mm,
 } from './types';
 import {
@@ -41,7 +43,7 @@ export function createDocument(
 ): PrexyonDocument {
   const now = new Date().toISOString();
   return {
-    version: '0.1.0',
+    version: '0.2.0',
     id: generateUUID(),
     dimensions: {
       width_mm: dimensions.width_mm ?? 100,
@@ -117,13 +119,43 @@ export function addNode(
 }
 
 /**
- * Remove um nó do documento.
+ * Adiciona um grupo vetorial com seus caminhos filhos de forma atômica no PDM.
+ */
+export function addVectorGroup(
+  doc: PrexyonDocument,
+  groupNode: VectorGroupNode,
+  pathNodes: VectorPathNode[]
+): PrexyonDocument {
+  const newNodes = { ...doc.nodes, [groupNode.id]: groupNode };
+  for (const p of pathNodes) {
+    newNodes[p.id] = p;
+  }
+
+  return {
+    ...doc,
+    nodes: newNodes,
+    rootNodeIds: [...doc.rootNodeIds.filter((id) => id !== groupNode.id), groupNode.id],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Remove um nó do documento (e recursivamente seus filhos se for grupo).
  */
 export function removeNode(
   doc: PrexyonDocument,
   nodeId: string
 ): PrexyonDocument {
+  const node = doc.nodes[nodeId];
   const newNodes = { ...doc.nodes };
+
+  if (node && node.type === 'group') {
+    const group = node as VectorGroupNode;
+    for (const childId of group.childrenIds) {
+      delete newNodes[childId];
+    }
+  }
+
   delete newNodes[nodeId];
 
   return {
@@ -141,7 +173,7 @@ export interface UpdateDimensionsOptions {
 }
 
 /**
- * Atualiza as dimensões físicas de um nó no PDM garantindo validação e proporção simétrica (W ou H como entrada).
+ * Atualiza as dimensões físicas de um nó (RasterNode ou VectorGroupNode) no PDM.
  */
 export function updateNodeDimensions(
   doc: PrexyonDocument,
@@ -149,21 +181,24 @@ export function updateNodeDimensions(
   options: UpdateDimensionsOptions
 ): PrexyonDocument {
   const node = doc.nodes[nodeId];
-  if (!node || node.type !== 'raster_image') return doc;
+  if (!node) return doc;
 
-  const rasterNode = node as RasterNode;
+  if (node.type !== 'raster_image' && node.type !== 'group') return doc;
+
   const keepAspect = options.keepAspectRatio ?? true;
 
   const currentRatio =
-    rasterNode.aspectRatio > 0
-      ? rasterNode.aspectRatio
-      : rasterNode.naturalWidth / rasterNode.naturalHeight;
+    (node as RasterNode | VectorGroupNode).aspectRatio > 0
+      ? (node as RasterNode | VectorGroupNode).aspectRatio
+      : node.type === 'raster_image'
+      ? (node as RasterNode).naturalWidth / (node as RasterNode).naturalHeight
+      : (node as VectorGroupNode).physicalWidth_mm / (node as VectorGroupNode).physicalHeight_mm;
 
-  let newWidth = rasterNode.physicalWidth_mm;
-  let newHeight = rasterNode.physicalHeight_mm;
+  let newWidth = (node as RasterNode | VectorGroupNode).physicalWidth_mm;
+  let newHeight = (node as RasterNode | VectorGroupNode).physicalHeight_mm;
   let newAspectRatio = currentRatio;
 
-  // Caso 1: Ambas as dimensões foram fornecidas simultaneamente
+  // Caso 1: Ambas as dimensões fornecidas simultaneamente
   if (options.physicalWidth_mm !== undefined && options.physicalHeight_mm !== undefined) {
     const valW = validatePhysicalDimension(options.physicalWidth_mm, 'Largura');
     if (!valW.valid) throw new Error(valW.error);
@@ -174,7 +209,7 @@ export function updateNodeDimensions(
     newHeight = roundPrecision(options.physicalHeight_mm, 2);
     newAspectRatio = newWidth / newHeight;
   }
-  // Caso 2: Apenas a Largura (Width) foi informada como dimensão de entrada
+  // Caso 2: Apenas Largura informada
   else if (options.physicalWidth_mm !== undefined) {
     const valW = validatePhysicalDimension(options.physicalWidth_mm, 'Largura');
     if (!valW.valid) throw new Error(valW.error);
@@ -186,7 +221,7 @@ export function updateNodeDimensions(
       newAspectRatio = newWidth / newHeight;
     }
   }
-  // Caso 3: Apenas a Altura (Height) foi informada como dimensão de entrada
+  // Caso 3: Apenas Altura informada
   else if (options.physicalHeight_mm !== undefined) {
     const valH = validatePhysicalDimension(options.physicalHeight_mm, 'Altura');
     if (!valH.valid) throw new Error(valH.error);
@@ -199,8 +234,8 @@ export function updateNodeDimensions(
     }
   }
 
-  const updatedNode: RasterNode = {
-    ...rasterNode,
+  const updatedNode = {
+    ...node,
     physicalWidth_mm: newWidth,
     physicalHeight_mm: newHeight,
     aspectRatio: newAspectRatio,
@@ -282,7 +317,7 @@ export function serializeDocument(doc: PrexyonDocument): string {
  */
 export function deserializeDocument(json: string): PrexyonDocument {
   const parsed = JSON.parse(json);
-  if (!parsed || parsed.version !== '0.1.0' || !parsed.dimensions || !parsed.nodes) {
+  if (!parsed || (parsed.version !== '0.1.0' && parsed.version !== '0.2.0') || !parsed.dimensions || !parsed.nodes) {
     throw new Error('Formato inválido de PrexyonDocument.');
   }
   return parsed as PrexyonDocument;

@@ -6,7 +6,9 @@ import {
   Layers, 
   Compass,
   Upload,
-  RefreshCw
+  RefreshCw,
+  Undo2,
+  Redo2
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -16,6 +18,10 @@ interface HeaderProps {
   onResetZoom: () => void;
   artboardWidthMm: number;
   artboardHeightMm: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onImportFile: (file: File) => void;
   onArchitecturalTest: () => void;
 }
@@ -27,6 +33,10 @@ export const Header: React.FC<HeaderProps> = ({
   onResetZoom,
   artboardWidthMm,
   artboardHeightMm,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onImportFile,
   onArchitecturalTest,
 }) => {
@@ -36,8 +46,15 @@ export const Header: React.FC<HeaderProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       onImportFile(file);
-      // Reseta o input para permitir selecionar o mesmo arquivo novamente
+      // Reseta imediatamente o input para permitir selecionar o mesmo arquivo novamente
       e.target.value = '';
+    }
+  };
+
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
     }
   };
 
@@ -61,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Main Actions: Import File & Architectural Rebuild Test */}
+      {/* Main Actions: Import File, Undo/Redo & Architectural Rebuild Test */}
       <div className="flex items-center gap-2">
         <input
           ref={fileInputRef}
@@ -71,20 +88,43 @@ export const Header: React.FC<HeaderProps> = ({
           className="hidden"
         />
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleImportClick}
           className="flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition-all shadow-md shadow-indigo-600/20 active:scale-[0.98]"
         >
           <Upload className="w-3.5 h-3.5" />
           <span>Importar Arquivo (PNG/JPG)</span>
         </button>
 
+        {/* Undo / Redo Controls */}
+        <div className="flex items-center bg-surface-subtle border border-surface-border p-0.5 rounded-lg">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Desfazer (Ctrl + Z)"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-slate-300 hover:text-white hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+          >
+            <Undo2 className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Desfazer</span>
+          </button>
+          <div className="w-[1px] h-4 bg-surface-border my-auto" />
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Refazer (Ctrl + Y ou Ctrl + Shift + Z)"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-slate-300 hover:text-white hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+          >
+            <Redo2 className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Refazer</span>
+          </button>
+        </div>
+
         <button
           onClick={onArchitecturalTest}
           title="Prova Arquitetural: Serializa o PDM para JSON e reconstrói o documento do zero"
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Testar Reconstrução PDM</span>
+          <span>Reconstrução PDM</span>
         </button>
       </div>
 
@@ -131,10 +171,10 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* System Phase Status Badge */}
-      <div className="hidden md:flex items-center gap-2">
+      <div className="hidden xl:flex items-center gap-2">
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium">
           <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-          <span>Etapa 2: PDM + Escala Física</span>
+          <span>Etapa 3: Vetorização Real (VTracer)</span>
         </div>
       </div>
     </header>

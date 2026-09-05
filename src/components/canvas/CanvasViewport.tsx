@@ -9,6 +9,8 @@ interface CanvasViewportProps {
   doc: PrexyonDocument;
   selectedNodeId: string | null;
   zoom: number;
+  comparisonMode?: 'default' | 'overlay' | 'vector_only' | 'raster_only';
+  overlayOpacity?: number;
   onZoomChange: (newZoom: number) => void;
   onCursorMove: (cursorMm: { x: number; y: number } | null) => void;
   onSelectNode: (nodeId: string | null) => void;
@@ -20,6 +22,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   doc,
   selectedNodeId,
   zoom,
+  comparisonMode = 'default',
+  overlayOpacity = 0.6,
   onZoomChange,
   onCursorMove,
   onSelectNode,
@@ -231,12 +235,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     canvas.requestRenderAll();
   }, [doc.dimensions.width_mm, doc.dimensions.height_mm]);
 
-  // 3. Sincroniza nós do PDM com o Fabric sempre que doc ou selectedNodeId mudar
+  // 3. Sincroniza nós do PDM com o Fabric sempre que doc, selectedNodeId ou comparisonMode mudar
   useEffect(() => {
     if (fabricAdapterRef.current) {
-      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId);
+      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity);
     }
-  }, [doc, selectedNodeId]);
+  }, [doc, selectedNodeId, comparisonMode, overlayOpacity]);
 
   // 4. Sincroniza o zoom quando alterado via botões externos do Header
   useEffect(() => {

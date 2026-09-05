@@ -1,5 +1,5 @@
 /**
- * Prexyon Document Model (PDM) v0.1 — Types
+ * Prexyon Document Model (PDM) v0.2 — Types
  *
  * Princípio Arquitetural:
  * Este arquivo é 100% puro. Não possui dependências do React, Fabric.js ou qualquer biblioteca de UI.
@@ -67,15 +67,54 @@ export interface RasterNode extends BaseNode {
   fileName: string;
 }
 
-/** Stubs de extensibilidade para etapas futuras */
-export interface VectorPathNodeStub extends BaseNode {
+export interface VectorPathNode extends BaseNode {
   type: 'vector_path';
+  /** Instruções geométricas SVG Path (comandos M, C, L, Z) no espaço de coordenadas local */
   d: string;
+  /** Cor de preenchimento (Hex, RGB ou null se transparente) */
+  fill: string | null;
+  /** Cor de contorno (Hex, RGB ou null se sem contorno) */
+  stroke: string | null;
+  /** Espessura do contorno em milímetros */
+  strokeWidth_mm: number;
+  /** Largura física do caminho delimitador em milímetros */
+  physicalWidth_mm: number;
+  /** Altura física do caminho delimitador em milímetros */
+  physicalHeight_mm: number;
+  /** Referência opcional ao ID do nó raster de origem */
+  sourceRasterNodeId?: string;
+  /** Metadados adicionais da geometria vetorial */
+  metadata?: {
+    pathIndex?: number;
+    rule?: 'nonzero' | 'evenodd';
+    segmentCount?: number;
+  };
 }
 
-export interface GroupNodeStub extends BaseNode {
+export interface VectorGroupNode extends BaseNode {
   type: 'group';
+  /** Lista ordenada de IDs dos nós filhos pertencentes ao grupo */
   childrenIds: string[];
+  /** Largura física total do grupo em milímetros */
+  physicalWidth_mm: number;
+  /** Altura física total do grupo em milímetros */
+  physicalHeight_mm: number;
+  /** Proporção do grupo (largura / altura) */
+  aspectRatio: number;
+  /** Dimensões da viewBox SVG original de onde os vetores foram vetorizados */
+  sourceViewBox: {
+    width: number;
+    height: number;
+  };
+  /** Referência opcional ao ID do nó raster de origem */
+  sourceRasterNodeId?: string;
+  /** Metadados do processo de vetorização */
+  metadata?: {
+    vectorizationTimeMs?: number;
+    totalPaths?: number;
+    totalSegments?: number;
+    preset?: string;
+  };
 }
 
 export interface CutContourNodeStub extends BaseNode {
@@ -86,13 +125,13 @@ export interface CutContourNodeStub extends BaseNode {
 
 export type DocumentNode =
   | RasterNode
-  | VectorPathNodeStub
-  | GroupNodeStub
+  | VectorPathNode
+  | VectorGroupNode
   | CutContourNodeStub;
 
 export interface PrexyonDocument {
   /** Versão do schema do documento */
-  version: '0.1.0';
+  version: '0.2.0';
   /** ID único do documento */
   id: string;
   /** Dimensões físicas nominais da prancheta */

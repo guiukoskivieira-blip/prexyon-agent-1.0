@@ -15,6 +15,12 @@ export const App: React.FC = () => {
     selectedNodeId,
     selectedNode,
     keepAspectRatio,
+    isVectorizing,
+    vectorizePreset,
+    comparisonMode,
+    overlayOpacity,
+    canUndo,
+    canRedo,
     toasts,
     actions,
   } = useEditorStore();
@@ -39,11 +45,10 @@ export const App: React.FC = () => {
   // Callback de manipulação de nós no canvas
   const handleNodeTransformed = useCallback(
     (payload: NodeTransformPayload) => {
-      // Atualiza posição no PDM
-      actions.setNodePosition(payload.nodeId, payload.position_mm);
-      // Atualiza dimensões físicas de largura e altura no PDM
-      actions.setNodeDimensions(
+      // Atualiza posição e dimensões atômicas no PDM registrando um único comando no histórico
+      actions.transformNode(
         payload.nodeId,
+        payload.position_mm,
         payload.physicalWidth_mm,
         payload.physicalHeight_mm
       );
@@ -62,6 +67,10 @@ export const App: React.FC = () => {
             onResetZoom={handleResetZoom}
             artboardWidthMm={doc.dimensions.width_mm}
             artboardHeightMm={doc.dimensions.height_mm}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={actions.undo}
+            onRedo={actions.redo}
             onImportFile={actions.importRasterFile}
             onArchitecturalTest={actions.triggerArchitecturalRebuild}
           />
@@ -72,6 +81,8 @@ export const App: React.FC = () => {
             doc={doc}
             selectedNodeId={selectedNodeId}
             zoom={zoom}
+            comparisonMode={comparisonMode}
+            overlayOpacity={overlayOpacity}
             onZoomChange={setZoom}
             onCursorMove={setCursorMm}
             onSelectNode={actions.setSelectedNodeId}
@@ -85,7 +96,15 @@ export const App: React.FC = () => {
             selectedNodeId={selectedNodeId}
             selectedNode={selectedNode}
             keepAspectRatio={keepAspectRatio}
+            isVectorizing={isVectorizing}
+            vectorizePreset={vectorizePreset}
+            comparisonMode={comparisonMode}
+            overlayOpacity={overlayOpacity}
+            onSelectPreset={actions.setVectorizePreset}
+            onSetComparisonMode={actions.setComparisonMode}
+            onSetOverlayOpacity={actions.setOverlayOpacity}
             onSelectNode={actions.setSelectedNodeId}
+            onVectorizeNode={actions.vectorizeRasterNode}
             onUpdateWidth={actions.setNodeWidth}
             onUpdateHeight={actions.setNodeHeight}
             onUpdatePosition={actions.setNodePosition}

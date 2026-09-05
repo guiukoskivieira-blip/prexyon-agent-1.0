@@ -1,25 +1,27 @@
 /**
- * Prexyon Editor Store Hook
+ * Prexyon Editor Store Hook (v0.3.2)
  *
  * Gerencia o estado de edição da aplicação garantindo que:
  * 1. O PrexyonDocument (PDM) é o único proprietário dos dados do documento.
- * 2. `selectedNodeId` é mantido como estado de sessão da UI.
- * 3. Todas as mutações emitem novos objetos imutáveis do PDM.
+ * 2. Suporta operações com RasterNode, VectorGroupNode e VectorPathNode.
+ * 3. Orquestra a vetorização via VTracer Web Worker com presets calibrados e feedback de processamento.
+ * 4. Implementa histórico baseado em Command Pattern com granularidade real para cada ação (importar, mover, redimensionar, vetorizar, deletar).
+ * 5. Provê modo de inspeção/comparação visual (Sobreposição com Opacidade, Somente Vetor, Somente Raster).
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   PrexyonDocument,
   RasterNode,
+  VectorGroupNode,
+  VectorPathNode,
+  DocumentNode,
   DocumentDimensions,
+  Position_mm,
 } from '../core/pdm/types';
 import {
   createDocument,
   createRasterNode,
-  addNode,
-  removeNode,
-  updateNodeDimensions,
-  updateNodePosition,
   updateNodeMetadata,
   serializeDocument,
   deserializeDocument,
@@ -27,6 +29,22 @@ import {
 import { validateRasterFile, validatePhysicalDimension } from '../core/pdm/validation';
 import { calculateInitialRasterDimensions } from '../core/pdm/policy';
 import { roundPrecision } from '../core/pdm/units';
+import { vtracerBridge } from '../core/vectorizer/vtracerBridge';
+import { VTracerOptions } from '../core/vectorizer/vtracerWasmCore';
+import {
+  VectorizePresetId,
+  VECTORIZE_PRESETS,
+  getVTracerOptionsForPreset,
+} from '../core/vectorizer/presets';
+import { HistoryManager } from '../core/history/historyManager';
+import {
+  VectorizeCommand,
+  ImportRasterCommand,
+  DeleteNodeCommand,
+  TransformNodeCommand,
+  UpdateDimensionsCommand,
+  UpdatePositionCommand,
+} from '../core/commands/types';
 
 export interface ToastMessage {
   id: string;
@@ -34,20 +52,30 @@ export interface ToastMessage {
   text: string;
 }
 
+export type ComparisonMode = 'default' | 'overlay' | 'vector_only' | 'raster_only';
+
 export function useEditorStore() {
   const [doc, setDoc] = useState<PrexyonDocument>(() =>
     createDocument({ width_mm: 100, height_mm: 100 })
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [keepAspectRatio, setKeepAspectRatio] = useState<boolean>(true);
+  const [isVectorizing, setIsVectorizing] = useState<boolean>(false);
+  const [vectorizePreset, setVectorizePreset] = useState<VectorizePresetId>('logo');
+  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('default');
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(0.6);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Gerenciador de histórico com Command Pattern
+  const historyManagerRef = useRef<HistoryManager>(new HistoryManager(50));
+  const [historyVersion, setHistoryVersion] = useState<number>(0);
 
   const addToast = useCallback((type: 'success' | 'error' | 'info', text: string) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, type, text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, 4500);
   }, []);
 
   const removeToast = useCallback((id: string) => {
@@ -55,7 +83,7 @@ export function useEditorStore() {
   }, []);
 
   /**
-   * Importa e valida um arquivo raster (PNG/JPG).
+   * Importa e valida um arquivo raster (PNG/JPG) com suporte a Undo/Redo.
    */
   const importRasterFile = useCallback(
     async (file: File) => {
@@ -104,8 +132,14 @@ export function useEditorStore() {
           fileName: file.name,
         });
 
-        setDoc((prev) => addNode(prev, rasterNode));
-        setSelectedNodeId(rasterNode.id);
+        const cmd = new ImportRasterCommand(rasterNode);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        if (res.selectedNodeId !== undefined) {
+          setSelectedNodeId(res.selectedNodeId);
+        }
+        setHistoryVersion((v) => v + 1);
+
         addToast(
           'success',
           `Imagem "${rasterNode.name}" importada (${initial.physicalWidth_mm} × ${initial.physicalHeight_mm} mm).`
@@ -115,11 +149,92 @@ export function useEditorStore() {
         addToast('error', msg);
       }
     },
-    [doc.dimensions, addToast]
+    [doc, addToast]
   );
 
   /**
-   * Atualiza a largura física de um nó (em mm).
+   * Executa a vetorização real de um RasterNode via VTracer WASM / Web Worker com Presets Calibrados.
+   * Cria um VectorizeCommand reversível no histórico.
+   */
+  const vectorizeRasterNode = useCallback(
+    async (nodeId: string, customPresetId?: VectorizePresetId, customOptions?: VTracerOptions) => {
+      const targetNode = doc.nodes[nodeId];
+      if (!targetNode || targetNode.type !== 'raster_image') {
+        addToast('error', 'Selecione uma imagem raster para vetorizar.');
+        return;
+      }
+
+      if (isVectorizing) {
+        addToast('info', 'Uma vetorização já está em andamento.');
+        return;
+      }
+
+      const presetId = customPresetId || vectorizePreset;
+      const options = customOptions || getVTracerOptionsForPreset(presetId);
+
+      setIsVectorizing(true);
+      const rasterNode = targetNode as RasterNode;
+
+      try {
+        const result = await vtracerBridge.vectorizeRasterNode(rasterNode, options);
+
+        const cmd = new VectorizeCommand(result.groupNode, result.pathNodes, rasterNode.id);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        if (res.selectedNodeId !== undefined) {
+          setSelectedNodeId(res.selectedNodeId);
+        }
+        setHistoryVersion((v) => v + 1);
+
+        const presetLabel = VECTORIZE_PRESETS[presetId]?.name ?? presetId;
+        addToast(
+          'success',
+          `Vetorização concluída (${presetLabel})! ${result.pathNodes.length} caminhos em ${result.durationMs} ms.`
+        );
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : 'Falha na vetorização com VTracer.';
+        addToast('error', errorMsg);
+      } finally {
+        setIsVectorizing(false);
+      }
+    },
+    [doc, isVectorizing, vectorizePreset, addToast]
+  );
+
+  /**
+   * Executa o comando de DESFAZER (Undo).
+   */
+  const undo = useCallback(() => {
+    if (!historyManagerRef.current.canUndo) return;
+    const res = historyManagerRef.current.undo(doc);
+    if (res) {
+      setDoc(res.doc);
+      if (res.selectedNodeId !== undefined) {
+        setSelectedNodeId(res.selectedNodeId);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('info', 'Ação desfeita.');
+    }
+  }, [doc, addToast]);
+
+  /**
+   * Executa o comando de REFAZER (Redo).
+   */
+  const redo = useCallback(() => {
+    if (!historyManagerRef.current.canRedo) return;
+    const res = historyManagerRef.current.redo(doc);
+    if (res) {
+      setDoc(res.doc);
+      if (res.selectedNodeId !== undefined) {
+        setSelectedNodeId(res.selectedNodeId);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('info', 'Ação refeita.');
+    }
+  }, [doc, addToast]);
+
+  /**
+   * Atualiza a largura física de um nó (em mm) registrando um comando no histórico.
    */
   const setNodeWidth = useCallback(
     (nodeId: string, width_mm: number) => {
@@ -129,18 +244,44 @@ export function useEditorStore() {
         return;
       }
 
-      setDoc((prev) =>
-        updateNodeDimensions(prev, nodeId, {
-          physicalWidth_mm: width_mm,
-          keepAspectRatio,
-        })
-      );
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode;
+
+      const prevDims = {
+        physicalWidth_mm: targetNode.physicalWidth_mm,
+        physicalHeight_mm: targetNode.physicalHeight_mm,
+        aspectRatio: targetNode.aspectRatio,
+      };
+
+      const ratio = targetNode.aspectRatio || (targetNode.physicalWidth_mm / targetNode.physicalHeight_mm) || 1;
+      const calculatedHeight = keepAspectRatio
+        ? roundPrecision(width_mm / ratio, 2)
+        : targetNode.physicalHeight_mm;
+
+      const nextDims = {
+        physicalWidth_mm: width_mm,
+        physicalHeight_mm: calculatedHeight,
+        aspectRatio: ratio,
+      };
+
+      if (
+        prevDims.physicalWidth_mm === nextDims.physicalWidth_mm &&
+        prevDims.physicalHeight_mm === nextDims.physicalHeight_mm
+      ) {
+        return;
+      }
+
+      const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
     },
-    [keepAspectRatio, addToast]
+    [doc, keepAspectRatio, addToast]
   );
 
   /**
-   * Atualiza a altura física de um nó (em mm).
+   * Atualiza a altura física de um nó (em mm) registrando um comando no histórico.
    */
   const setNodeHeight = useCallback(
     (nodeId: string, height_mm: number) => {
@@ -150,18 +291,44 @@ export function useEditorStore() {
         return;
       }
 
-      setDoc((prev) =>
-        updateNodeDimensions(prev, nodeId, {
-          physicalHeight_mm: height_mm,
-          keepAspectRatio,
-        })
-      );
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode;
+
+      const prevDims = {
+        physicalWidth_mm: targetNode.physicalWidth_mm,
+        physicalHeight_mm: targetNode.physicalHeight_mm,
+        aspectRatio: targetNode.aspectRatio,
+      };
+
+      const ratio = targetNode.aspectRatio || (targetNode.physicalWidth_mm / targetNode.physicalHeight_mm) || 1;
+      const calculatedWidth = keepAspectRatio
+        ? roundPrecision(height_mm * ratio, 2)
+        : targetNode.physicalWidth_mm;
+
+      const nextDims = {
+        physicalWidth_mm: calculatedWidth,
+        physicalHeight_mm: height_mm,
+        aspectRatio: ratio,
+      };
+
+      if (
+        prevDims.physicalWidth_mm === nextDims.physicalWidth_mm &&
+        prevDims.physicalHeight_mm === nextDims.physicalHeight_mm
+      ) {
+        return;
+      }
+
+      const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
     },
-    [keepAspectRatio, addToast]
+    [doc, keepAspectRatio, addToast]
   );
 
   /**
-   * Atualiza ambas as dimensões físicas de um nó simultaneamente (ex: canvas transform).
+   * Atualiza ambas as dimensões físicas de um nó simultaneamente.
    */
   const setNodeDimensions = useCallback(
     (nodeId: string, width_mm: number, height_mm: number) => {
@@ -176,52 +343,120 @@ export function useEditorStore() {
         return;
       }
 
-      setDoc((prev) =>
-        updateNodeDimensions(prev, nodeId, {
-          physicalWidth_mm: width_mm,
-          physicalHeight_mm: height_mm,
-          keepAspectRatio: false,
-        })
-      );
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode;
+
+      const prevDims = {
+        physicalWidth_mm: targetNode.physicalWidth_mm,
+        physicalHeight_mm: targetNode.physicalHeight_mm,
+        aspectRatio: targetNode.aspectRatio,
+      };
+
+      const nextDims = {
+        physicalWidth_mm: width_mm,
+        physicalHeight_mm: height_mm,
+        aspectRatio: width_mm / height_mm,
+      };
+
+      const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
     },
-    [addToast]
+    [doc, addToast]
   );
 
   /**
-   * Restaura a proporção natural da imagem original a partir da resolução nativa em pixels.
+   * Registra a transformação completa de um nó (posição + dimensões) vinda do canvas após mouse-up.
+   */
+  const transformNode = useCallback(
+    (nodeId: string, nextPosition: Position_mm, nextWidth: number, nextHeight: number) => {
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode;
+
+      const prev = {
+        position_mm: { ...targetNode.position_mm },
+        physicalWidth_mm: targetNode.physicalWidth_mm,
+        physicalHeight_mm: targetNode.physicalHeight_mm,
+      };
+
+      const next = {
+        position_mm: nextPosition,
+        physicalWidth_mm: nextWidth,
+        physicalHeight_mm: nextHeight,
+      };
+
+      if (
+        prev.position_mm.x === next.position_mm.x &&
+        prev.position_mm.y === next.position_mm.y &&
+        prev.physicalWidth_mm === next.physicalWidth_mm &&
+        prev.physicalHeight_mm === next.physicalHeight_mm
+      ) {
+        return;
+      }
+
+      const cmd = new TransformNodeCommand(nodeId, prev, next);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+    },
+    [doc]
+  );
+
+  /**
+   * Restaura a proporção natural da imagem original.
    */
   const resetNodeAspectRatio = useCallback(
     (nodeId: string) => {
-      setDoc((prev) => {
-        const node = prev.nodes[nodeId];
-        if (!node || node.type !== 'raster_image') return prev;
-        const raster = node as RasterNode;
-        const naturalRatio = raster.naturalWidth / raster.naturalHeight;
-        const newHeight = roundPrecision(raster.physicalWidth_mm / naturalRatio, 2);
-        return {
-          ...prev,
-          nodes: {
-            ...prev.nodes,
-            [nodeId]: {
-              ...raster,
-              physicalHeight_mm: newHeight,
-              aspectRatio: naturalRatio,
-            },
-          },
-          updatedAt: new Date().toISOString(),
-        };
-      });
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode || prevNode.type !== 'raster_image') return;
+      const raster = prevNode as RasterNode;
+      const naturalRatio = raster.naturalWidth / raster.naturalHeight;
+      const newHeight = roundPrecision(raster.physicalWidth_mm / naturalRatio, 2);
+
+      const prevDims = {
+        physicalWidth_mm: raster.physicalWidth_mm,
+        physicalHeight_mm: raster.physicalHeight_mm,
+      };
+      const nextDims = {
+        physicalWidth_mm: raster.physicalWidth_mm,
+        physicalHeight_mm: newHeight,
+      };
+
+      const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
       addToast('info', 'Proporção natural restaurada.');
     },
-    [addToast]
+    [doc, addToast]
   );
 
   /**
    * Atualiza a posição física (X, Y em mm) de um nó.
    */
-  const setNodePosition = useCallback((nodeId: string, pos: { x?: number; y?: number }) => {
-    setDoc((prev) => updateNodePosition(prev, nodeId, pos));
-  }, []);
+  const setNodePosition = useCallback(
+    (nodeId: string, pos: { x?: number; y?: number }) => {
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode) return;
+
+      const prevPos = { ...prevNode.position_mm };
+      const nextPos: Position_mm = {
+        x: pos.x !== undefined ? roundPrecision(pos.x, 2) : prevPos.x,
+        y: pos.y !== undefined ? roundPrecision(pos.y, 2) : prevPos.y,
+      };
+
+      if (prevPos.x === nextPos.x && prevPos.y === nextPos.y) return;
+
+      const cmd = new UpdatePositionCommand(nodeId, prevPos, nextPos);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+    },
+    [doc]
+  );
 
   /**
    * Atualiza o nome de um nó.
@@ -254,17 +489,32 @@ export function useEditorStore() {
   }, []);
 
   /**
-   * Deleta um nó do documento.
+   * Deleta um nó do documento com suporte a Undo/Redo.
    */
   const deleteNode = useCallback(
     (nodeId: string) => {
-      setDoc((prev) => removeNode(prev, nodeId));
-      if (selectedNodeId === nodeId) {
-        setSelectedNodeId(null);
+      const nodeToDelete = doc.nodes[nodeId];
+      if (!nodeToDelete) return;
+
+      let childNodes: DocumentNode[] = [];
+      if (nodeToDelete.type === 'group') {
+        const group = nodeToDelete as VectorGroupNode;
+        childNodes = group.childrenIds
+          .map((id) => doc.nodes[id])
+          .filter((n): n is VectorPathNode => !!n);
       }
+
+      const cmd = new DeleteNodeCommand(nodeToDelete, childNodes);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(res.selectedNodeId ?? null);
+      }
+      setHistoryVersion((v) => v + 1);
+
       addToast('info', 'Objeto removido do documento.');
     },
-    [selectedNodeId, addToast]
+    [doc, selectedNodeId, addToast]
   );
 
   /**
@@ -301,9 +551,63 @@ export function useEditorStore() {
     }
   }, [doc, addToast]);
 
+  // Listener de atalhos globais de teclado para Undo (Ctrl+Z) e Redo (Ctrl+Y ou Ctrl+Shift+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignora se estiver digitando em inputs ou textarea
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) {
+            e.preventDefault();
+            redo();
+          } else {
+            e.preventDefault();
+            undo();
+          }
+        } else if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          redo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+
+  const selectedNode = selectedNodeId ? (doc.nodes[selectedNodeId] as DocumentNode | undefined) : undefined;
+  // Se o selectedNodeId atual não existir mais no documento (ex: deletado sem retorno), reseta para null
+  useEffect(() => {
+    if (selectedNodeId && !doc.nodes[selectedNodeId]) {
+      setSelectedNodeId(null);
+    }
+  }, [doc, selectedNodeId]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const canUndo = useMemo(() => historyManagerRef.current.canUndo, [historyVersion]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const canRedo = useMemo(() => historyManagerRef.current.canRedo, [historyVersion]);
+
   const actions = useMemo(
     () => ({
       importRasterFile,
+      vectorizeRasterNode,
+      transformNode,
+      setVectorizePreset,
+      setComparisonMode,
+      setOverlayOpacity,
+      undo,
+      redo,
       setNodeWidth,
       setNodeHeight,
       setNodeDimensions,
@@ -321,6 +625,13 @@ export function useEditorStore() {
     }),
     [
       importRasterFile,
+      vectorizeRasterNode,
+      transformNode,
+      setVectorizePreset,
+      setComparisonMode,
+      setOverlayOpacity,
+      undo,
+      redo,
       setNodeWidth,
       setNodeHeight,
       setNodeDimensions,
@@ -341,8 +652,14 @@ export function useEditorStore() {
   return {
     doc,
     selectedNodeId,
-    selectedNode: selectedNodeId ? (doc.nodes[selectedNodeId] as RasterNode | undefined) : undefined,
+    selectedNode,
     keepAspectRatio,
+    isVectorizing,
+    vectorizePreset,
+    comparisonMode,
+    overlayOpacity,
+    canUndo,
+    canRedo,
     toasts,
     actions,
   };
