@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as fabric from 'fabric';
-import { PrexyonDocument } from '@/core/pdm/types';
+import { PrexyonDocument, DocumentNode } from '@/core/pdm/types';
 import { mmToPx, pxToMm, roundPrecision } from '@/core/pdm/units';
 import { FabricAdapter, NodeTransformPayload } from '@/core/renderer/fabricAdapter';
 import { Upload } from 'lucide-react';
@@ -11,6 +11,7 @@ interface CanvasViewportProps {
   zoom: number;
   comparisonMode?: 'default' | 'overlay' | 'vector_only' | 'raster_only';
   overlayOpacity?: number;
+  previewNode?: DocumentNode | null;
   onZoomChange: (newZoom: number) => void;
   onCursorMove: (cursorMm: { x: number; y: number } | null) => void;
   onSelectNode: (nodeId: string | null) => void;
@@ -24,6 +25,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   zoom,
   comparisonMode = 'default',
   overlayOpacity = 0.6,
+  previewNode = null,
   onZoomChange,
   onCursorMove,
   onSelectNode,
@@ -235,12 +237,26 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     canvas.requestRenderAll();
   }, [doc.dimensions.width_mm, doc.dimensions.height_mm]);
 
-  // 3. Sincroniza nós do PDM com o Fabric sempre que doc, selectedNodeId ou comparisonMode mudar
+  // 3. Sincroniza nós do PDM com o Fabric sempre que doc, selectedNodeId, comparisonMode ou previewNode mudar
   useEffect(() => {
     if (fabricAdapterRef.current) {
-      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity);
+      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode);
     }
-  }, [doc, selectedNodeId, comparisonMode, overlayOpacity]);
+  }, [doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode]);
+
+  // 3.1 Sincroniza dimensões da prancheta (Artboard) no retângulo visual
+  useEffect(() => {
+    if (artboardRectRef.current && fabricCanvasRef.current) {
+      const widthPx = mmToPx(doc.dimensions.width_mm);
+      const heightPx = mmToPx(doc.dimensions.height_mm);
+      artboardRectRef.current.set({
+        width: widthPx,
+        height: heightPx,
+      });
+      artboardRectRef.current.setCoords();
+      fabricCanvasRef.current.requestRenderAll();
+    }
+  }, [doc.dimensions.width_mm, doc.dimensions.height_mm]);
 
   // 4. Sincroniza o zoom quando alterado via botões externos do Header
   useEffect(() => {

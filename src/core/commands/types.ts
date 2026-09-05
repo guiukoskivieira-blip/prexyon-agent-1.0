@@ -6,8 +6,24 @@
  * possui seu comando individual com suporte a Undo/Redo preciso.
  */
 
-import { PrexyonDocument, RasterNode, VectorGroupNode, VectorPathNode, DocumentNode, Position_mm } from '../pdm/types';
-import { addNode, addVectorGroup, removeNode, updateNodeDimensions, updateNodePosition } from '../pdm/document';
+import {
+  PrexyonDocument,
+  RasterNode,
+  VectorGroupNode,
+  VectorPathNode,
+  CutContourNode,
+  DocumentNode,
+  DocumentDimensions,
+  Position_mm,
+} from '../pdm/types';
+import {
+  addNode,
+  addVectorGroup,
+  removeNode,
+  updateNodeDimensions,
+  updateNodePosition,
+  updateArtboardDimensions,
+} from '../pdm/document';
 
 export interface CommandResult {
   doc: PrexyonDocument;
@@ -126,11 +142,16 @@ export class TransformNodeCommand implements DocumentCommand {
 
   execute(doc: PrexyonDocument): CommandResult {
     let newDoc = updateNodePosition(doc, this.nodeId, this.next.position_mm);
-    newDoc = updateNodeDimensions(newDoc, this.nodeId, {
-      physicalWidth_mm: this.next.physicalWidth_mm,
-      physicalHeight_mm: this.next.physicalHeight_mm,
-      keepAspectRatio: false,
-    });
+    if (
+      this.next.physicalWidth_mm !== this.prev.physicalWidth_mm ||
+      this.next.physicalHeight_mm !== this.prev.physicalHeight_mm
+    ) {
+      newDoc = updateNodeDimensions(newDoc, this.nodeId, {
+        physicalWidth_mm: this.next.physicalWidth_mm,
+        physicalHeight_mm: this.next.physicalHeight_mm,
+        keepAspectRatio: false,
+      });
+    }
     return {
       doc: newDoc,
       selectedNodeId: this.nodeId,
@@ -139,11 +160,16 @@ export class TransformNodeCommand implements DocumentCommand {
 
   undo(doc: PrexyonDocument): CommandResult {
     let newDoc = updateNodePosition(doc, this.nodeId, this.prev.position_mm);
-    newDoc = updateNodeDimensions(newDoc, this.nodeId, {
-      physicalWidth_mm: this.prev.physicalWidth_mm,
-      physicalHeight_mm: this.prev.physicalHeight_mm,
-      keepAspectRatio: false,
-    });
+    if (
+      this.next.physicalWidth_mm !== this.prev.physicalWidth_mm ||
+      this.next.physicalHeight_mm !== this.prev.physicalHeight_mm
+    ) {
+      newDoc = updateNodeDimensions(newDoc, this.nodeId, {
+        physicalWidth_mm: this.prev.physicalWidth_mm,
+        physicalHeight_mm: this.prev.physicalHeight_mm,
+        keepAspectRatio: false,
+      });
+    }
     return {
       doc: newDoc,
       selectedNodeId: this.nodeId,
@@ -288,6 +314,320 @@ export class DeleteNodeCommand implements DocumentCommand {
     return {
       doc: newDoc,
       selectedNodeId: this.deletedNode.id,
+    };
+  }
+}
+
+/**
+ * Comando de Criação de Faca de Corte
+ * Reversível: ao desfazer, remove o CutContourNode e seleciona o vetor de origem.
+ */
+export class CreateCutContourCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(public readonly cutContourNode: CutContourNode) {
+    this.id = `cmd_cut_create_${cutContourNode.id}`;
+    this.name = `Criar Faca (${cutContourNode.offset_mm} mm)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = addNode(doc, this.cutContourNode);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.cutContourNode.id,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = removeNode(doc, this.cutContourNode.id);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.cutContourNode.sourceNodeId,
+    };
+  }
+}
+
+/**
+ * Comando de Remoção de Faca de Corte
+ * Reversível: ao desfazer, restaura a faca de corte no documento.
+ */
+export class DeleteCutContourCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(public readonly cutContourNode: CutContourNode) {
+    this.id = `cmd_cut_del_${cutContourNode.id}_${Date.now()}`;
+    this.name = `Remover Faca (${cutContourNode.offset_mm} mm)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = removeNode(doc, this.cutContourNode.id);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.cutContourNode.sourceNodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = addNode(doc, this.cutContourNode);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.cutContourNode.id,
+    };
+  }
+}
+
+/**
+ * Comando de Atualização de Faca de Corte (Offset / Estilo)
+ * Reversível: ao desfazer, restaura os parâmetros e contornos anteriores.
+ */
+export class UpdateCutContourCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevNode: CutContourNode,
+    public readonly nextNode: CutContourNode
+  ) {
+    this.id = `cmd_cut_update_${nodeId}_${Date.now()}`;
+    this.name = `Alterar Faca (${nextNode.offset_mm} mm)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: this.nextNode,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: this.prevNode,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+}
+
+/**
+ * Comando de Alteração de Espessura do Traço da Faca de Corte
+ */
+export class UpdateCutContourStrokeWidthCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevStrokeWidth_mm: number,
+    public readonly nextStrokeWidth_mm: number
+  ) {
+    this.id = `cmd_cut_stroke_${nodeId}_${Date.now()}`;
+    this.name = `Alterar Espessura do Traço (${nextStrokeWidth_mm} mm)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId] as CutContourNode | undefined;
+    if (!node || node.type !== 'cut_contour') return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          strokeWidth_mm: this.nextStrokeWidth_mm,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId] as CutContourNode | undefined;
+    if (!node || node.type !== 'cut_contour') return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          strokeWidth_mm: this.prevStrokeWidth_mm,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+}
+
+/**
+ * Comando de Visibilidade de Nó
+ */
+export class ToggleVisibilityCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevVisible: boolean,
+    public readonly nextVisible: boolean
+  ) {
+    this.id = `cmd_vis_${nodeId}_${Date.now()}`;
+    this.name = nextVisible ? 'Exibir Objeto' : 'Ocultar Objeto';
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId];
+    if (!node) return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          visible: this.nextVisible,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId];
+    if (!node) return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          visible: this.prevVisible,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+}
+
+/**
+ * Comando de Redimensionamento da Prancheta (Artboard)
+ */
+export class SetArtboardDimensionsCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly prevDimensions: DocumentDimensions,
+    public readonly nextDimensions: DocumentDimensions
+  ) {
+    this.id = `cmd_artboard_${Date.now()}`;
+    this.name = `Redimensionar Prancheta (${nextDimensions.width_mm} × ${nextDimensions.height_mm} mm)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateArtboardDimensions(doc, this.nextDimensions);
+    return {
+      doc: newDoc,
+      selectedNodeId: doc.rootNodeIds[0] ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateArtboardDimensions(doc, this.prevDimensions);
+    return {
+      doc: newDoc,
+      selectedNodeId: doc.rootNodeIds[0] ?? null,
+    };
+  }
+}
+
+/**
+ * Comando de Centralização de Faca de Corte na Imagem/Vetor de Origem
+ */
+export class CenterCutContourCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string = 'Centralizar Faca na Origem';
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevNode: CutContourNode,
+    public readonly nextNode: CutContourNode
+  ) {
+    this.id = `cmd_cut_center_${nodeId}_${Date.now()}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: this.nextNode,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: this.prevNode,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
     };
   }
 }

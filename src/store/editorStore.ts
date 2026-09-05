@@ -15,6 +15,8 @@ import {
   RasterNode,
   VectorGroupNode,
   VectorPathNode,
+  CutContourNode,
+  JoinStyle,
   DocumentNode,
   DocumentDimensions,
   Position_mm,
@@ -22,7 +24,11 @@ import {
 import {
   createDocument,
   createRasterNode,
+  createCutContourNode,
   updateNodeMetadata,
+  updateNodeDimensions,
+  updateNodePosition,
+  centerCutContourOnSource,
   serializeDocument,
   deserializeDocument,
 } from '../core/pdm/document';
@@ -36,6 +42,12 @@ import {
   VECTORIZE_PRESETS,
   getVTracerOptionsForPreset,
 } from '../core/vectorizer/presets';
+import { generateCutContour } from '../core/geometry/cutContourEngine';
+import {
+  calculateArrowMovement,
+  isTextInputFocused,
+  applyPositionDelta,
+} from '../core/geometry/keyboardMovement';
 import { HistoryManager } from '../core/history/historyManager';
 import {
   VectorizeCommand,
@@ -44,6 +56,13 @@ import {
   TransformNodeCommand,
   UpdateDimensionsCommand,
   UpdatePositionCommand,
+  CreateCutContourCommand,
+  UpdateCutContourCommand,
+  UpdateCutContourStrokeWidthCommand,
+  DeleteCutContourCommand,
+  ToggleVisibilityCommand,
+  SetArtboardDimensionsCommand,
+  CenterCutContourCommand,
 } from '../core/commands/types';
 
 export interface ToastMessage {
@@ -59,12 +78,20 @@ export function useEditorStore() {
     createDocument({ width_mm: 100, height_mm: 100 })
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [previewNode, setPreviewNode] = useState<DocumentNode | null>(null);
   const [keepAspectRatio, setKeepAspectRatio] = useState<boolean>(true);
   const [isVectorizing, setIsVectorizing] = useState<boolean>(false);
   const [vectorizePreset, setVectorizePreset] = useState<VectorizePresetId>('logo');
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('default');
   const [overlayOpacity, setOverlayOpacity] = useState<number>(0.6);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Sessão de repetição de tecla de seta para agrupamento no histórico
+  const arrowMoveSessionRef = useRef<{
+    nodeId: string;
+    initialPos: Position_mm;
+    lastPos: Position_mm;
+  } | null>(null);
 
   // Gerenciador de histórico com Command Pattern
   const historyManagerRef = useRef<HistoryManager>(new HistoryManager(50));
@@ -234,10 +261,11 @@ export function useEditorStore() {
   }, [doc, addToast]);
 
   /**
-   * Atualiza a largura física de um nó (em mm) registrando um comando no histórico.
+   * Atualiza a largura física de um nó (em mm).
+   * Se isLive === true, atualiza o documento imediatamente para feedback visual em tempo real sem poluir o histórico.
    */
   const setNodeWidth = useCallback(
-    (nodeId: string, width_mm: number) => {
+    (nodeId: string, width_mm: number, isLive: boolean = false) => {
       const val = validatePhysicalDimension(width_mm, 'Largura');
       if (!val.valid) {
         addToast('error', val.error || 'Largura inválida.');
@@ -245,8 +273,8 @@ export function useEditorStore() {
       }
 
       const prevNode = doc.nodes[nodeId];
-      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
-      const targetNode = prevNode as RasterNode | VectorGroupNode;
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode;
 
       const prevDims = {
         physicalWidth_mm: targetNode.physicalWidth_mm,
@@ -254,7 +282,10 @@ export function useEditorStore() {
         aspectRatio: targetNode.aspectRatio,
       };
 
-      const ratio = targetNode.aspectRatio || (targetNode.physicalWidth_mm / targetNode.physicalHeight_mm) || 1;
+      const ratio =
+        targetNode.aspectRatio ||
+        (targetNode.physicalHeight_mm > 0 ? targetNode.physicalWidth_mm / targetNode.physicalHeight_mm : 1) ||
+        1;
       const calculatedHeight = keepAspectRatio
         ? roundPrecision(width_mm / ratio, 2)
         : targetNode.physicalHeight_mm;
@@ -262,13 +293,24 @@ export function useEditorStore() {
       const nextDims = {
         physicalWidth_mm: width_mm,
         physicalHeight_mm: calculatedHeight,
-        aspectRatio: ratio,
+        aspectRatio: roundPrecision(width_mm / calculatedHeight, 4),
       };
 
       if (
         prevDims.physicalWidth_mm === nextDims.physicalWidth_mm &&
         prevDims.physicalHeight_mm === nextDims.physicalHeight_mm
       ) {
+        return;
+      }
+
+      if (isLive) {
+        setDoc((prev) =>
+          updateNodeDimensions(prev, nodeId, {
+            physicalWidth_mm: width_mm,
+            physicalHeight_mm: calculatedHeight,
+            keepAspectRatio: false,
+          })
+        );
         return;
       }
 
@@ -281,10 +323,11 @@ export function useEditorStore() {
   );
 
   /**
-   * Atualiza a altura física de um nó (em mm) registrando um comando no histórico.
+   * Atualiza a altura física de um nó (em mm).
+   * Se isLive === true, atualiza o documento imediatamente para feedback visual em tempo real sem poluir o histórico.
    */
   const setNodeHeight = useCallback(
-    (nodeId: string, height_mm: number) => {
+    (nodeId: string, height_mm: number, isLive: boolean = false) => {
       const val = validatePhysicalDimension(height_mm, 'Altura');
       if (!val.valid) {
         addToast('error', val.error || 'Altura inválida.');
@@ -292,8 +335,8 @@ export function useEditorStore() {
       }
 
       const prevNode = doc.nodes[nodeId];
-      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
-      const targetNode = prevNode as RasterNode | VectorGroupNode;
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode;
 
       const prevDims = {
         physicalWidth_mm: targetNode.physicalWidth_mm,
@@ -301,7 +344,10 @@ export function useEditorStore() {
         aspectRatio: targetNode.aspectRatio,
       };
 
-      const ratio = targetNode.aspectRatio || (targetNode.physicalWidth_mm / targetNode.physicalHeight_mm) || 1;
+      const ratio =
+        targetNode.aspectRatio ||
+        (targetNode.physicalHeight_mm > 0 ? targetNode.physicalWidth_mm / targetNode.physicalHeight_mm : 1) ||
+        1;
       const calculatedWidth = keepAspectRatio
         ? roundPrecision(height_mm * ratio, 2)
         : targetNode.physicalWidth_mm;
@@ -309,7 +355,7 @@ export function useEditorStore() {
       const nextDims = {
         physicalWidth_mm: calculatedWidth,
         physicalHeight_mm: height_mm,
-        aspectRatio: ratio,
+        aspectRatio: roundPrecision(calculatedWidth / height_mm, 4),
       };
 
       if (
@@ -319,12 +365,63 @@ export function useEditorStore() {
         return;
       }
 
+      if (isLive) {
+        setDoc((prev) =>
+          updateNodeDimensions(prev, nodeId, {
+            physicalWidth_mm: calculatedWidth,
+            physicalHeight_mm: height_mm,
+            keepAspectRatio: false,
+          })
+        );
+        return;
+      }
+
       const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
       const res = historyManagerRef.current.executeCommand(cmd, doc);
       setDoc(res.doc);
       setHistoryVersion((v) => v + 1);
     },
     [doc, keepAspectRatio, addToast]
+  );
+
+  /**
+   * Confirma a alteração final de dimensões de um nó em 1 comando atômico no histórico.
+   */
+  const commitNodeDimensions = useCallback(
+    (
+      nodeId: string,
+      prev: { width_mm?: number; height_mm?: number; physicalWidth_mm?: number; physicalHeight_mm?: number; aspectRatio?: number },
+      next: { width_mm?: number; height_mm?: number; physicalWidth_mm?: number; physicalHeight_mm?: number; aspectRatio?: number }
+    ) => {
+      const prevW = prev.physicalWidth_mm ?? prev.width_mm ?? 0;
+      const prevH = prev.physicalHeight_mm ?? prev.height_mm ?? 0;
+      const nextW = next.physicalWidth_mm ?? next.width_mm ?? 0;
+      const nextH = next.physicalHeight_mm ?? next.height_mm ?? 0;
+
+      if (prevW === nextW && prevH === nextH) return;
+
+      const prevDims = {
+        physicalWidth_mm: prevW,
+        physicalHeight_mm: prevH,
+        aspectRatio: prev.aspectRatio ?? (prevH > 0 ? prevW / prevH : 1),
+      };
+      const nextDims = {
+        physicalWidth_mm: nextW,
+        physicalHeight_mm: nextH,
+        aspectRatio: next.aspectRatio ?? (nextH > 0 ? nextW / nextH : 1),
+      };
+
+      const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
+      const docWithPrev = updateNodeDimensions(doc, nodeId, {
+        physicalWidth_mm: prevDims.physicalWidth_mm,
+        physicalHeight_mm: prevDims.physicalHeight_mm,
+        keepAspectRatio: false,
+      });
+      const res = historyManagerRef.current.executeCommand(cmd, docWithPrev);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+    },
+    [doc]
   );
 
   /**
@@ -344,8 +441,8 @@ export function useEditorStore() {
       }
 
       const prevNode = doc.nodes[nodeId];
-      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
-      const targetNode = prevNode as RasterNode | VectorGroupNode;
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode;
 
       const prevDims = {
         physicalWidth_mm: targetNode.physicalWidth_mm,
@@ -356,7 +453,7 @@ export function useEditorStore() {
       const nextDims = {
         physicalWidth_mm: width_mm,
         physicalHeight_mm: height_mm,
-        aspectRatio: width_mm / height_mm,
+        aspectRatio: roundPrecision(width_mm / height_mm, 4),
       };
 
       const cmd = new UpdateDimensionsCommand(nodeId, prevDims, nextDims);
@@ -373,8 +470,8 @@ export function useEditorStore() {
   const transformNode = useCallback(
     (nodeId: string, nextPosition: Position_mm, nextWidth: number, nextHeight: number) => {
       const prevNode = doc.nodes[nodeId];
-      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group')) return;
-      const targetNode = prevNode as RasterNode | VectorGroupNode;
+      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour')) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode;
 
       const prev = {
         position_mm: { ...targetNode.position_mm },
@@ -397,7 +494,14 @@ export function useEditorStore() {
         return;
       }
 
-      const cmd = new TransformNodeCommand(nodeId, prev, next);
+      const isOnlyPositionChange =
+        prev.physicalWidth_mm === next.physicalWidth_mm &&
+        prev.physicalHeight_mm === next.physicalHeight_mm;
+
+      const cmd = isOnlyPositionChange
+        ? new UpdatePositionCommand(nodeId, prev.position_mm, next.position_mm)
+        : new TransformNodeCommand(nodeId, prev, next);
+
       const res = historyManagerRef.current.executeCommand(cmd, doc);
       setDoc(res.doc);
       setHistoryVersion((v) => v + 1);
@@ -436,9 +540,10 @@ export function useEditorStore() {
 
   /**
    * Atualiza a posição física (X, Y em mm) de um nó.
+   * Se isLive === true, atualiza o documento imediatamente para feedback visual em tempo real sem poluir o histórico.
    */
   const setNodePosition = useCallback(
-    (nodeId: string, pos: { x?: number; y?: number }) => {
+    (nodeId: string, pos: { x?: number; y?: number }, isLive: boolean = false) => {
       const prevNode = doc.nodes[nodeId];
       if (!prevNode) return;
 
@@ -450,8 +555,29 @@ export function useEditorStore() {
 
       if (prevPos.x === nextPos.x && prevPos.y === nextPos.y) return;
 
+      if (isLive) {
+        setDoc((prev) => updateNodePosition(prev, nodeId, nextPos));
+        return;
+      }
+
       const cmd = new UpdatePositionCommand(nodeId, prevPos, nextPos);
       const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+    },
+    [doc]
+  );
+
+  /**
+   * Confirma a alteração final de posição de um nó em 1 comando atômico no histórico.
+   */
+  const commitNodePosition = useCallback(
+    (nodeId: string, prevPos: Position_mm, nextPos: Position_mm) => {
+      if (prevPos.x === nextPos.x && prevPos.y === nextPos.y) return;
+
+      const cmd = new UpdatePositionCommand(nodeId, prevPos, nextPos);
+      const docWithPrev = updateNodePosition(doc, nodeId, prevPos);
+      const res = historyManagerRef.current.executeCommand(cmd, docWithPrev);
       setDoc(res.doc);
       setHistoryVersion((v) => v + 1);
     },
@@ -467,15 +593,16 @@ export function useEditorStore() {
   }, []);
 
   /**
-   * Atualiza visibilidade de um nó.
+   * Atualiza visibilidade de um nó com suporte a Undo/Redo.
    */
   const toggleNodeVisibility = useCallback((nodeId: string) => {
-    setDoc((prev) => {
-      const node = prev.nodes[nodeId];
-      if (!node) return prev;
-      return updateNodeMetadata(prev, nodeId, { visible: !node.visible });
-    });
-  }, []);
+    const node = doc.nodes[nodeId];
+    if (!node) return;
+    const cmd = new ToggleVisibilityCommand(nodeId, node.visible, !node.visible);
+    const res = historyManagerRef.current.executeCommand(cmd, doc);
+    setDoc(res.doc);
+    setHistoryVersion((v) => v + 1);
+  }, [doc]);
 
   /**
    * Atualiza travamento de um nó.
@@ -518,20 +645,301 @@ export function useEditorStore() {
   );
 
   /**
-   * Modifica as dimensões nominais da prancheta.
+   * Cria uma faca de corte externa para um grupo vetorial.
+   */
+  const createCutContour = useCallback(
+    (
+      sourceVectorNodeId: string,
+      offset_mm: number = 2.0,
+      joinStyle: JoinStyle = 'round',
+      includeInnerContours: boolean = false
+    ) => {
+      const targetNode = doc.nodes[sourceVectorNodeId];
+      if (!targetNode || targetNode.type !== 'group') {
+        addToast('error', 'Selecione um grupo vetorial para gerar a faca de corte.');
+        return;
+      }
+
+      try {
+        const group = targetNode as VectorGroupNode;
+        const result = generateCutContour(group, doc, {
+          offset_mm,
+          joinStyle,
+          includeInnerContours,
+        });
+
+        const cutNode = createCutContourNode({
+          name: `Faca: ${group.name}`,
+          sourceNodeId: group.id,
+          offset_mm: result.offset_mm,
+          joinStyle: result.joinStyle,
+          includeInnerContours,
+          contours: result.contours,
+          physicalWidth_mm: result.boundingBox_mm.width_mm,
+          physicalHeight_mm: result.boundingBox_mm.height_mm,
+          position_mm: {
+            x: result.boundingBox_mm.minX,
+            y: result.boundingBox_mm.minY,
+          },
+          strokeWidth_mm: 0.30,
+        });
+
+        const cmd = new CreateCutContourCommand(cutNode);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        if (res.selectedNodeId !== undefined) {
+          setSelectedNodeId(res.selectedNodeId);
+        }
+        setHistoryVersion((v) => v + 1);
+
+        addToast(
+          'success',
+          `Faca de corte criada (${result.offset_mm} mm, ${result.contours.length} contorno(s)).`
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Falha ao gerar faca de corte.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Atualiza parâmetros da faca de corte existente recalculando ou ajustando espessura.
+   */
+  const updateCutContour = useCallback(
+    (
+      contourNodeId: string,
+      optionsOrOffset:
+        | {
+            offset_mm?: number;
+            joinStyle?: JoinStyle;
+            includeInnerContours?: boolean;
+            strokeWidth_mm?: number;
+          }
+        | number,
+      maybeJoinStyle?: JoinStyle,
+      maybeIncludeInner?: boolean,
+      maybeStrokeWidth?: number
+    ) => {
+      const cutNode = doc.nodes[contourNodeId] as CutContourNode | undefined;
+      if (!cutNode || cutNode.type !== 'cut_contour') return;
+
+      const opts =
+        typeof optionsOrOffset === 'number'
+          ? {
+              offset_mm: optionsOrOffset,
+              joinStyle: maybeJoinStyle ?? cutNode.joinStyle,
+              includeInnerContours: maybeIncludeInner ?? cutNode.includeInnerContours,
+              strokeWidth_mm: maybeStrokeWidth ?? cutNode.strokeWidth_mm,
+            }
+          : optionsOrOffset;
+
+      const newOffset = opts.offset_mm ?? cutNode.offset_mm;
+      const newJoinStyle = opts.joinStyle ?? cutNode.joinStyle;
+      const newIncludeInner = opts.includeInnerContours ?? cutNode.includeInnerContours;
+      const newStrokeWidth = opts.strokeWidth_mm ?? cutNode.strokeWidth_mm ?? 0.30;
+
+      // Se apenas a espessura de traço mudou (sem alteração de geometria de offset)
+      if (
+        opts.strokeWidth_mm !== undefined &&
+        newOffset === cutNode.offset_mm &&
+        newJoinStyle === cutNode.joinStyle &&
+        newIncludeInner === cutNode.includeInnerContours
+      ) {
+        if (newStrokeWidth === cutNode.strokeWidth_mm) return;
+        const cmd = new UpdateCutContourStrokeWidthCommand(
+          contourNodeId,
+          cutNode.strokeWidth_mm || 0.30,
+          newStrokeWidth
+        );
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+        return;
+      }
+
+      const sourceGroup = doc.nodes[cutNode.sourceNodeId] as VectorGroupNode | undefined;
+      if (!sourceGroup || sourceGroup.type !== 'group') {
+        addToast('error', 'Grupo vetorial de origem não encontrado.');
+        return;
+      }
+
+      try {
+        const result = generateCutContour(sourceGroup, doc, {
+          offset_mm: newOffset,
+          joinStyle: newJoinStyle,
+          includeInnerContours: newIncludeInner,
+        });
+
+        const nextNode: CutContourNode = {
+          ...cutNode,
+          offset_mm: result.offset_mm,
+          joinStyle: result.joinStyle,
+          includeInnerContours: newIncludeInner,
+          strokeWidth_mm: newStrokeWidth,
+          contours: result.contours,
+          physicalWidth_mm: result.boundingBox_mm.width_mm,
+          physicalHeight_mm: result.boundingBox_mm.height_mm,
+          aspectRatio:
+            result.boundingBox_mm.height_mm > 0
+              ? roundPrecision(result.boundingBox_mm.width_mm / result.boundingBox_mm.height_mm, 4)
+              : 1,
+          position_mm: {
+            x: result.boundingBox_mm.minX,
+            y: result.boundingBox_mm.minY,
+          },
+          metadata: {
+            ...cutNode.metadata,
+            manualScaleApplied: false,
+            totalPoints: result.contours.reduce((sum, c) => sum + c.points_mm.length, 0),
+            contourCount: result.contours.length,
+            calculatedAt: new Date().toISOString(),
+          },
+        };
+
+        const cmd = new UpdateCutContourCommand(contourNodeId, cutNode, nextNode);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+
+        addToast(
+          'success',
+          `Faca recalculada para ${result.offset_mm} mm (${result.contours.length} contorno(s)).`
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Falha ao recalcular faca de corte.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Atualiza diretamente a espessura da linha de corte.
+   */
+  const updateCutContourStrokeWidth = useCallback(
+    (contourNodeId: string, strokeWidth_mm: number) => {
+      const cutNode = doc.nodes[contourNodeId] as CutContourNode | undefined;
+      if (!cutNode || cutNode.type !== 'cut_contour') return;
+      if (cutNode.strokeWidth_mm === strokeWidth_mm) return;
+
+      const cmd = new UpdateCutContourStrokeWidthCommand(
+        contourNodeId,
+        cutNode.strokeWidth_mm || 0.30,
+        strokeWidth_mm
+      );
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+    },
+    [doc]
+  );
+
+  /**
+   * Aplica e confirma as alterações de preview de uma faca de corte criando 1 comando atômico no histórico.
+   */
+  const applyCutContourChanges = useCallback(
+    (nodeId: string, nextNode: CutContourNode) => {
+      const prevNode = doc.nodes[nodeId] as CutContourNode | undefined;
+      if (!prevNode || prevNode.type !== 'cut_contour') return;
+
+      setPreviewNode(null);
+
+      const cmd = new UpdateCutContourCommand(nodeId, prevNode, nextNode);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+
+      addToast(
+        'success',
+        `Faca de corte atualizada (+${nextNode.offset_mm} mm, ${nextNode.contours.length} contorno(s)).`
+      );
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Remove uma faca de corte específica.
+   */
+  const deleteCutContour = useCallback(
+    (contourNodeId: string) => {
+      const cutNode = doc.nodes[contourNodeId] as CutContourNode | undefined;
+      if (!cutNode || cutNode.type !== 'cut_contour') return;
+
+      const cmd = new DeleteCutContourCommand(cutNode);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      if (selectedNodeId === contourNodeId) {
+        setSelectedNodeId(res.selectedNodeId ?? null);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('info', 'Faca de corte removida.');
+    },
+    [doc, selectedNodeId, addToast]
+  );
+
+  /**
+   * Modifica as dimensões nominais da prancheta com registro no histórico (Undo/Redo).
    */
   const setArtboardDimensions = useCallback(
     (dims: Partial<DocumentDimensions>) => {
-      setDoc((prev) => ({
-        ...prev,
-        dimensions: {
-          ...prev.dimensions,
-          ...dims,
-        },
-        updatedAt: new Date().toISOString(),
-      }));
+      const prevDims = { ...doc.dimensions };
+      const width_mm = dims.width_mm !== undefined ? dims.width_mm : prevDims.width_mm;
+      const height_mm = dims.height_mm !== undefined ? dims.height_mm : prevDims.height_mm;
+
+      const valW = validatePhysicalDimension(width_mm, 'Largura da prancheta', 5000);
+      if (!valW.valid || width_mm < 10) {
+        addToast('error', valW.error || 'Largura da prancheta deve ser de pelo menos 10 mm.');
+        return;
+      }
+
+      const valH = validatePhysicalDimension(height_mm, 'Altura da prancheta', 5000);
+      if (!valH.valid || height_mm < 10) {
+        addToast('error', valH.error || 'Altura da prancheta deve ser de pelo menos 10 mm.');
+        return;
+      }
+
+      const nextDims: DocumentDimensions = {
+        unit: 'mm',
+        width_mm: roundPrecision(width_mm, 2),
+        height_mm: roundPrecision(height_mm, 2),
+      };
+
+      if (prevDims.width_mm === nextDims.width_mm && prevDims.height_mm === nextDims.height_mm) {
+        return;
+      }
+
+      const cmd = new SetArtboardDimensionsCommand(prevDims, nextDims);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+      addToast('info', `Prancheta redimensionada para ${nextDims.width_mm} × ${nextDims.height_mm} mm.`);
     },
-    []
+    [doc, addToast]
+  );
+
+  /**
+   * Centraliza uma faca de corte na imagem/vetor de origem com registro de 1 comando no histórico.
+   */
+  const centerCutContour = useCallback(
+    (contourNodeId: string) => {
+      const cutNode = doc.nodes[contourNodeId] as CutContourNode | undefined;
+      if (!cutNode || cutNode.type !== 'cut_contour') return;
+
+      try {
+        const { nextCutNode } = centerCutContourOnSource(doc, contourNodeId);
+        const cmd = new CenterCutContourCommand(contourNodeId, cutNode, nextCutNode);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+        addToast('success', 'Faca de corte centralizada na imagem de origem.');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao centralizar faca.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
   );
 
   /**
@@ -551,39 +959,101 @@ export function useEditorStore() {
     }
   }, [doc, addToast]);
 
-  // Listener de atalhos globais de teclado para Undo (Ctrl+Z) e Redo (Ctrl+Y ou Ctrl+Shift+Z)
+  // Listener de atalhos globais de teclado (Undo, Redo e Movimentação por Setas)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignora se estiver digitando em inputs ou textarea
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
+      // Ignora se estiver digitando em campos de formulário
+      if (isTextInputFocused(e.target)) {
         return;
       }
 
+      // Atalhos Undo / Redo
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         if (e.key === 'z' || e.key === 'Z') {
           if (e.shiftKey) {
             e.preventDefault();
             redo();
+            return;
           } else {
             e.preventDefault();
             undo();
+            return;
           }
         } else if (e.key === 'y' || e.key === 'Y') {
           e.preventDefault();
           redo();
+          return;
+        }
+      }
+
+      // Movimentação por Setas (Arrow Keys) com suporte a Shift (10mm), Ctrl/Alt (0.1mm) e Default (1mm)
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        if (!selectedNodeId) return;
+        const targetNode = doc.nodes[selectedNodeId];
+        if (!targetNode || targetNode.locked) return;
+
+        const delta = calculateArrowMovement(e.key, {
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+        });
+
+        if (!delta) return;
+        e.preventDefault();
+
+        if (!arrowMoveSessionRef.current || arrowMoveSessionRef.current.nodeId !== selectedNodeId) {
+          arrowMoveSessionRef.current = {
+            nodeId: selectedNodeId,
+            initialPos: { ...targetNode.position_mm },
+            lastPos: { ...targetNode.position_mm },
+          };
+        }
+
+        const nextPos = applyPositionDelta(
+          arrowMoveSessionRef.current.lastPos,
+          delta.dx,
+          delta.dy
+        );
+        arrowMoveSessionRef.current.lastPos = nextPos;
+
+        // Atualiza a posição visual no PDM imediatamente para renderização fluida
+        setDoc((prev) => updateNodePosition(prev, selectedNodeId, nextPos));
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        if (arrowMoveSessionRef.current) {
+          const { nodeId, initialPos, lastPos } = arrowMoveSessionRef.current;
+          arrowMoveSessionRef.current = null;
+
+          if (initialPos.x !== lastPos.x || initialPos.y !== lastPos.y) {
+            const cmd = new UpdatePositionCommand(nodeId, initialPos, lastPos);
+            const docWithInitialPos = {
+              ...doc,
+              nodes: {
+                ...doc.nodes,
+                [nodeId]: {
+                  ...doc.nodes[nodeId],
+                  position_mm: initialPos,
+                },
+              },
+            };
+            const res = historyManagerRef.current.executeCommand(cmd, docWithInitialPos);
+            setDoc(res.doc);
+            setHistoryVersion((v) => v + 1);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [doc, selectedNodeId, undo, redo]);
 
   const selectedNode = selectedNodeId ? (doc.nodes[selectedNodeId] as DocumentNode | undefined) : undefined;
   // Se o selectedNodeId atual não existir mais no documento (ex: deletado sem retorno), reseta para null
@@ -611,14 +1081,23 @@ export function useEditorStore() {
       setNodeWidth,
       setNodeHeight,
       setNodeDimensions,
+      commitNodeDimensions,
       resetNodeAspectRatio,
       setNodePosition,
+      commitNodePosition,
       setNodeName,
       toggleNodeVisibility,
       toggleNodeLock,
       deleteNode,
       setSelectedNodeId,
       setKeepAspectRatio,
+      createCutContour,
+      centerCutContour,
+      updateCutContour,
+      updateCutContourStrokeWidth,
+      applyCutContourChanges,
+      deleteCutContour,
+      setPreviewNode,
       setArtboardDimensions,
       triggerArchitecturalRebuild,
       removeToast,
@@ -635,14 +1114,23 @@ export function useEditorStore() {
       setNodeWidth,
       setNodeHeight,
       setNodeDimensions,
+      commitNodeDimensions,
       resetNodeAspectRatio,
       setNodePosition,
+      commitNodePosition,
       setNodeName,
       toggleNodeVisibility,
       toggleNodeLock,
       deleteNode,
       setSelectedNodeId,
       setKeepAspectRatio,
+      createCutContour,
+      centerCutContour,
+      updateCutContour,
+      updateCutContourStrokeWidth,
+      applyCutContourChanges,
+      deleteCutContour,
+      setPreviewNode,
       setArtboardDimensions,
       triggerArchitecturalRebuild,
       removeToast,
@@ -653,6 +1141,7 @@ export function useEditorStore() {
     doc,
     selectedNodeId,
     selectedNode,
+    previewNode,
     keepAspectRatio,
     isVectorizing,
     vectorizePreset,

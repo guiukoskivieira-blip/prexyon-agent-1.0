@@ -14,6 +14,7 @@ export const App: React.FC = () => {
     doc,
     selectedNodeId,
     selectedNode,
+    previewNode,
     keepAspectRatio,
     isVectorizing,
     vectorizePreset,
@@ -80,6 +81,7 @@ export const App: React.FC = () => {
           <CanvasViewport
             doc={doc}
             selectedNodeId={selectedNodeId}
+            previewNode={previewNode}
             zoom={zoom}
             comparisonMode={comparisonMode}
             overlayOpacity={overlayOpacity}
@@ -95,6 +97,7 @@ export const App: React.FC = () => {
             doc={doc}
             selectedNodeId={selectedNodeId}
             selectedNode={selectedNode}
+            previewNode={previewNode}
             keepAspectRatio={keepAspectRatio}
             isVectorizing={isVectorizing}
             vectorizePreset={vectorizePreset}
@@ -105,9 +108,19 @@ export const App: React.FC = () => {
             onSetOverlayOpacity={actions.setOverlayOpacity}
             onSelectNode={actions.setSelectedNodeId}
             onVectorizeNode={actions.vectorizeRasterNode}
+            onCreateCutContour={actions.createCutContour}
+            onUpdateCutContour={actions.updateCutContour}
+            onUpdateCutContourStrokeWidth={actions.updateCutContourStrokeWidth}
+            onDeleteCutContour={actions.deleteCutContour}
+            onSetPreviewNode={actions.setPreviewNode}
+            onApplyCutContourChanges={actions.applyCutContourChanges}
+            onCenterCutContour={actions.centerCutContour}
             onUpdateWidth={actions.setNodeWidth}
             onUpdateHeight={actions.setNodeHeight}
             onUpdatePosition={actions.setNodePosition}
+            onCommitDimensions={actions.commitNodeDimensions}
+            onCommitPosition={actions.commitNodePosition}
+            onSetArtboardDimensions={actions.setArtboardDimensions}
             onUpdateName={actions.setNodeName}
             onResetAspectRatio={actions.resetNodeAspectRatio}
             onToggleVisibility={actions.toggleNodeVisibility}

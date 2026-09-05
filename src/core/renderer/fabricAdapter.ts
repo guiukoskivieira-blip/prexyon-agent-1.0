@@ -10,7 +10,7 @@
  */
 
 import * as fabric from 'fabric';
-import { PrexyonDocument, RasterNode, VectorGroupNode, VectorPathNode } from '../pdm/types';
+import { PrexyonDocument, RasterNode, VectorGroupNode, VectorPathNode, CutContourNode, DocumentNode } from '../pdm/types';
 import { mmToPx, pxToMm, roundPrecision } from '../pdm/units';
 
 export interface NodeTransformPayload {
@@ -43,7 +43,6 @@ export class FabricAdapter {
   private isInternalSyncing: boolean = false;
   private isDisposed: boolean = false;
   private currentDoc: PrexyonDocument | null = null;
-  private currentSelectedNodeId: string | null = null;
 
   constructor(canvas: fabric.Canvas, callbacks: FabricAdapterCallbacks) {
     this.canvas = canvas;
@@ -78,15 +77,38 @@ export class FabricAdapter {
       const nodeId = (target as unknown as { pdmNodeId?: string })?.pdmNodeId;
       if (!nodeId) return;
 
+      const currentDocNode = this.currentDoc?.nodes[nodeId];
+      if (!currentDocNode) return;
+
       const leftPx = target.left ?? 0;
       const topPx = target.top ?? 0;
-      const widthPx = target.getScaledWidth();
-      const heightPx = target.getScaledHeight();
 
       const posX_mm = roundPrecision(pxToMm(leftPx), 2);
       const posY_mm = roundPrecision(pxToMm(topPx), 2);
-      const width_mm = roundPrecision(pxToMm(widthPx), 2);
-      const height_mm = roundPrecision(pxToMm(heightPx), 2);
+
+      let width_mm: number;
+      let height_mm: number;
+
+      if (currentDocNode.type === 'cut_contour') {
+        const cutNode = currentDocNode as CutContourNode;
+        const scaleX = target.scaleX ?? 1;
+        const scaleY = target.scaleY ?? 1;
+        const isScaled = Math.abs(scaleX - 1) > 0.001 || Math.abs(scaleY - 1) > 0.001;
+
+        if (isScaled) {
+          width_mm = roundPrecision(cutNode.physicalWidth_mm * scaleX, 2);
+          height_mm = roundPrecision(cutNode.physicalHeight_mm * scaleY, 2);
+          target.set({ scaleX: 1, scaleY: 1 });
+        } else {
+          width_mm = cutNode.physicalWidth_mm;
+          height_mm = cutNode.physicalHeight_mm;
+        }
+      } else {
+        const widthPx = target.getScaledWidth();
+        const heightPx = target.getScaledHeight();
+        width_mm = roundPrecision(pxToMm(widthPx), 2);
+        height_mm = roundPrecision(pxToMm(heightPx), 2);
+      }
 
       this.callbacks.onNodeTransformed({
         nodeId,
@@ -104,12 +126,12 @@ export class FabricAdapter {
     doc: PrexyonDocument,
     selectedNodeId: string | null,
     comparisonMode: 'default' | 'overlay' | 'vector_only' | 'raster_only' = 'default',
-    overlayOpacity: number = 0.6
+    overlayOpacity: number = 0.6,
+    previewNode?: DocumentNode | null
   ): void {
     if (this.isDisposed) return;
 
     this.currentDoc = doc;
-    this.currentSelectedNodeId = selectedNodeId;
     this.isInternalSyncing = true;
 
     try {
@@ -131,15 +153,17 @@ export class FabricAdapter {
         }
       }
 
-      // 2. Atualiza ou cria cada nó raiz presente no PDM
+      // 2. Atualiza ou cria cada nó raiz presente no PDM (substituindo pelo previewNode se for o alvo)
       for (const nodeId of doc.rootNodeIds) {
-        const node = doc.nodes[nodeId];
+        const node = previewNode && previewNode.id === nodeId ? previewNode : doc.nodes[nodeId];
         if (!node) continue;
 
         if (node.type === 'raster_image') {
           this.syncRasterNode(node as RasterNode, comparisonMode);
         } else if (node.type === 'group') {
           this.syncVectorGroupNode(node as VectorGroupNode, doc, comparisonMode, overlayOpacity);
+        } else if (node.type === 'cut_contour') {
+          this.syncCutContourNode(node as CutContourNode);
         }
       }
 
@@ -172,12 +196,8 @@ export class FabricAdapter {
   ): void {
     const existingObj = this.objectMap.get(node.id) as fabric.FabricImage | undefined;
 
-    const isVisible =
-      comparisonMode === 'vector_only'
-        ? false
-        : comparisonMode === 'raster_only' || comparisonMode === 'overlay'
-        ? true
-        : node.visible;
+    const comparisonAllowsRaster = comparisonMode !== 'vector_only';
+    const isVisible = node.visible && comparisonAllowsRaster;
 
     const targetWidthPx = mmToPx(node.physicalWidth_mm);
     const targetHeightPx = mmToPx(node.physicalHeight_mm);
@@ -219,57 +239,42 @@ export class FabricAdapter {
     this.pendingLoads.set(node.id, loadToken);
 
     const imgElement = new Image();
+    imgElement.crossOrigin = 'anonymous';
+
     let isHandled = false;
 
     const handleImageReady = () => {
-      // Previne execução dupla (ex: se img.complete for true E onload disparar em seguida)
       if (isHandled) return;
       isHandled = true;
 
-      // Validação de cancelamento lógico: se o adapter foi descartado ou o loadToken foi invalidado
-      if (this.isDisposed) return;
-      if (this.pendingLoads.get(node.id) !== loadToken) {
+      // Se este token foi superado por um load mais recente ou cancelado, descarta
+      if (this.pendingLoads.get(node.id) !== loadToken || this.isDisposed) {
         return;
       }
       this.pendingLoads.delete(node.id);
 
-      // Validação de permanência no documento PDM
-      if (!this.currentDoc || !this.currentDoc.nodes[node.id]) {
-        return;
+      // Se já houver um objeto instanciado no objectMap (concorrência), remove antes
+      const prev = this.objectMap.get(node.id);
+      if (prev) {
+        this.canvas.remove(prev);
+        this.objectMap.delete(node.id);
       }
 
-      const latestNode = this.currentDoc.nodes[node.id] as RasterNode;
-      if (latestNode.type !== 'raster_image') {
-        return;
-      }
+      const naturalWidth = imgElement.naturalWidth || node.naturalWidth || 100;
+      const naturalHeight = imgElement.naturalHeight || node.naturalHeight || 100;
 
-      // Se o objeto foi criado por outra sincronização enquanto carregava, atualiza-o
-      const alreadyCreated = this.objectMap.get(latestNode.id) as fabric.FabricImage | undefined;
-      if (alreadyCreated) {
-        this.syncRasterNode(latestNode, comparisonMode);
-        return;
-      }
-
-      const currentTargetWidthPx = mmToPx(latestNode.physicalWidth_mm);
-      const currentTargetHeightPx = mmToPx(latestNode.physicalHeight_mm);
-      const currentLeftPx = mmToPx(latestNode.position_mm.x);
-      const currentTopPx = mmToPx(latestNode.position_mm.y);
-
-      const naturalWidth = imgElement.naturalWidth || latestNode.naturalWidth || 100;
-      const naturalHeight = imgElement.naturalHeight || latestNode.naturalHeight || 100;
-
-      const scaleX = currentTargetWidthPx / naturalWidth;
-      const scaleY = currentTargetHeightPx / naturalHeight;
+      const scaleX = targetWidthPx / naturalWidth;
+      const scaleY = targetHeightPx / naturalHeight;
 
       const fabricImg = new fabric.FabricImage(imgElement, {
-        left: currentLeftPx,
-        top: currentTopPx,
+        left: leftPx,
+        top: topPx,
         scaleX,
         scaleY,
         visible: isVisible,
-        selectable: !latestNode.locked && isVisible,
-        evented: !latestNode.locked && isVisible,
-        opacity: latestNode.opacity ?? 1.0,
+        selectable: !node.locked && isVisible,
+        evented: !node.locked && isVisible,
+        opacity: node.opacity ?? 1.0,
         cornerColor: '#6366f1',
         cornerStrokeColor: '#ffffff',
         borderColor: '#6366f1',
@@ -278,22 +283,16 @@ export class FabricAdapter {
         padding: 2,
       });
 
-      (fabricImg as unknown as { pdmNodeId: string }).pdmNodeId = latestNode.id;
+      (fabricImg as unknown as { pdmNodeId: string }).pdmNodeId = node.id;
       fabricImg.setCoords();
 
-      this.objectMap.set(latestNode.id, fabricImg);
+      this.objectMap.set(node.id, fabricImg);
       this.canvas.add(fabricImg);
 
-      // Reconcilia para garantir que não há duplicatas no canvas
+      // Re-aplica z-index se houver prancheta
       if (this.currentDoc) {
         this.reconcileCanvasObjects(this.currentDoc);
       }
-
-      // Se este nó estiver selecionado no PDM, ativa o objeto no canvas imediatamente
-      if (this.currentSelectedNodeId === latestNode.id) {
-        this.canvas.setActiveObject(fabricImg);
-      }
-
       this.canvas.requestRenderAll();
     };
 
@@ -321,12 +320,8 @@ export class FabricAdapter {
   ): void {
     const existingObj = this.objectMap.get(groupNode.id) as fabric.Group | undefined;
 
-    const isVisible =
-      comparisonMode === 'raster_only'
-        ? false
-        : comparisonMode === 'vector_only' || comparisonMode === 'overlay'
-        ? true
-        : groupNode.visible;
+    const comparisonAllowsVector = comparisonMode !== 'raster_only';
+    const isVisible = groupNode.visible && comparisonAllowsVector;
 
     const effectiveOpacity =
       comparisonMode === 'overlay' ? overlayOpacity : groupNode.opacity;
@@ -398,6 +393,116 @@ export class FabricAdapter {
       this.objectMap.set(groupNode.id, fabricGroup);
       this.canvas.add(fabricGroup);
     }
+  }
+
+  private syncCutContourNode(node: CutContourNode): void {
+    const existingObj = this.objectMap.get(node.id);
+
+    if (node.contours.length === 0) {
+      if (existingObj) {
+        this.canvas.remove(existingObj);
+        this.objectMap.delete(node.id);
+      }
+      return;
+    }
+
+    const strokeWidthPx = Math.max(0.5, mmToPx(node.strokeWidth_mm || 0.3));
+    const currentSignature = `${node.offset_mm}_${node.joinStyle}_${node.includeInnerContours}_${node.strokeWidth_mm}_${node.physicalWidth_mm}_${node.physicalHeight_mm}_${node.contours.length}_${node.strokeColor}`;
+
+    const leftPx = mmToPx(node.position_mm.x);
+    const topPx = mmToPx(node.position_mm.y);
+
+    // Se o objeto já existir e a assinatura de geometria não tiver mudado (apenas translação/visibilidade/trava)
+    if (
+      existingObj &&
+      (existingObj as unknown as { contourSignature?: string }).contourSignature === currentSignature
+    ) {
+      existingObj.set({
+        left: leftPx,
+        top: topPx,
+        visible: node.visible,
+        selectable: !node.locked && node.visible,
+        evented: !node.locked && node.visible,
+        opacity: node.opacity ?? 1.0,
+      });
+      existingObj.setCoords();
+      return;
+    }
+
+    // Se a geometria mudou, recria o objeto Fabric
+    if (existingObj) {
+      this.canvas.remove(existingObj);
+      this.objectMap.delete(node.id);
+    }
+
+    const fabricPaths: fabric.Path[] = [];
+    const originX_mm = node.position_mm.x;
+    const originY_mm = node.position_mm.y;
+
+    for (const contour of node.contours) {
+      if (contour.points_mm.length < 3) continue;
+
+      // Monta comandos SVG Path locais relativos à posição do nó
+      const d =
+        contour.points_mm
+          .map(
+            (pt, idx) =>
+              `${idx === 0 ? 'M' : 'L'} ${mmToPx(pt.x - originX_mm)} ${mmToPx(pt.y - originY_mm)}`
+          )
+          .join(' ') + ' Z';
+
+      try {
+        const pathObj = new fabric.Path(d, {
+          fill: '',
+          stroke: node.strokeColor || '#ec4899',
+          strokeWidth: strokeWidthPx,
+          strokeUniform: true,
+          strokeLineCap: 'round',
+          strokeLineJoin: 'round',
+          originX: 'left',
+          originY: 'top',
+        });
+        fabricPaths.push(pathObj);
+      } catch (err) {
+        console.warn('Erro ao criar Path do contorno de corte:', err);
+      }
+    }
+
+    if (fabricPaths.length === 0) return;
+
+    let fabricObj: fabric.FabricObject;
+
+    if (fabricPaths.length === 1) {
+      fabricObj = fabricPaths[0];
+    } else {
+      fabricObj = new fabric.Group(fabricPaths, {
+        originX: 'left',
+        originY: 'top',
+      });
+    }
+
+    fabricObj.set({
+      left: leftPx,
+      top: topPx,
+      visible: node.visible,
+      selectable: !node.locked && node.visible,
+      evented: !node.locked && node.visible,
+      opacity: node.opacity ?? 1.0,
+      cornerColor: '#ec4899',
+      cornerStrokeColor: '#ffffff',
+      borderColor: '#ec4899',
+      cornerSize: 8,
+      transparentCorners: false,
+      padding: 2,
+    });
+
+    (fabricObj as unknown as { pdmNodeId: string; contourSignature: string }).pdmNodeId = node.id;
+    (fabricObj as unknown as { pdmNodeId: string; contourSignature: string }).contourSignature =
+      currentSignature;
+    fabricObj.setCoords();
+
+    this.objectMap.set(node.id, fabricObj);
+    this.canvas.add(fabricObj);
   }
 
   /**

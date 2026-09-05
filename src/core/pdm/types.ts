@@ -117,17 +117,56 @@ export interface VectorGroupNode extends BaseNode {
   };
 }
 
-export interface CutContourNodeStub extends BaseNode {
+export type JoinStyle = 'round' | 'miter' | 'square' | 'bevel';
+
+export interface ContourPolygon {
+  /** Lista ordenada de pontos (X, Y) do contorno em milímetros na prancheta */
+  points_mm: Array<{ x: number; y: number }>;
+  /** Indica se o polígono representa um furo/região interna */
+  isHole?: boolean;
+}
+
+export interface CutContourNode extends BaseNode {
   type: 'cut_contour';
+  /** ID do VectorGroupNode que originou esta faca */
   sourceNodeId: string;
+  /** Distância física do offset externo em milímetros */
   offset_mm: number;
+  /** Estilo dos cantos gerados no offset */
+  joinStyle: JoinStyle;
+  /** Se true, inclui contornos e furos internos. Se false (default), gera somente o contorno exterior */
+  includeInnerContours: boolean;
+  /** Conjunto de anéis poligonais fechados que compõem a linha de corte */
+  contours: ContourPolygon[];
+  /** Cor técnica de visualização do traço da faca (ex: '#E6007E' / '#ec4899' magenta) */
+  strokeColor: string;
+  /** Espessura nominal do traço da faca em milímetros (0.05 a 2.00 mm) */
+  strokeWidth_mm: number;
+  /** Largura delimitadora total da faca em milímetros */
+  physicalWidth_mm: number;
+  /** Altura delimitadora total da faca em milímetros */
+  physicalHeight_mm: number;
+  /** Proporção de aspecto da faca */
+  aspectRatio: number;
+  /** Papel técnico de produção gráfica */
+  productionRole: 'cut';
+  /** Metadados adicionais */
+  metadata?: {
+    totalPoints?: number;
+    contourCount?: number;
+    calculatedAt?: string;
+    manualScaleApplied?: boolean;
+    manualPositionApplied?: boolean;
+    relativeOffsetX_mm?: number;
+    relativeOffsetY_mm?: number;
+  };
 }
 
 export type DocumentNode =
   | RasterNode
   | VectorPathNode
   | VectorGroupNode
-  | CutContourNodeStub;
+  | CutContourNode;
 
 export interface PrexyonDocument {
   /** Versão do schema do documento */
