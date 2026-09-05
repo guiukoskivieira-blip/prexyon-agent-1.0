@@ -1,50 +1,62 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as fabric from 'fabric';
-import { ArtboardConfig } from '@/types/viewport';
+import { PrexyonDocument } from '@/core/pdm/types';
+import { mmToPx, pxToMm, roundPrecision } from '@/core/pdm/units';
+import { FabricAdapter, NodeTransformPayload } from '@/core/renderer/fabricAdapter';
+import { Upload } from 'lucide-react';
 
 interface CanvasViewportProps {
-  artboard: ArtboardConfig;
+  doc: PrexyonDocument;
+  selectedNodeId: string | null;
   zoom: number;
   onZoomChange: (newZoom: number) => void;
   onCursorMove: (cursorMm: { x: number; y: number } | null) => void;
-  canvasRefCallback?: (canvas: fabric.Canvas | null) => void;
+  onSelectNode: (nodeId: string | null) => void;
+  onNodeTransformed: (payload: NodeTransformPayload) => void;
+  onImportFile: (file: File) => void;
 }
 
-// 1 polegada = 25.4 mm. Padrão web = 96 DPI.
-const MM_TO_PX = 96 / 25.4; // ~3.779527559 pixels por mm
-
 export const CanvasViewport: React.FC<CanvasViewportProps> = ({
-  artboard,
+  doc,
+  selectedNodeId,
   zoom,
   onZoomChange,
   onCursorMove,
-  canvasRefCallback,
+  onSelectNode,
+  onNodeTransformed,
+  onImportFile,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasElementRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
+  const fabricAdapterRef = useRef<FabricAdapter | null>(null);
   const artboardRectRef = useRef<fabric.Rect | null>(null);
+  const [isDragOver, setIsDragOver] = React.useState(false);
 
-  // Dimensões da prancheta em pixels na tela
-  const artboardWidthPx = artboard.widthMm * MM_TO_PX;
-  const artboardHeightPx = artboard.heightMm * MM_TO_PX;
+  // Armazena callbacks e props em refs para desacoplar totalmente do ciclo de vida do canvas
+  const callbacksRef = useRef({
+    onZoomChange,
+    onCursorMove,
+    onSelectNode,
+    onNodeTransformed,
+  });
 
-  // Função para centralizar a prancheta no container
-  const centerArtboard = useCallback((canvas: fabric.Canvas, containerWidth: number, containerHeight: number) => {
-    const vpt = canvas.viewportTransform;
-    if (!vpt) return;
+  useEffect(() => {
+    callbacksRef.current = {
+      onZoomChange,
+      onCursorMove,
+      onSelectNode,
+      onNodeTransformed,
+    };
+    if (fabricAdapterRef.current) {
+      fabricAdapterRef.current.setCallbacks({
+        onSelectNode,
+        onNodeTransformed,
+      });
+    }
+  }, [onZoomChange, onCursorMove, onSelectNode, onNodeTransformed]);
 
-    // Calcula a posição centralizada
-    const panX = (containerWidth - artboardWidthPx) / 2;
-    const panY = (containerHeight - artboardHeightPx) / 2;
-
-    // Define zoom padrão 1.0 e centraliza
-    canvas.setViewportTransform([1, 0, 0, 1, panX, panY]);
-    onZoomChange(1.0);
-    canvas.requestRenderAll();
-  }, [artboardWidthPx, artboardHeightPx, onZoomChange]);
-
-  // Inicialização do Fabric.js Canvas
+  // 1. Inicialização do Fabric.js Canvas — EXECUTA EXATAMENTE UMA VEZ NO MOUNT
   useEffect(() => {
     if (!canvasElementRef.current || !containerRef.current) return;
 
@@ -55,24 +67,32 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const canvas = new fabric.Canvas(canvasElementRef.current, {
       width,
       height,
-      backgroundColor: '#0c0e14', // Fundo escuro do ambiente de trabalho
-      selection: false,           // Desativa seleção múltipla nesta etapa
+      backgroundColor: '#0c0e14',
+      selection: true,
       preserveObjectStacking: true,
       renderOnAddRemove: true,
     });
 
     fabricCanvasRef.current = canvas;
-    if (canvasRefCallback) canvasRefCallback(canvas);
+
+    // Instancia o FabricAdapter desacoplado
+    const adapter = new FabricAdapter(canvas, {
+      onSelectNode: (nodeId) => callbacksRef.current.onSelectNode(nodeId),
+      onNodeTransformed: (payload) => callbacksRef.current.onNodeTransformed(payload),
+    });
+    fabricAdapterRef.current = adapter;
 
     // Criação do Retângulo Visual da Prancheta (Artboard)
-    // Este retângulo é um objeto de fundo não-selecionável
+    const initialWidthPx = mmToPx(doc.dimensions.width_mm);
+    const initialHeightPx = mmToPx(doc.dimensions.height_mm);
+
     const artboardRect = new fabric.Rect({
       left: 0,
       top: 0,
-      width: artboardWidthPx,
-      height: artboardHeightPx,
-      fill: artboard.backgroundColor,
-      stroke: '#3b82f6', // Borda sutil azul indicando o limite da prancheta
+      width: initialWidthPx,
+      height: initialHeightPx,
+      fill: '#ffffff',
+      stroke: '#3b82f6',
       strokeWidth: 1,
       selectable: false,
       evented: false,
@@ -88,8 +108,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     canvas.add(artboardRect);
     canvas.sendObjectToBack(artboardRect);
 
-    // Centraliza inicialmente
-    centerArtboard(canvas, width, height);
+    // Centraliza a prancheta no container
+    const panX = (width - initialWidthPx) / 2;
+    const panY = (height - initialHeightPx) / 2;
+    canvas.setViewportTransform([1, 0, 0, 1, panX, panY]);
+    callbacksRef.current.onZoomChange(1.0);
+    canvas.requestRenderAll();
 
     // --- Controle de Pan e Zoom ---
     let isDragging = false;
@@ -99,7 +123,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const handleMouseDown = (opt: fabric.TEvent<fabric.TPointerEvent>) => {
       const evt = opt.e;
       const mouseEvt = evt as MouseEvent;
-      // Pan com botão do meio (botão 1), botão direito (botão 2) ou Alt + botão esquerdo (botão 0)
       if (mouseEvt.altKey || mouseEvt.button === 1 || mouseEvt.button === 2) {
         isDragging = true;
         canvas.selection = false;
@@ -111,11 +134,11 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const handleMouseMove = (opt: fabric.TEvent<fabric.TPointerEvent>) => {
       const evt = opt.e;
 
-      // Telemetria do cursor em milímetros relativos à prancheta
+      // Telemetria do cursor em milímetros relativos à prancheta (0,0)
       const pointer = canvas.getScenePoint(evt);
-      const mmX = pointer.x / MM_TO_PX;
-      const mmY = pointer.y / MM_TO_PX;
-      onCursorMove({ x: mmX, y: mmY });
+      const mmX = roundPrecision(pxToMm(pointer.x), 1);
+      const mmY = roundPrecision(pxToMm(pointer.y), 1);
+      callbacksRef.current.onCursorMove({ x: mmX, y: mmY });
 
       // Execução do Pan
       if (isDragging) {
@@ -134,6 +157,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     const handleMouseUp = () => {
       if (isDragging) {
         canvas.setViewportTransform(canvas.viewportTransform!);
+        canvas.selection = true;
         isDragging = false;
       }
     };
@@ -147,14 +171,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       const zoomFactor = 0.999 ** evt.deltaY;
       let newZoom = currentZoom * zoomFactor;
 
-      // Clamping do zoom entre 10% e 2000%
       if (newZoom > 20) newZoom = 20;
       if (newZoom < 0.1) newZoom = 0.1;
 
-      // Zoom centralizado na posição do ponteiro
       const point = new fabric.Point(evt.offsetX, evt.offsetY);
       canvas.zoomToPoint(point, newZoom);
-      onZoomChange(newZoom);
+      callbacksRef.current.onZoomChange(newZoom);
     };
 
     canvas.on('mouse:down', handleMouseDown);
@@ -162,7 +184,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     canvas.on('mouse:up', handleMouseUp);
     canvas.on('mouse:wheel', handleWheel);
 
-    // Ajuste responsivo de tamanho do canvas
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width: newWidth, height: newHeight } = entry.contentRect;
@@ -175,6 +196,9 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     resizeObserver.observe(container);
 
+    // Primeira sincronização com o documento PDM
+    adapter.syncWithDocument(doc, selectedNodeId);
+
     return () => {
       resizeObserver.disconnect();
       canvas.off('mouse:down', handleMouseDown);
@@ -183,11 +207,38 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       canvas.off('mouse:wheel', handleWheel);
       canvas.dispose();
       fabricCanvasRef.current = null;
-      if (canvasRefCallback) canvasRefCallback(null);
+      fabricAdapterRef.current = null;
+      artboardRectRef.current = null;
     };
-  }, [artboardWidthPx, artboardHeightPx, artboard.backgroundColor, centerArtboard, onCursorMove, onZoomChange, canvasRefCallback]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Sincroniza o zoom quando alterado via Header/Botões externos
+  // 2. Atualização das Dimensões da Prancheta (sem recriar o canvas)
+  useEffect(() => {
+    const artboardRect = artboardRectRef.current;
+    const canvas = fabricCanvasRef.current;
+    if (!artboardRect || !canvas) return;
+
+    const widthPx = mmToPx(doc.dimensions.width_mm);
+    const heightPx = mmToPx(doc.dimensions.height_mm);
+
+    artboardRect.set({
+      width: widthPx,
+      height: heightPx,
+    });
+    artboardRect.setCoords();
+    canvas.sendObjectToBack(artboardRect);
+    canvas.requestRenderAll();
+  }, [doc.dimensions.width_mm, doc.dimensions.height_mm]);
+
+  // 3. Sincroniza nós do PDM com o Fabric sempre que doc ou selectedNodeId mudar
+  useEffect(() => {
+    if (fabricAdapterRef.current) {
+      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId);
+    }
+  }, [doc, selectedNodeId]);
+
+  // 4. Sincroniza o zoom quando alterado via botões externos do Header
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas || !containerRef.current) return;
@@ -203,19 +254,50 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     }
   }, [zoom]);
 
+  // Suporte a Drag and Drop de arquivos PNG/JPG
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      onImportFile(file);
+    }
+  };
+
   return (
     <div 
       ref={containerRef} 
       className="flex-1 h-full relative overflow-hidden bg-surface-base cursor-crosshair"
       onMouseLeave={() => onCursorMove(null)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <canvas ref={canvasElementRef} />
 
-      {/* Artboard Center Helper Badge */}
+      {/* Artboard Helper Badge */}
       <div className="absolute top-3 left-3 bg-surface-subtle/80 backdrop-blur border border-surface-border px-2.5 py-1 rounded text-[11px] text-slate-400 font-mono pointer-events-none select-none flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-blue-500" />
-        <span>Prancheta: {artboard.widthMm} × {artboard.heightMm} mm</span>
+        <span>Prancheta: {doc.dimensions.width_mm} × {doc.dimensions.height_mm} mm</span>
       </div>
+
+      {/* Drag & Drop Visual Overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-indigo-950/70 backdrop-blur-sm border-2 border-dashed border-indigo-400 flex flex-col items-center justify-center text-white pointer-events-none z-30 animate-in fade-in">
+          <Upload className="w-10 h-10 text-indigo-300 animate-bounce mb-2" />
+          <span className="text-sm font-semibold">Solte o arquivo PNG ou JPG aqui</span>
+          <span className="text-xs text-indigo-200 mt-1">O objeto será centralizado e registrado no PDM</span>
+        </div>
+      )}
     </div>
   );
 };

@@ -5,18 +5,21 @@ import { StatusBar } from '@/components/layout/StatusBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PropertiesPanel } from '@/components/properties/PropertiesPanel';
 import { CanvasViewport } from '@/components/canvas/CanvasViewport';
-import { ArtboardConfig } from '@/types/viewport';
+import { ToastContainer } from '@/components/ui/ToastContainer';
+import { useEditorStore } from '@/store/editorStore';
+import { NodeTransformPayload } from '@/core/renderer/fabricAdapter';
 
 export const App: React.FC = () => {
-  // Configuração inicial da prancheta física nominal (100 x 100 mm)
-  const [artboard] = useState<ArtboardConfig>({
-    widthMm: 100,
-    heightMm: 100,
-    dpi: 300,
-    backgroundColor: '#ffffff',
-  });
+  const {
+    doc,
+    selectedNodeId,
+    selectedNode,
+    keepAspectRatio,
+    toasts,
+    actions,
+  } = useEditorStore();
 
-  // Estado do Viewport (Zoom e Cursor)
+  // Estado de Visualização do Viewport (Zoom e Coordenadas do Cursor)
   const [zoom, setZoom] = useState<number>(1.0);
   const [cursorMm, setCursorMm] = useState<{ x: number; y: number } | null>(null);
 
@@ -33,37 +36,74 @@ export const App: React.FC = () => {
     setZoom(1.0);
   }, []);
 
+  // Callback de manipulação de nós no canvas
+  const handleNodeTransformed = useCallback(
+    (payload: NodeTransformPayload) => {
+      // Atualiza posição no PDM
+      actions.setNodePosition(payload.nodeId, payload.position_mm);
+      // Atualiza dimensões físicas no PDM
+      actions.setNodeWidth(payload.nodeId, payload.physicalWidth_mm);
+    },
+    [actions]
+  );
+
   return (
-    <AppLayout
-      header={
-        <Header
-          zoom={zoom}
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          onResetZoom={handleResetZoom}
-          artboardWidthMm={artboard.widthMm}
-          artboardHeightMm={artboard.heightMm}
-        />
-      }
-      chatPanel={<ChatPanel />}
-      canvasViewport={
-        <CanvasViewport
-          artboard={artboard}
-          zoom={zoom}
-          onZoomChange={setZoom}
-          onCursorMove={setCursorMm}
-        />
-      }
-      propertiesPanel={<PropertiesPanel artboard={artboard} />}
-      statusBar={
-        <StatusBar
-          zoom={zoom}
-          cursorMm={cursorMm}
-          artboardWidthMm={artboard.widthMm}
-          artboardHeightMm={artboard.heightMm}
-        />
-      }
-    />
+    <>
+      <AppLayout
+        header={
+          <Header
+            zoom={zoom}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onResetZoom={handleResetZoom}
+            artboardWidthMm={doc.dimensions.width_mm}
+            artboardHeightMm={doc.dimensions.height_mm}
+            onImportFile={actions.importRasterFile}
+            onArchitecturalTest={actions.triggerArchitecturalRebuild}
+          />
+        }
+        chatPanel={<ChatPanel />}
+        canvasViewport={
+          <CanvasViewport
+            doc={doc}
+            selectedNodeId={selectedNodeId}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            onCursorMove={setCursorMm}
+            onSelectNode={actions.setSelectedNodeId}
+            onNodeTransformed={handleNodeTransformed}
+            onImportFile={actions.importRasterFile}
+          />
+        }
+        propertiesPanel={
+          <PropertiesPanel
+            doc={doc}
+            selectedNodeId={selectedNodeId}
+            selectedNode={selectedNode}
+            keepAspectRatio={keepAspectRatio}
+            onSelectNode={actions.setSelectedNodeId}
+            onUpdateWidth={actions.setNodeWidth}
+            onUpdateHeight={actions.setNodeHeight}
+            onUpdatePosition={actions.setNodePosition}
+            onUpdateName={actions.setNodeName}
+            onToggleVisibility={actions.toggleNodeVisibility}
+            onToggleLock={actions.toggleNodeLock}
+            onDeleteNode={actions.deleteNode}
+            onToggleKeepAspectRatio={() => actions.setKeepAspectRatio(!keepAspectRatio)}
+          />
+        }
+        statusBar={
+          <StatusBar
+            zoom={zoom}
+            cursorMm={cursorMm}
+            artboardWidthMm={doc.dimensions.width_mm}
+            artboardHeightMm={doc.dimensions.height_mm}
+          />
+        }
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={actions.removeToast} />
+    </>
   );
 };
 

@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { 
   ZoomIn, 
   ZoomOut, 
   Maximize2, 
   Layers, 
-  Compass
+  Compass,
+  Upload,
+  RefreshCw
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -14,6 +16,8 @@ interface HeaderProps {
   onResetZoom: () => void;
   artboardWidthMm: number;
   artboardHeightMm: number;
+  onImportFile: (file: File) => void;
+  onArchitecturalTest: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,7 +27,20 @@ export const Header: React.FC<HeaderProps> = ({
   onResetZoom,
   artboardWidthMm,
   artboardHeightMm,
+  onImportFile,
+  onArchitecturalTest,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onImportFile(file);
+      // Reseta o input para permitir selecionar o mesmo arquivo novamente
+      e.target.value = '';
+    }
+  };
+
   return (
     <header className="h-14 bg-surface-panel border-b border-surface-border px-4 flex items-center justify-between select-none">
       {/* Brand & Project Info */}
@@ -44,8 +61,35 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
+      {/* Main Actions: Import File & Architectural Rebuild Test */}
+      <div className="flex items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".png, .jpg, .jpeg, image/png, image/jpeg"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition-all shadow-md shadow-indigo-600/20 active:scale-[0.98]"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          <span>Importar Arquivo (PNG/JPG)</span>
+        </button>
+
+        <button
+          onClick={onArchitecturalTest}
+          title="Prova Arquitetural: Serializa o PDM para JSON e reconstrói o documento do zero"
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Testar Reconstrução PDM</span>
+        </button>
+      </div>
+
       {/* Artboard Dimensions Badge */}
-      <div className="hidden md:flex items-center gap-2 bg-surface-subtle border border-surface-border px-3 py-1.5 rounded-md text-xs">
+      <div className="hidden lg:flex items-center gap-2 bg-surface-subtle border border-surface-border px-3 py-1.5 rounded-md text-xs">
         <Compass className="w-3.5 h-3.5 text-slate-400" />
         <span className="text-slate-400">Prancheta:</span>
         <span className="font-mono font-semibold text-slate-200">
@@ -87,10 +131,10 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* System Phase Status Badge */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Etapa 1: Estrutura Base</span>
+      <div className="hidden md:flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium">
+          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+          <span>Etapa 2: PDM + Escala Física</span>
         </div>
       </div>
     </header>
