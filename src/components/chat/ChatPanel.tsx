@@ -23,13 +23,144 @@ export interface ChatPanelProps {
   onApplyDoc?: (newDoc: PrexyonDocument, description?: string) => void;
   selectedNodeId?: string | null;
   addToast?: (type: 'success' | 'error' | 'info', text: string) => void;
+  isProd?: boolean;
 }
+
+/**
+ * Renderizador seguro e nativo de Markdown básico para o chat.
+ * Suporta negrito (**texto**), itálico (*texto*), código inline (`code`), blocos de código e listas.
+ */
+export const FormattedChatMessage: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null;
+
+  // Divide blocos de código delimitados por ```
+  const codeBlockParts = text.split(/(```[\s\S]*?```)/g);
+
+  const renderInline = (inlineText: string): React.ReactNode[] => {
+    const tokens: React.ReactNode[] = [];
+    const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(inlineText)) !== null) {
+      if (match.index > lastIndex) {
+        tokens.push(inlineText.substring(lastIndex, match.index));
+      }
+      const token = match[0];
+      if (token.startsWith('`') && token.endsWith('`')) {
+        tokens.push(
+          <code
+            key={`c-${match.index}`}
+            className="px-1 py-0.5 rounded bg-surface-base border border-surface-border text-indigo-300 font-mono text-[11px]"
+          >
+            {token.slice(1, -1)}
+          </code>
+        );
+      } else if (token.startsWith('**') && token.endsWith('**')) {
+        tokens.push(
+          <strong key={`b-${match.index}`} className="font-semibold text-slate-100">
+            {token.slice(2, -2)}
+          </strong>
+        );
+      } else if (token.startsWith('*') && token.endsWith('*')) {
+        tokens.push(
+          <em key={`i-${match.index}`} className="italic text-slate-300">
+            {token.slice(1, -1)}
+          </em>
+        );
+      }
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < inlineText.length) {
+      tokens.push(inlineText.substring(lastIndex));
+    }
+
+    return tokens.length > 0 ? tokens : [inlineText];
+  };
+
+  return (
+    <div className="space-y-1.5 text-xs leading-relaxed break-words">
+      {codeBlockParts.map((part, idx) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const content = part.slice(3, -3).replace(/^[a-z0-9_-]+\n/i, '');
+          return (
+            <pre
+              key={idx}
+              className="p-2 rounded bg-surface-base border border-surface-border font-mono text-[11px] text-indigo-300 overflow-x-auto my-1.5"
+            >
+              <code>{content.trim()}</code>
+            </pre>
+          );
+        }
+
+        const lines = part.split('\n');
+        return (
+          <React.Fragment key={idx}>
+            {lines.map((line, lIdx) => {
+              const trimmed = line.trim();
+              if (!trimmed) {
+                return lIdx < lines.length - 1 ? <div key={lIdx} className="h-1" /> : null;
+              }
+
+              // Cabeçalhos (### / ## / #)
+              if (trimmed.startsWith('### ')) {
+                return (
+                  <h4 key={lIdx} className="font-semibold text-slate-200 text-xs mt-1">
+                    {renderInline(trimmed.slice(4))}
+                  </h4>
+                );
+              }
+              if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+                return (
+                  <h3 key={lIdx} className="font-bold text-slate-100 text-xs mt-1">
+                    {renderInline(trimmed.replace(/^#+\s/, ''))}
+                  </h3>
+                );
+              }
+
+              // Listas com marcadores (- ou *)
+              if (/^[-*]\s/.test(trimmed)) {
+                return (
+                  <div key={lIdx} className="flex items-start gap-1.5 pl-1.5 text-slate-200">
+                    <span className="text-indigo-400 text-[10px] leading-relaxed">•</span>
+                    <span>{renderInline(trimmed.slice(2))}</span>
+                  </div>
+                );
+              }
+
+              // Listas numeradas (1. / 2.)
+              const numMatch = trimmed.match(/^(\d+)\.\s(.*)$/);
+              if (numMatch) {
+                return (
+                  <div key={lIdx} className="flex items-start gap-1.5 pl-1.5 text-slate-200">
+                    <span className="font-mono text-[10px] text-indigo-400 leading-relaxed">
+                      {numMatch[1]}.
+                    </span>
+                    <span>{renderInline(numMatch[2])}</span>
+                  </div>
+                );
+              }
+
+              return (
+                <p key={lIdx} className="text-slate-200">
+                  {renderInline(line)}
+                </p>
+              );
+            })}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+};
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
   doc,
   onApplyDoc,
   selectedNodeId,
   addToast,
+  isProd = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD),
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -170,10 +301,23 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             AGENTE DE ARTE-FINAL
           </span>
         </div>
-        <span className="text-[10px] px-2 py-0.5 rounded bg-surface-subtle text-slate-400 border border-surface-border font-mono flex items-center gap-1">
-          <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
-          Mock V1
-        </span>
+        {isProd ? (
+          <span
+            data-testid="agent-status-badge"
+            className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-500/30 font-medium flex items-center gap-1.5 shadow-sm"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            IA Online
+          </span>
+        ) : (
+          <span
+            data-testid="agent-status-badge"
+            className="text-[10px] px-2 py-0.5 rounded bg-surface-subtle text-slate-400 border border-surface-border font-mono flex items-center gap-1"
+          >
+            <Sparkles className="w-2.5 h-2.5 text-slate-400" />
+            Mock
+          </span>
+        )}
       </div>
 
       {/* Message Stream Area */}
@@ -222,7 +366,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   <span>Prexyon Agent</span>
                 </div>
               )}
-              <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+              {msg.role === 'user' ? (
+                <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+              ) : (
+                <FormattedChatMessage text={msg.text} />
+              )}
             </div>
           </div>
         ))}

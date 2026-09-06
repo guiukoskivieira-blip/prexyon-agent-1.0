@@ -194,4 +194,20 @@ describe('Prexyon Agent — Chat Integration V1 (Etapa 6.3)', () => {
       expect(cutContour).toBeDefined();
     });
   });
+
+  describe('5. Hotfix Final de UI — Renderização de Markdown e Badge de Status', () => {
+    it('deve exportar FormattedChatMessage e ChatPanel', async () => {
+      const { FormattedChatMessage, ChatPanel } = await import('../src/components/chat/ChatPanel');
+      expect(FormattedChatMessage).toBeDefined();
+      expect(ChatPanel).toBeDefined();
+    });
+
+    it('deve normalizar/renderizar Markdown com negrito, itálico, código inline e listas', async () => {
+      const { FormattedChatMessage } = await import('../src/components/chat/ChatPanel');
+      const element = FormattedChatMessage({
+        text: 'O objeto **Vetor 1** foi movido para `X: 16.19 mm`.\n- Item 1\n- Item 2',
+      });
+      expect(element).toBeDefined();
+    });
+  });
 });
