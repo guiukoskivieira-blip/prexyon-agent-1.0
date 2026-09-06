@@ -64,6 +64,7 @@ export const App: React.FC = () => {
     if (typeof window !== 'undefined') {
       (window as any).__PREXYON_DOC__ = doc;
       (window as any).__PREXYON_ACTIONS__ = actions;
+      (window as any).__PREXYON_EXECUTE_TOOL__ = actions.executeAgentTool;
     }
   }, [doc, actions]);
 

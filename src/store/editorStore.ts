@@ -48,6 +48,7 @@ import {
 import { validateRasterFile, validatePhysicalDimension } from '../core/pdm/validation';
 import { calculateInitialRasterDimensions } from '../core/pdm/policy';
 import { roundPrecision } from '../core/pdm/units';
+import { executeTool } from '../core/tools';
 import { vtracerBridge } from '../core/vectorizer/vtracerBridge';
 import { VTracerOptions } from '../core/vectorizer/vtracerWasmCore';
 import {
@@ -1550,6 +1551,24 @@ export function useEditorStore() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const canRedo = useMemo(() => historyManagerRef.current.canRedo, [historyVersion]);
 
+  /**
+   * Executa uma ferramenta determinística via Tool Registry conectada à UI e ao Histórico de Undo/Redo.
+   */
+  const executeAgentTool = useCallback(
+    async (name: string, args: any) => {
+      const result = await executeTool(name, args, {
+        doc,
+        historyManager: historyManagerRef.current,
+        setDoc: (newDoc) => {
+          setDoc(newDoc);
+          setHistoryVersion((v) => v + 1);
+        },
+      });
+      return result;
+    },
+    [doc]
+  );
+
   const actions = useMemo(
     () => ({
       importRasterFile,
@@ -1596,6 +1615,7 @@ export function useEditorStore() {
       addToast,
       removeToast,
       setDoc,
+      executeAgentTool,
     }),
     [
       importRasterFile,
@@ -1642,6 +1662,7 @@ export function useEditorStore() {
       addToast,
       removeToast,
       setDoc,
+      executeAgentTool,
     ]
   );
 
