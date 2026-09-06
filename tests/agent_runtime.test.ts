@@ -359,5 +359,238 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
       expect(exportFn.parameters.properties.dpi.description).toContain('72, 150, 300');
     });
   });
+
+  describe('8. Hotfix 6.3.02B — Fidelidade de Thought Signatures e rawPart (Gemini Thinking Mode)', () => {
+    it('deve preservar fielmente uma single function call via rawPart sem duplicações artificiais', () => {
+      const provider = new GeminiProvider();
+      const originalPart = {
+        functionCall: {
+          name: 'move_node',
+          args: { nodeId: 'vector_group_1', x_mm: 35, y_mm: 45 },
+        },
+        thoughtSignature: 'EisBCgkvZGVmYXVsdF9hcGk6bW92ZV9ub2RlEg4KA3gtbRACM241GAEqDAoDeS1tEAQzNDUYAQ==',
+      };
+
+      const messages: any[] = [
+        { role: 'user', content: 'Mova o nó para 35, 45' },
+        {
+          role: 'model',
+          functionCalls: [
+            {
+              name: 'move_node',
+              args: { nodeId: 'vector_group_1', x_mm: 35, y_mm: 45 },
+              rawPart: originalPart,
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          functionResponses: [
+            {
+              name: 'move_node',
+              response: { success: true, message: 'Node movido com sucesso' },
+            },
+          ],
+        },
+      ];
+
+      const formatted = provider.formatContents(messages);
+
+      expect(formatted.length).toBe(3);
+      expect(formatted[0].role).toBe('user');
+      expect(formatted[1].role).toBe('model');
+      expect(formatted[2].role).toBe('user');
+
+      // Verifica que a part original foi preservada estritamente sem campos duplicados ou inventados
+      const modelPart = formatted[1].parts[0];
+      expect(modelPart).toEqual(originalPart);
+      expect(modelPart.thoughtSignature).toBe(originalPart.thoughtSignature);
+      expect((modelPart as any).thought_signature).toBeUndefined(); // Não deve inventar alias snake_case
+      expect((modelPart.functionCall as any).thoughtSignature).toBeUndefined(); // Não deve duplicar dentro de functionCall
+    });
+
+    it('deve suportar parallel function calls com assinatura presente somente na primeira part', () => {
+      const provider = new GeminiProvider();
+      const originalPart1 = {
+        functionCall: {
+          name: 'create_cut_contour',
+          args: { sourceNodeId: 'vector_group_1', offset_mm: 2 },
+        },
+        thoughtSignature: 'sig_only_on_first_part_123',
+      };
+      const originalPart2 = {
+        functionCall: {
+          name: 'validate_production',
+          args: {},
+        },
+      };
+
+      const messages: any[] = [
+        {
+          role: 'model',
+          functionCalls: [
+            {
+              name: 'create_cut_contour',
+              args: { sourceNodeId: 'vector_group_1', offset_mm: 2 },
+              rawPart: originalPart1,
+            },
+            {
+              name: 'validate_production',
+              args: {},
+              rawPart: originalPart2,
+            },
+          ],
+        },
+      ];
+
+      const formatted = provider.formatContents(messages);
+      expect(formatted.length).toBe(1);
+      expect(formatted[0].parts.length).toBe(2);
+
+      // Part 1 mantém a assinatura
+      expect(formatted[0].parts[0]).toEqual(originalPart1);
+      expect(formatted[0].parts[0].thoughtSignature).toBe('sig_only_on_first_part_123');
+
+      // Part 2 NÃO é forçada a ter assinatura
+      expect(formatted[0].parts[1]).toEqual(originalPart2);
+      expect((formatted[0].parts[1] as any).thoughtSignature).toBeUndefined();
+    });
+
+    it('deve realizar round-trip preservando estruturalmente a part original recebida do endpoint', async () => {
+      const provider = new GeminiProvider();
+      const mockRawPart = {
+        functionCall: {
+          name: 'move_node',
+          args: { nodeId: 'vector_group_1', x_mm: 50, y_mm: 60 },
+        },
+        thoughtSignature: 'canonical_raw_part_signature',
+      };
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                finishReason: 'STOP',
+                content: {
+                  role: 'model',
+                  parts: [
+                    {
+                      text: 'Raciocínio interno não visível ao usuário...',
+                      thought: true,
+                    },
+                    mockRawPart,
+                  ],
+                },
+              },
+            ],
+          }),
+        } as any;
+      }) as any;
+
+      try {
+        const response = await provider.generateResponse(
+          [{ role: 'user', content: 'Mova para 50, 60' }],
+          [],
+          { apiKey: 'fake_key_for_test' }
+        );
+
+        // 1. O texto de thinking foi ignorado
+        expect(response.text).toBeUndefined();
+        expect(response.functionCalls?.length).toBe(1);
+
+        // 2. rawPart foi preservado intacto
+        expect(response.functionCalls?.[0].rawPart).toEqual(mockRawPart);
+
+        // 3. Ao formatar para o próximo turno, reenvia a rawPart original
+        const nextContents = provider.formatContents([
+          { role: 'user', content: 'Mova para 50, 60' },
+          { role: 'model', functionCalls: response.functionCalls },
+        ]);
+
+        expect(nextContents[1].parts[0]).toEqual(mockRawPart);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('deve processar normalmente chamadas sem assinatura quando permitidas pelo modelo', () => {
+      const provider = new GeminiProvider();
+
+      const messages: any[] = [
+        {
+          role: 'model',
+          functionCalls: [
+            {
+              name: 'move_node',
+              args: { nodeId: 'vector_group_1', x_mm: 10, y_mm: 10 },
+            },
+          ],
+        },
+      ];
+
+      const formatted = provider.formatContents(messages);
+      const modelPart = formatted[0].parts[0];
+      expect(modelPart).toEqual({
+        functionCall: {
+          name: 'move_node',
+          args: { nodeId: 'vector_group_1', x_mm: 10, y_mm: 10 },
+        },
+      });
+      expect(modelPart.thoughtSignature).toBeUndefined();
+    });
+
+    it('deve manter rawPart intacto durante o ciclo completo de multi-turn no AgentRuntime', async () => {
+      const canonicalPart = {
+        functionCall: {
+          name: 'move_node',
+          args: { nodeId: 'vector_group_1', x_mm: 30, y_mm: 40 },
+        },
+        thoughtSignature: 'roundtrip_canonical_sig_999',
+      };
+      let capturedNextMessages: any[] = [];
+
+      const providerWithThinking = {
+        name: 'gemini_thinking_mock',
+        iteration: 0,
+        generateResponse: async (messages: any[]) => {
+          providerWithThinking.iteration++;
+          if (providerWithThinking.iteration === 1) {
+            return {
+              functionCalls: [
+                {
+                  name: 'move_node',
+                  args: { nodeId: 'vector_group_1', x_mm: 30, y_mm: 40 },
+                  rawPart: canonicalPart,
+                },
+              ],
+            };
+          } else {
+            capturedNextMessages = messages;
+            return {
+              text: 'Nó movido para X: 30 e Y: 40.',
+              finishReason: 'STOP',
+            };
+          }
+        },
+      };
+
+      const runtime = new AgentRuntime(providerWithThinking as any, defaultToolRegistry);
+      const doc = createTestDoc();
+      const result = await runtime.run('Mova o nó', doc);
+
+      expect(result.success).toBe(true);
+      expect(result.reply).toBe('Nó movido para X: 30 e Y: 40.');
+      expect(result.executedTools.length).toBe(1);
+
+      // Turno 2 deve conter a rawPart canônica no histórico
+      const modelMsg = capturedNextMessages.find((m: any) => m.role === 'model');
+      expect(modelMsg).toBeDefined();
+      expect(modelMsg.functionCalls[0].rawPart).toEqual(canonicalPart);
+    });
+  });
 });
 

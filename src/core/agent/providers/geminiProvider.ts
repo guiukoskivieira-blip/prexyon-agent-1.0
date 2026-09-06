@@ -132,9 +132,10 @@ export class GeminiProvider implements AIProvider {
   }
 
   /**
-   * Converte mensagens do chat para o formato de contents da API Gemini.
+   * Converte mensagens do chat para o formato de contents da API Gemini,
+   * preservando a estrutura original da part recebida (rawPart) como fonte canônica.
    */
-  private formatContents(messages: ChatMessage[]): any[] {
+  public formatContents(messages: ChatMessage[]): any[] {
     const contents: any[] = [];
 
     for (const msg of messages) {
@@ -146,12 +147,18 @@ export class GeminiProvider implements AIProvider {
 
       if (msg.functionCalls && msg.functionCalls.length > 0) {
         for (const call of msg.functionCalls) {
-          parts.push({
-            functionCall: {
-              name: call.name,
-              args: call.args || {},
-            },
-          });
+          if (call.rawPart) {
+            // Reenvia a part exatamente como recebida da API Gemini (sem modificações ou duplicações)
+            parts.push(call.rawPart);
+          } else {
+            // Fallback para chamadas construídas programaticamente
+            parts.push({
+              functionCall: {
+                name: call.name,
+                args: call.args || {},
+              },
+            });
+          }
         }
       }
 
@@ -239,13 +246,15 @@ export class GeminiProvider implements AIProvider {
     const functionCalls: any[] = [];
 
     for (const part of candidate.content.parts || []) {
-      if (part.text) {
+      // Ignora partes de raciocínio interno (thought: true) para não vazar ao usuário final
+      if (part.text && !part.thought) {
         textContent += (textContent ? '\n' : '') + part.text;
       }
       if (part.functionCall) {
         functionCalls.push({
           name: part.functionCall.name,
           args: part.functionCall.args || {},
+          rawPart: part,
         });
       }
     }

@@ -13,6 +13,7 @@ export interface FunctionCallRequest {
   id?: string;
   name: string;
   args: Record<string, any>;
+  rawPart?: Record<string, any>;
 }
 
 export interface FunctionCallResponse {
