@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   AgentRuntime,
   MockAIProvider,
@@ -300,4 +300,64 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
       expect(provider.name).toBe('gemini');
     });
   });
+
+  describe('7. Hotfix 01 — Compatibilidade Estrita de Schemas com a API Gemini', () => {
+    it('deve converter perfeitamente todas as 8 ferramentas para o formato oficial do Gemini', () => {
+      const provider = new GeminiProvider();
+      const allTools = defaultToolRegistry.getToolDeclarations();
+      expect(allTools.length).toBe(8);
+
+      const formatted = provider.formatTools(allTools);
+      expect(formatted.length).toBe(1);
+      expect(formatted[0].functionDeclarations.length).toBe(8);
+
+      const validGeminiTypes = ['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'];
+
+      for (const fn of formatted[0].functionDeclarations) {
+        expect(fn.name).toBeTruthy();
+        expect(fn.description).toBeTruthy();
+        expect(fn.parameters.type).toBe('OBJECT');
+
+        const properties = fn.parameters.properties;
+        for (const [propName, propDef] of Object.entries<any>(properties)) {
+          // 1. Tipo deve ser um dos tipos válidos aceitos pelo Gemini (em maiúsculo)
+          expect(validGeminiTypes).toContain(propDef.type);
+
+          // 2. Regra estrita do Gemini: "enum" SÓ pode existir se type === 'STRING'
+          if (propDef.enum !== undefined) {
+            expect(propDef.type).toBe('STRING');
+            expect(Array.isArray(propDef.enum)).toBe(true);
+            for (const val of propDef.enum) {
+              expect(typeof val).toBe('string');
+            }
+          }
+        }
+      }
+    });
+
+    it('deve formatar export_production sem enum em propriedades numéricas (ex: dpi)', () => {
+      const provider = new GeminiProvider();
+      const allTools = defaultToolRegistry.getToolDeclarations();
+      const exportTool = allTools.find((t) => t.name === 'export_production');
+      expect(exportTool).toBeDefined();
+
+      const formatted = provider.formatTools([exportTool!]);
+      const exportFn = formatted[0].functionDeclarations[0];
+
+      expect(exportFn.name).toBe('export_production');
+      expect(exportFn.parameters.properties.format.type).toBe('STRING');
+      expect(exportFn.parameters.properties.format.enum).toEqual([
+        'png',
+        'svg',
+        'cut-svg',
+        'manifest-json',
+      ]);
+
+      // dpi deve ser NUMBER sem enum no schema protobuf do Gemini, com valores na descrição
+      expect(exportFn.parameters.properties.dpi.type).toBe('NUMBER');
+      expect(exportFn.parameters.properties.dpi.enum).toBeUndefined();
+      expect(exportFn.parameters.properties.dpi.description).toContain('72, 150, 300');
+    });
+  });
 });
+

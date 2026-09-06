@@ -39,7 +39,7 @@ export class GeminiProvider implements AIProvider {
   /**
    * Converte declarações de ferramentas para o formato oficial da API Gemini.
    */
-  private formatTools(tools: ToolDeclaration[]): any[] {
+  public formatTools(tools: ToolDeclaration[]): any[] {
     if (!tools || tools.length === 0) return [];
 
     const functionDeclarations = tools.map((t) => ({
@@ -47,24 +47,88 @@ export class GeminiProvider implements AIProvider {
       description: t.description,
       parameters: {
         type: 'OBJECT',
-        properties: this.convertProperties(t.parameters.properties),
-        required: t.parameters.required || [],
+        properties: this.convertProperties(t.parameters?.properties || {}),
+        required: t.parameters?.required || [],
       },
     }));
 
     return [{ functionDeclarations }];
   }
 
-  private convertProperties(props: Record<string, any>): Record<string, any> {
+  public convertProperties(props: Record<string, any>): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [key, prop] of Object.entries(props)) {
-      result[key] = {
-        type: (prop.type || 'string').toUpperCase(),
-        description: prop.description,
-        ...(prop.enum ? { enum: prop.enum } : {}),
-      };
+      result[key] = this.convertPropertySchema(prop);
     }
     return result;
+  }
+
+  public convertPropertySchema(prop: Record<string, any>): Record<string, any> {
+    if (!prop || typeof prop !== 'object') {
+      return { type: 'STRING' };
+    }
+
+    const rawType = (prop.type || 'string').toLowerCase();
+    let geminiType = 'STRING';
+
+    switch (rawType) {
+      case 'number':
+        geminiType = 'NUMBER';
+        break;
+      case 'integer':
+        geminiType = 'INTEGER';
+        break;
+      case 'boolean':
+        geminiType = 'BOOLEAN';
+        break;
+      case 'array':
+        geminiType = 'ARRAY';
+        break;
+      case 'object':
+        geminiType = 'OBJECT';
+        break;
+      case 'string':
+      default:
+        geminiType = 'STRING';
+        break;
+    }
+
+    const converted: Record<string, any> = {
+      type: geminiType,
+    };
+
+    if (prop.description) {
+      converted.description = prop.description;
+    }
+
+    // Regra estrita da API Gemini:
+    // "enum" só é suportado quando type === 'STRING' e todos os valores devem ser strings (repeated string enum).
+    if (prop.enum && Array.isArray(prop.enum) && prop.enum.length > 0) {
+      if (geminiType === 'STRING') {
+        converted.enum = prop.enum.map((val: any) => String(val));
+      } else {
+        // Para tipos numéricos ou outros, não incluir "enum" no schema protobuf do Gemini;
+        // documentar os valores permitidos na descrição para que o LLM use os valores corretos.
+        const enumValuesStr = prop.enum.join(', ');
+        const suffix = `(Valores permitidos: ${enumValuesStr})`;
+        converted.description = converted.description
+          ? `${converted.description} ${suffix}`
+          : suffix;
+      }
+    }
+
+    if (geminiType === 'ARRAY' && prop.items) {
+      converted.items = this.convertPropertySchema(prop.items);
+    }
+
+    if (geminiType === 'OBJECT' && prop.properties) {
+      converted.properties = this.convertProperties(prop.properties);
+      if (prop.required) {
+        converted.required = prop.required;
+      }
+    }
+
+    return converted;
   }
 
   /**
