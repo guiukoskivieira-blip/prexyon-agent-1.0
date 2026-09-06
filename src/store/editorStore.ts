@@ -20,17 +20,30 @@ import {
   DocumentNode,
   DocumentDimensions,
   Position_mm,
+  BleedSettings,
+  SafetyMarginSettings,
+  TechnicalGuideNode,
+  TechnicalGuideOrientation,
+  TechnicalGuideRole,
 } from '../core/pdm/types';
 import {
   createDocument,
   createRasterNode,
   createCutContourNode,
+  createTechnicalGuideNode,
+  updateTechnicalGuideNode,
+  duplicateTechnicalGuideNode,
   updateNodeMetadata,
   updateNodeDimensions,
   updateNodePosition,
+  updateArtboardDimensions,
   centerCutContourOnSource,
+  updateBleedSettings,
+  updateSafetyMarginSettings,
+  DEFAULT_PRODUCTION_SETTINGS,
   serializeDocument,
   deserializeDocument,
+  findCutContourForSourceNode,
 } from '../core/pdm/document';
 import { validateRasterFile, validatePhysicalDimension } from '../core/pdm/validation';
 import { calculateInitialRasterDimensions } from '../core/pdm/policy';
@@ -43,6 +56,7 @@ import {
   getVTracerOptionsForPreset,
 } from '../core/vectorizer/presets';
 import { generateCutContour } from '../core/geometry/cutContourEngine';
+import { validateProductionDocument, ValidationReport } from '../core/validation';
 import {
   calculateArrowMovement,
   isTextInputFocused,
@@ -60,9 +74,14 @@ import {
   UpdateCutContourCommand,
   UpdateCutContourStrokeWidthCommand,
   DeleteCutContourCommand,
+  CreateTechnicalGuideCommand,
+  UpdateTechnicalGuideCommand,
+  DeleteTechnicalGuideCommand,
   ToggleVisibilityCommand,
   SetArtboardDimensionsCommand,
   CenterCutContourCommand,
+  UpdateBleedSettingsCommand,
+  UpdateSafetyMarginCommand,
 } from '../core/commands/types';
 
 export interface ToastMessage {
@@ -86,6 +105,16 @@ export function useEditorStore() {
   const [overlayOpacity, setOverlayOpacity] = useState<number>(0.6);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
+  // Relatório de validação de produção gráfica (única fonte de verdade)
+  const [validationReport, setValidationReport] = useState<ValidationReport>(() =>
+    validateProductionDocument(doc)
+  );
+
+  // Auto-validação reativa: atualiza automaticamente sempre que o PDM mudar
+  useEffect(() => {
+    setValidationReport(validateProductionDocument(doc));
+  }, [doc]);
+
   // Sessão de repetição de tecla de seta para agrupamento no histórico
   const arrowMoveSessionRef = useRef<{
     nodeId: string;
@@ -108,6 +137,26 @@ export function useEditorStore() {
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // Validação manual explícita (invocada pelo botão Verificar ou pelo futuro Agente)
+  const runProductionValidation = useCallback((customDoc?: PrexyonDocument): ValidationReport => {
+    const targetDoc = customDoc ?? doc;
+    const report = validateProductionDocument(targetDoc);
+    setValidationReport(report);
+
+    const statusMsg =
+      report.status === 'ready'
+        ? 'Validação de produção: Pronto para produção!'
+        : report.status === 'attention'
+        ? `Validação de produção: ${report.warningCount} ${report.warningCount === 1 ? 'aviso' : 'avisos'} requerem atenção.`
+        : `Validação de produção: Bloqueado (${report.errorCount} ${report.errorCount === 1 ? 'erro crítico' : 'erros críticos'}).`;
+
+    addToast(
+      report.status === 'blocked' ? 'error' : report.status === 'attention' ? 'info' : 'success',
+      statusMsg
+    );
+    return report;
+  }, [doc, addToast]);
 
   /**
    * Importa e valida um arquivo raster (PNG/JPG) com suporte a Undo/Redo.
@@ -470,7 +519,32 @@ export function useEditorStore() {
   const transformNode = useCallback(
     (nodeId: string, nextPosition: Position_mm, nextWidth: number, nextHeight: number) => {
       const prevNode = doc.nodes[nodeId];
-      if (!prevNode || (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour')) return;
+      if (!prevNode) return;
+
+      if (prevNode.type === 'technical_guide') {
+        const guide = prevNode as TechnicalGuideNode;
+        const maxDim = guide.orientation === 'vertical' ? doc.dimensions.width_mm : doc.dimensions.height_mm;
+        const rawPos = guide.orientation === 'vertical' ? nextPosition.x : nextPosition.y;
+        const clampedPos = roundPrecision(Math.max(0, Math.min(maxDim, rawPos)), 2);
+        if (guide.guidePosition_mm === clampedPos) return;
+
+        const nextGuide: TechnicalGuideNode = {
+          ...guide,
+          guidePosition_mm: clampedPos,
+          position_mm: {
+            x: guide.orientation === 'vertical' ? clampedPos : 0,
+            y: guide.orientation === 'horizontal' ? clampedPos : 0,
+          },
+        };
+
+        const cmd = new UpdateTechnicalGuideCommand(nodeId, guide, nextGuide);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+        return;
+      }
+
+      if (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour') return;
       const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode;
 
       const prev = {
@@ -623,23 +697,49 @@ export function useEditorStore() {
       const nodeToDelete = doc.nodes[nodeId];
       if (!nodeToDelete) return;
 
+      if (nodeToDelete.type === 'technical_guide') {
+        const cmd = new DeleteTechnicalGuideCommand(nodeToDelete as TechnicalGuideNode);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        if (selectedNodeId === nodeId) {
+          setSelectedNodeId(null);
+        }
+        setHistoryVersion((v) => v + 1);
+        addToast('info', `${nodeToDelete.name} removida.`);
+        return;
+      }
+
+      if (nodeToDelete.type === 'cut_contour') {
+        const cmd = new DeleteCutContourCommand(nodeToDelete as CutContourNode);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        if (selectedNodeId === nodeId) {
+          setSelectedNodeId(null);
+        }
+        setHistoryVersion((v) => v + 1);
+        addToast('info', `${nodeToDelete.name} removida.`);
+        return;
+      }
+
       let childNodes: DocumentNode[] = [];
+      let dependentCut: CutContourNode | undefined;
       if (nodeToDelete.type === 'group') {
         const group = nodeToDelete as VectorGroupNode;
         childNodes = group.childrenIds
           .map((id) => doc.nodes[id])
           .filter((n): n is VectorPathNode => !!n);
+        dependentCut = findCutContourForSourceNode(doc, nodeId);
       }
 
-      const cmd = new DeleteNodeCommand(nodeToDelete, childNodes);
+      const cmd = new DeleteNodeCommand(nodeToDelete, childNodes, dependentCut);
       const res = historyManagerRef.current.executeCommand(cmd, doc);
       setDoc(res.doc);
-      if (selectedNodeId === nodeId) {
-        setSelectedNodeId(res.selectedNodeId ?? null);
+      if (selectedNodeId === nodeId || (dependentCut && selectedNodeId === dependentCut.id)) {
+        setSelectedNodeId(null);
       }
       setHistoryVersion((v) => v + 1);
 
-      addToast('info', 'Objeto removido do documento.');
+      addToast('info', `${nodeToDelete.name} removido do documento.`);
     },
     [doc, selectedNodeId, addToast]
   );
@@ -880,23 +980,23 @@ export function useEditorStore() {
   );
 
   /**
-   * Modifica as dimensões nominais da prancheta com registro no histórico (Undo/Redo).
+   * Modifica as dimensões nominais da prancheta com suporte a atualização imediata (isLive) ou registro no histórico (Undo/Redo).
    */
   const setArtboardDimensions = useCallback(
-    (dims: Partial<DocumentDimensions>) => {
+    (dims: Partial<DocumentDimensions>, isLive: boolean = false) => {
       const prevDims = { ...doc.dimensions };
       const width_mm = dims.width_mm !== undefined ? dims.width_mm : prevDims.width_mm;
       const height_mm = dims.height_mm !== undefined ? dims.height_mm : prevDims.height_mm;
 
       const valW = validatePhysicalDimension(width_mm, 'Largura da prancheta', 5000);
       if (!valW.valid || width_mm < 10) {
-        addToast('error', valW.error || 'Largura da prancheta deve ser de pelo menos 10 mm.');
+        if (!isLive) addToast('error', valW.error || 'Largura da prancheta deve ser de pelo menos 10 mm.');
         return;
       }
 
       const valH = validatePhysicalDimension(height_mm, 'Altura da prancheta', 5000);
       if (!valH.valid || height_mm < 10) {
-        addToast('error', valH.error || 'Altura da prancheta deve ser de pelo menos 10 mm.');
+        if (!isLive) addToast('error', valH.error || 'Altura da prancheta deve ser de pelo menos 10 mm.');
         return;
       }
 
@@ -910,8 +1010,35 @@ export function useEditorStore() {
         return;
       }
 
+      if (isLive) {
+        setDoc((prev) => updateArtboardDimensions(prev, nextDims));
+        return;
+      }
+
       const cmd = new SetArtboardDimensionsCommand(prevDims, nextDims);
       const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+      addToast('info', `Prancheta redimensionada para ${nextDims.width_mm} × ${nextDims.height_mm} mm.`);
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Confirma a alteração final de dimensões da prancheta em 1 comando atômico no histórico.
+   */
+  const commitArtboardDimensions = useCallback(
+    (prevDims: DocumentDimensions, nextDims: DocumentDimensions) => {
+      const valW = validatePhysicalDimension(nextDims.width_mm, 'Largura da prancheta', 5000);
+      if (!valW.valid || nextDims.width_mm < 10) return;
+      const valH = validatePhysicalDimension(nextDims.height_mm, 'Altura da prancheta', 5000);
+      if (!valH.valid || nextDims.height_mm < 10) return;
+
+      if (prevDims.width_mm === nextDims.width_mm && prevDims.height_mm === nextDims.height_mm) return;
+
+      const cmd = new SetArtboardDimensionsCommand(prevDims, nextDims);
+      const docWithPrev = updateArtboardDimensions(doc, prevDims);
+      const res = historyManagerRef.current.executeCommand(cmd, docWithPrev);
       setDoc(res.doc);
       setHistoryVersion((v) => v + 1);
       addToast('info', `Prancheta redimensionada para ${nextDims.width_mm} × ${nextDims.height_mm} mm.`);
@@ -943,6 +1070,282 @@ export function useEditorStore() {
   );
 
   /**
+   * Atualiza as configurações de sangria (Bleed) com suporte a reatividade imediata (isLive) ou comando no histórico.
+   */
+  const setBleedSettings = useCallback(
+    (bleedUpdates: Partial<BleedSettings>, isLive: boolean = false) => {
+      const prevBleed = doc.productionSettings?.bleed ?? DEFAULT_PRODUCTION_SETTINGS.bleed;
+      try {
+        if (isLive) {
+          setDoc((prev) => updateBleedSettings(prev, bleedUpdates));
+          return;
+        }
+
+        const nextDoc = updateBleedSettings(doc, bleedUpdates);
+        const nextBleed = nextDoc.productionSettings!.bleed;
+        const cmd = new UpdateBleedSettingsCommand(prevBleed, nextBleed);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Configuração de sangria inválida.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Confirma a alteração final de sangria em 1 comando atômico no histórico ao término do foco/sessão.
+   */
+  const commitBleedSettings = useCallback(
+    (prevBleed: BleedSettings, nextBleed: BleedSettings) => {
+      if (JSON.stringify(prevBleed) === JSON.stringify(nextBleed)) return;
+      try {
+        const cmd = new UpdateBleedSettingsCommand(prevBleed, nextBleed);
+        const docWithPrev = updateBleedSettings(doc, prevBleed);
+        const res = historyManagerRef.current.executeCommand(cmd, docWithPrev);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao aplicar sangria.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Atualiza as configurações de margem de segurança com suporte a reatividade imediata (isLive) ou comando no histórico.
+   */
+  const setSafetyMarginSettings = useCallback(
+    (safetyUpdates: Partial<SafetyMarginSettings>, isLive: boolean = false) => {
+      const prevSafety = doc.productionSettings?.safetyMargin ?? DEFAULT_PRODUCTION_SETTINGS.safetyMargin;
+      try {
+        if (isLive) {
+          setDoc((prev) => updateSafetyMarginSettings(prev, safetyUpdates));
+          return;
+        }
+
+        const nextDoc = updateSafetyMarginSettings(doc, safetyUpdates);
+        const nextSafety = nextDoc.productionSettings!.safetyMargin;
+        const cmd = new UpdateSafetyMarginCommand(prevSafety, nextSafety);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Margem de segurança inválida.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Confirma a alteração final de margem de segurança em 1 comando atômico no histórico ao término do foco/sessão.
+   */
+  const commitSafetyMarginSettings = useCallback(
+    (prevSafety: SafetyMarginSettings, nextSafety: SafetyMarginSettings) => {
+      if (JSON.stringify(prevSafety) === JSON.stringify(nextSafety)) return;
+      try {
+        const cmd = new UpdateSafetyMarginCommand(prevSafety, nextSafety);
+        const docWithPrev = updateSafetyMarginSettings(doc, prevSafety);
+        const res = historyManagerRef.current.executeCommand(cmd, docWithPrev);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao aplicar margem de segurança.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Cria uma nova guia técnica centralizada ou na posição indicada.
+   */
+  const createTechnicalGuide = useCallback(
+    (
+      paramsOrOrientation:
+        | TechnicalGuideOrientation
+        | {
+            orientation: TechnicalGuideOrientation;
+            guidePosition_mm?: number;
+            position_mm?: number;
+            guideRole?: TechnicalGuideRole;
+            strokeColor?: string;
+            strokeWidth_mm?: number;
+          },
+      position_mm?: number,
+      guideRole: TechnicalGuideRole = 'generic'
+    ) => {
+      let orientation: TechnicalGuideOrientation;
+      let pos: number | undefined;
+      let role: TechnicalGuideRole = guideRole;
+      let strokeColor: string | undefined;
+      let strokeWidth_mm: number | undefined;
+
+      if (typeof paramsOrOrientation === 'object') {
+        orientation = paramsOrOrientation.orientation;
+        pos = paramsOrOrientation.guidePosition_mm ?? paramsOrOrientation.position_mm;
+        role = paramsOrOrientation.guideRole ?? 'generic';
+        strokeColor = paramsOrOrientation.strokeColor;
+        strokeWidth_mm = paramsOrOrientation.strokeWidth_mm;
+      } else {
+        orientation = paramsOrOrientation;
+        pos = position_mm;
+      }
+
+      const defaultPos = orientation === 'vertical'
+        ? roundPrecision(doc.dimensions.width_mm / 2, 2)
+        : roundPrecision(doc.dimensions.height_mm / 2, 2);
+
+      const finalPos = pos !== undefined ? pos : defaultPos;
+      const guideNode = createTechnicalGuideNode(
+        {
+          orientation,
+          position_mm: finalPos,
+          guideRole: role,
+          strokeColor,
+          strokeWidth_mm,
+        },
+        doc.dimensions
+      );
+
+      const cmd = new CreateTechnicalGuideCommand(guideNode);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      if (res.selectedNodeId !== undefined) {
+        setSelectedNodeId(res.selectedNodeId);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('success', `${guideNode.name} criada.`);
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Atualiza propriedades de uma guia técnica.
+   */
+  const updateTechnicalGuide = useCallback(
+    (nodeId: string, updates: Partial<TechnicalGuideNode>, isLive: boolean = false) => {
+      const prevNode = doc.nodes[nodeId];
+      if (!prevNode || prevNode.type !== 'technical_guide') return;
+
+      try {
+        if (isLive) {
+          setDoc((prev) => updateTechnicalGuideNode(prev, nodeId, updates));
+          return;
+        }
+
+        const prevGuide = prevNode as TechnicalGuideNode;
+        const nextDoc = updateTechnicalGuideNode(doc, nodeId, updates);
+        const nextGuide = nextDoc.nodes[nodeId] as TechnicalGuideNode;
+
+        const cmd = new UpdateTechnicalGuideCommand(nodeId, prevGuide, nextGuide);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao atualizar guia técnica.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Confirma a alteração de uma guia técnica em 1 comando atômico no histórico ao término da edição.
+   */
+  const commitTechnicalGuide = useCallback(
+    (nodeId: string, prevGuide: TechnicalGuideNode, nextGuide: TechnicalGuideNode) => {
+      if (
+        prevGuide.guidePosition_mm === nextGuide.guidePosition_mm &&
+        prevGuide.orientation === nextGuide.orientation &&
+        prevGuide.guideRole === nextGuide.guideRole &&
+        prevGuide.name === nextGuide.name &&
+        prevGuide.strokeWidth_mm === nextGuide.strokeWidth_mm
+      ) {
+        return;
+      }
+      try {
+        const cmd = new UpdateTechnicalGuideCommand(nodeId, prevGuide, nextGuide);
+        const docWithPrev = updateTechnicalGuideNode(doc, nodeId, prevGuide);
+        const res = historyManagerRef.current.executeCommand(cmd, docWithPrev);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao aplicar alterações na guia.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Duplica uma guia técnica existente com deslocamento inteligente (+5 mm ou -5 mm).
+   */
+  const duplicateTechnicalGuide = useCallback(
+    (nodeId: string) => {
+      const node = doc.nodes[nodeId];
+      if (!node || node.type !== 'technical_guide') return;
+
+      try {
+        const { newGuide } = duplicateTechnicalGuideNode(doc, nodeId);
+        const cmd = new CreateTechnicalGuideCommand(newGuide);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        if (res.selectedNodeId !== undefined) {
+          setSelectedNodeId(res.selectedNodeId);
+        }
+        setHistoryVersion((v) => v + 1);
+        addToast('success', `${newGuide.name} duplicada.`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao duplicar guia.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Altera a orientação da guia técnica entre Vertical e Horizontal com clamp automático.
+   */
+  const changeTechnicalGuideOrientation = useCallback(
+    (nodeId: string, newOrientation: TechnicalGuideOrientation) => {
+      const node = doc.nodes[nodeId];
+      if (!node || node.type !== 'technical_guide') return;
+
+      const prevGuide = node as TechnicalGuideNode;
+      if (prevGuide.orientation === newOrientation) return;
+
+      const maxDim = newOrientation === 'vertical' ? doc.dimensions.width_mm : doc.dimensions.height_mm;
+      const clampedPos = roundPrecision(Math.max(0, Math.min(maxDim, prevGuide.guidePosition_mm)), 2);
+
+      const nextGuide: TechnicalGuideNode = {
+        ...prevGuide,
+        orientation: newOrientation,
+        guidePosition_mm: clampedPos,
+        position_mm: {
+          x: newOrientation === 'vertical' ? clampedPos : 0,
+          y: newOrientation === 'horizontal' ? clampedPos : 0,
+        },
+      };
+
+      try {
+        const cmd = new UpdateTechnicalGuideCommand(nodeId, prevGuide, nextGuide);
+        const res = historyManagerRef.current.executeCommand(cmd, doc);
+        setDoc(res.doc);
+        setHistoryVersion((v) => v + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Falha ao alterar orientação da guia.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
    * Prova arquitetural: serializa o PDM e recarrega na memória.
    */
   const triggerArchitecturalRebuild = useCallback(() => {
@@ -964,6 +1367,17 @@ export function useEditorStore() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignora se estiver digitando em campos de formulário
       if (isTextInputFocused(e.target)) {
+        return;
+      }
+
+      // Exclusão Universal por Tecla Delete / Backspace
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!selectedNodeId) return;
+        const targetNode = doc.nodes[selectedNodeId];
+        if (!targetNode || targetNode.locked) return;
+
+        e.preventDefault();
+        deleteNode(selectedNodeId);
         return;
       }
 
@@ -1001,6 +1415,53 @@ export function useEditorStore() {
         if (!delta) return;
         e.preventDefault();
 
+        if (targetNode.type === 'technical_guide') {
+          const guide = targetNode as TechnicalGuideNode;
+          let allowedDx = 0;
+          let allowedDy = 0;
+
+          if (guide.orientation === 'vertical') {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              allowedDx = delta.dx;
+            } else {
+              return;
+            }
+          } else {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+              allowedDy = delta.dy;
+            } else {
+              return;
+            }
+          }
+
+          if (!arrowMoveSessionRef.current || arrowMoveSessionRef.current.nodeId !== selectedNodeId) {
+            arrowMoveSessionRef.current = {
+              nodeId: selectedNodeId,
+              initialPos: { ...targetNode.position_mm },
+              lastPos: { ...targetNode.position_mm },
+            };
+          }
+
+          const rawNext = applyPositionDelta(
+            arrowMoveSessionRef.current.lastPos,
+            allowedDx,
+            allowedDy
+          );
+
+          let nextPos: Position_mm;
+          if (guide.orientation === 'vertical') {
+            const clampedX = roundPrecision(Math.max(0, Math.min(doc.dimensions.width_mm, rawNext.x)), 2);
+            nextPos = { x: clampedX, y: 0 };
+          } else {
+            const clampedY = roundPrecision(Math.max(0, Math.min(doc.dimensions.height_mm, rawNext.y)), 2);
+            nextPos = { x: 0, y: clampedY };
+          }
+
+          arrowMoveSessionRef.current.lastPos = nextPos;
+          setDoc((prev) => updateNodePosition(prev, selectedNodeId, nextPos));
+          return;
+        }
+
         if (!arrowMoveSessionRef.current || arrowMoveSessionRef.current.nodeId !== selectedNodeId) {
           arrowMoveSessionRef.current = {
             nodeId: selectedNodeId,
@@ -1028,6 +1489,27 @@ export function useEditorStore() {
           arrowMoveSessionRef.current = null;
 
           if (initialPos.x !== lastPos.x || initialPos.y !== lastPos.y) {
+            const targetNode = doc.nodes[nodeId];
+            if (targetNode && targetNode.type === 'technical_guide') {
+              const guide = targetNode as TechnicalGuideNode;
+              const prevGuide = {
+                ...guide,
+                guidePosition_mm: guide.orientation === 'vertical' ? initialPos.x : initialPos.y,
+                position_mm: initialPos,
+              };
+              const nextGuide = {
+                ...guide,
+                guidePosition_mm: guide.orientation === 'vertical' ? lastPos.x : lastPos.y,
+                position_mm: lastPos,
+              };
+              const cmd = new UpdateTechnicalGuideCommand(nodeId, prevGuide, nextGuide);
+              const docWithInitial = updateTechnicalGuideNode(doc, nodeId, prevGuide);
+              const res = historyManagerRef.current.executeCommand(cmd, docWithInitial);
+              setDoc(res.doc);
+              setHistoryVersion((v) => v + 1);
+              return;
+            }
+
             const cmd = new UpdatePositionCommand(nodeId, initialPos, lastPos);
             const docWithInitialPos = {
               ...doc,
@@ -1053,7 +1535,7 @@ export function useEditorStore() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [doc, selectedNodeId, undo, redo]);
+  }, [doc, selectedNodeId, undo, redo, deleteNode]);
 
   const selectedNode = selectedNodeId ? (doc.nodes[selectedNodeId] as DocumentNode | undefined) : undefined;
   // Se o selectedNodeId atual não existir mais no documento (ex: deletado sem retorno), reseta para null
@@ -1099,8 +1581,21 @@ export function useEditorStore() {
       deleteCutContour,
       setPreviewNode,
       setArtboardDimensions,
+      commitArtboardDimensions,
+      setBleedSettings,
+      commitBleedSettings,
+      setSafetyMarginSettings,
+      commitSafetyMarginSettings,
+      createTechnicalGuide,
+      updateTechnicalGuide,
+      commitTechnicalGuide,
+      duplicateTechnicalGuide,
+      changeTechnicalGuideOrientation,
       triggerArchitecturalRebuild,
+      runProductionValidation,
+      addToast,
       removeToast,
+      setDoc,
     }),
     [
       importRasterFile,
@@ -1132,8 +1627,21 @@ export function useEditorStore() {
       deleteCutContour,
       setPreviewNode,
       setArtboardDimensions,
+      commitArtboardDimensions,
+      setBleedSettings,
+      commitBleedSettings,
+      setSafetyMarginSettings,
+      commitSafetyMarginSettings,
+      createTechnicalGuide,
+      updateTechnicalGuide,
+      commitTechnicalGuide,
+      duplicateTechnicalGuide,
+      changeTechnicalGuideOrientation,
       triggerArchitecturalRebuild,
+      runProductionValidation,
+      addToast,
       removeToast,
+      setDoc,
     ]
   );
 
@@ -1149,6 +1657,7 @@ export function useEditorStore() {
     overlayOpacity,
     canUndo,
     canRedo,
+    validationReport,
     toasts,
     actions,
   };

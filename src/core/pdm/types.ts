@@ -24,7 +24,7 @@ export interface Position_mm {
   y: number;
 }
 
-export type NodeType = 'raster_image' | 'vector_path' | 'group' | 'cut_contour';
+export type NodeType = 'raster_image' | 'vector_path' | 'group' | 'cut_contour' | 'technical_guide';
 
 export interface BaseNode {
   /** Identificador único e imutável (UUID v4) */
@@ -162,19 +162,116 @@ export interface CutContourNode extends BaseNode {
   };
 }
 
+export type TechnicalGuideOrientation = 'horizontal' | 'vertical';
+
+export type TechnicalGuideRole =
+  | 'generic'
+  | 'fold'
+  | 'crease'
+  | 'cut_reference'
+  | 'alignment';
+
+export interface TechnicalGuideNode extends BaseNode {
+  type: 'technical_guide';
+  /** Orientação da guia na prancheta */
+  orientation: TechnicalGuideOrientation;
+  /**
+   * Posição linear em milímetros ao longo do eixo correspondente da prancheta:
+   * Para 'vertical', representa a coordenada X em milímetros.
+   * Para 'horizontal', representa a coordenada Y em milímetros.
+   */
+  guidePosition_mm: number;
+  /** Papel técnico semântico da guia */
+  guideRole: TechnicalGuideRole;
+  /** Cor técnica de traço */
+  strokeColor?: string;
+  /** Espessura nominal do traço em milímetros */
+  strokeWidth_mm?: number;
+  /** Padrão de tracejado opcional */
+  dashPattern?: number[];
+  /** Papel técnico de produção gráfica */
+  productionRole: 'guide';
+  /** Metadados adicionais */
+  metadata?: {
+    createdAt?: string;
+    description?: string;
+  };
+}
+
+export interface BleedSettings {
+  /** Se a sangria está habilitada e visível */
+  enabled: boolean;
+  /** Sangria superior em milímetros */
+  top_mm: number;
+  /** Sangria direita em milímetros */
+  right_mm: number;
+  /** Sangria inferior em milímetros */
+  bottom_mm: number;
+  /** Sangria esquerda em milímetros */
+  left_mm: number;
+  /** Se os quatro lados estão vinculados com valores simétricos */
+  linked: boolean;
+}
+
+export interface SafetyMarginSettings {
+  /** Se a margem de segurança está habilitada e visível */
+  enabled: boolean;
+  /** Margem de segurança superior em milímetros */
+  top_mm: number;
+  /** Margem de segurança direita em milímetros */
+  right_mm: number;
+  /** Margem de segurança inferior em milímetros */
+  bottom_mm: number;
+  /** Margem de segurança esquerda em milímetros */
+  left_mm: number;
+  /** Se os quatro lados estão vinculados com valores simétricos */
+  linked: boolean;
+}
+
+export interface ProductionSettings {
+  /** Configuração da área de sangria (Bleed) */
+  bleed: BleedSettings;
+  /** Configuração da margem de segurança interna (Safety Margin) */
+  safetyMargin: SafetyMarginSettings;
+}
+
+export const DEFAULT_PRODUCTION_SETTINGS: ProductionSettings = {
+  bleed: {
+    enabled: false,
+    top_mm: 3,
+    right_mm: 3,
+    bottom_mm: 3,
+    left_mm: 3,
+    linked: true,
+  },
+  safetyMargin: {
+    enabled: false,
+    top_mm: 5,
+    right_mm: 5,
+    bottom_mm: 5,
+    left_mm: 5,
+    linked: true,
+  },
+};
+
 export type DocumentNode =
   | RasterNode
   | VectorPathNode
   | VectorGroupNode
-  | CutContourNode;
+  | CutContourNode
+  | TechnicalGuideNode;
 
 export interface PrexyonDocument {
   /** Versão do schema do documento */
   version: '0.2.0';
   /** ID único do documento */
   id: string;
+  /** Nome legível do documento / projeto */
+  name?: string;
   /** Dimensões físicas nominais da prancheta */
   dimensions: DocumentDimensions;
+  /** Configurações técnicas de produção gráfica (sangria, margem de segurança) */
+  productionSettings?: ProductionSettings;
   /** Dicionário de nós indexados por ID persistente */
   nodes: Record<string, DocumentNode>;
   /** Ordem de empilhamento dos nós na raiz (z-index da prancheta) */

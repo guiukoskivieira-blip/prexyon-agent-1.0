@@ -10,7 +10,15 @@
  */
 
 import * as fabric from 'fabric';
-import { PrexyonDocument, RasterNode, VectorGroupNode, VectorPathNode, CutContourNode, DocumentNode } from '../pdm/types';
+import { 
+  PrexyonDocument, 
+  RasterNode, 
+  VectorGroupNode, 
+  VectorPathNode, 
+  CutContourNode, 
+  TechnicalGuideNode, 
+  DocumentNode 
+} from '../pdm/types';
 import { mmToPx, pxToMm, roundPrecision } from '../pdm/units';
 
 export interface NodeTransformPayload {
@@ -69,6 +77,29 @@ export class FabricAdapter {
       this.callbacks.onSelectNode(null);
     });
 
+    this.canvas.on('object:moving', (e) => {
+      if (this.isInternalSyncing || this.isDisposed) return;
+      const target = e.target;
+      if (!target) return;
+
+      const nodeId = (target as unknown as { pdmNodeId?: string })?.pdmNodeId;
+      if (!nodeId || !this.currentDoc) return;
+
+      const currentDocNode = this.currentDoc.nodes[nodeId];
+      if (currentDocNode?.type === 'technical_guide') {
+        const guide = currentDocNode as TechnicalGuideNode;
+        if (guide.orientation === 'vertical') {
+          target.top = 0;
+          const maxLeft = mmToPx(this.currentDoc.dimensions.width_mm);
+          target.left = Math.max(0, Math.min(maxLeft, target.left ?? 0));
+        } else {
+          target.left = 0;
+          const maxTop = mmToPx(this.currentDoc.dimensions.height_mm);
+          target.top = Math.max(0, Math.min(maxTop, target.top ?? 0));
+        }
+      }
+    });
+
     this.canvas.on('object:modified', (e) => {
       if (this.isInternalSyncing || this.isDisposed) return;
       const target = e.target;
@@ -78,10 +109,33 @@ export class FabricAdapter {
       if (!nodeId) return;
 
       const currentDocNode = this.currentDoc?.nodes[nodeId];
-      if (!currentDocNode) return;
+      if (!currentDocNode || !this.currentDoc) return;
 
       const leftPx = target.left ?? 0;
       const topPx = target.top ?? 0;
+
+      if (currentDocNode.type === 'technical_guide') {
+        const guide = currentDocNode as TechnicalGuideNode;
+        let posX_mm: number;
+        let posY_mm: number;
+        if (guide.orientation === 'vertical') {
+          posX_mm = roundPrecision(Math.max(0, Math.min(this.currentDoc.dimensions.width_mm, pxToMm(leftPx))), 2);
+          posY_mm = 0;
+          target.set({ left: mmToPx(posX_mm), top: 0 });
+        } else {
+          posX_mm = 0;
+          posY_mm = roundPrecision(Math.max(0, Math.min(this.currentDoc.dimensions.height_mm, pxToMm(topPx))), 2);
+          target.set({ left: 0, top: mmToPx(posY_mm) });
+        }
+        target.setCoords();
+        this.callbacks.onNodeTransformed({
+          nodeId,
+          position_mm: { x: posX_mm, y: posY_mm },
+          physicalWidth_mm: 0,
+          physicalHeight_mm: 0,
+        });
+        return;
+      }
 
       const posX_mm = roundPrecision(pxToMm(leftPx), 2);
       const posY_mm = roundPrecision(pxToMm(topPx), 2);
@@ -164,6 +218,8 @@ export class FabricAdapter {
           this.syncVectorGroupNode(node as VectorGroupNode, doc, comparisonMode, overlayOpacity);
         } else if (node.type === 'cut_contour') {
           this.syncCutContourNode(node as CutContourNode);
+        } else if (node.type === 'technical_guide') {
+          this.syncTechnicalGuideNode(node as TechnicalGuideNode, doc);
         }
       }
 
@@ -503,6 +559,106 @@ export class FabricAdapter {
 
     this.objectMap.set(node.id, fabricObj);
     this.canvas.add(fabricObj);
+  }
+
+  private getGuideStyle(node: TechnicalGuideNode): {
+    stroke: string;
+    dashPattern: number[];
+  } {
+    if (node.strokeColor) {
+      return {
+        stroke: node.strokeColor,
+        dashPattern: node.dashPattern ?? [4, 4],
+      };
+    }
+    switch (node.guideRole) {
+      case 'fold':
+        return { stroke: '#f59e0b', dashPattern: [6, 4] }; // Amber/laranja
+      case 'crease':
+        return { stroke: '#8b5cf6', dashPattern: [8, 3, 2, 3] }; // Roxo/ponto-traço
+      case 'cut_reference':
+        return { stroke: '#ec4899', dashPattern: [5, 5] }; // Magenta técnico
+      case 'alignment':
+        return { stroke: '#3b82f6', dashPattern: [3, 3] }; // Azul
+      case 'generic':
+      default:
+        return { stroke: '#06b6d4', dashPattern: [4, 4] }; // Ciano discreto
+    }
+  }
+
+  private syncTechnicalGuideNode(node: TechnicalGuideNode, doc: PrexyonDocument): void {
+    const existingObj = this.objectMap.get(node.id) as fabric.Line | undefined;
+    const isVertical = node.orientation === 'vertical';
+    const style = this.getGuideStyle(node);
+    const strokeWidthPx = Math.max(1, mmToPx(node.strokeWidth_mm || 0.3));
+
+    const artboardW = mmToPx(doc.dimensions.width_mm);
+    const artboardH = mmToPx(doc.dimensions.height_mm);
+
+    const x1 = 0;
+    const y1 = 0;
+    const x2 = isVertical ? 0 : artboardW;
+    const y2 = isVertical ? artboardH : 0;
+
+    const guidePos = Number.isFinite(node.guidePosition_mm)
+      ? node.guidePosition_mm
+      : (isVertical ? node.position_mm.x : node.position_mm.y);
+
+    const leftPx = isVertical ? mmToPx(guidePos) : 0;
+    const topPx = isVertical ? 0 : mmToPx(guidePos);
+
+    if (existingObj) {
+      existingObj.set({
+        x1,
+        y1,
+        x2,
+        y2,
+        left: leftPx,
+        top: topPx,
+        stroke: style.stroke,
+        strokeWidth: strokeWidthPx,
+        strokeDashArray: style.dashPattern,
+        visible: node.visible,
+        selectable: !node.locked && node.visible,
+        evented: !node.locked && node.visible,
+        opacity: node.opacity ?? 1.0,
+        lockMovementX: !isVertical,
+        lockMovementY: isVertical,
+        hoverCursor: isVertical ? 'ew-resize' : 'ns-resize',
+      });
+      existingObj.setCoords();
+      return;
+    }
+
+    const lineObj = new fabric.Line([x1, y1, x2, y2], {
+      left: leftPx,
+      top: topPx,
+      stroke: style.stroke,
+      strokeWidth: strokeWidthPx,
+      strokeDashArray: style.dashPattern,
+      strokeUniform: true,
+      originX: 'left',
+      originY: 'top',
+      selectable: !node.locked && node.visible,
+      evented: !node.locked && node.visible,
+      visible: node.visible,
+      opacity: node.opacity ?? 1.0,
+      lockMovementX: !isVertical,
+      lockMovementY: isVertical,
+      lockScalingX: true,
+      lockScalingY: true,
+      lockRotation: true,
+      hasControls: false,
+      hasBorders: true,
+      borderColor: '#38bdf8',
+      cornerSize: 0,
+      hoverCursor: isVertical ? 'ew-resize' : 'ns-resize',
+      padding: 4, // Área de clique confortável
+    });
+
+    (lineObj as unknown as { pdmNodeId: string }).pdmNodeId = node.id;
+    this.objectMap.set(node.id, lineObj);
+    this.canvas.add(lineObj);
   }
 
   /**

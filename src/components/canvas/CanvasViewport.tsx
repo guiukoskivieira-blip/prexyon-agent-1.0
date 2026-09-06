@@ -37,6 +37,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const fabricAdapterRef = useRef<FabricAdapter | null>(null);
   const artboardRectRef = useRef<fabric.Rect | null>(null);
+  const bleedGuideRectRef = useRef<fabric.Rect | null>(null);
+  const safetyGuideRectRef = useRef<fabric.Rect | null>(null);
   const [isDragOver, setIsDragOver] = React.useState(false);
 
   // Armazena callbacks e props em refs para desacoplar totalmente do ciclo de vida do canvas
@@ -112,6 +114,58 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
     artboardRectRef.current = artboardRect;
     canvas.add(artboardRect);
+
+    // Guia de Sangria (Bleed) - tracejado magenta/rosa
+    const bleed = doc.productionSettings?.bleed;
+    const bleedTop = bleed?.enabled ? bleed.top_mm : 0;
+    const bleedRight = bleed?.enabled ? bleed.right_mm : 0;
+    const bleedBottom = bleed?.enabled ? bleed.bottom_mm : 0;
+    const bleedLeft = bleed?.enabled ? bleed.left_mm : 0;
+
+    const bleedGuideRect = new fabric.Rect({
+      left: mmToPx(-bleedLeft),
+      top: mmToPx(-bleedTop),
+      width: mmToPx(doc.dimensions.width_mm + bleedLeft + bleedRight),
+      height: mmToPx(doc.dimensions.height_mm + bleedTop + bleedBottom),
+      fill: 'transparent',
+      stroke: '#f43f5e',
+      strokeWidth: 1,
+      strokeDashArray: [4, 4],
+      selectable: false,
+      evented: false,
+      visible: !!bleed?.enabled,
+    });
+    bleedGuideRectRef.current = bleedGuideRect;
+    canvas.add(bleedGuideRect);
+
+    // Guia de Margem de Segurança (Safety) - tracejado verde
+    const safety = doc.productionSettings?.safetyMargin;
+    const safetyTop = safety?.enabled ? safety.top_mm : 0;
+    const safetyRight = safety?.enabled ? safety.right_mm : 0;
+    const safetyBottom = safety?.enabled ? safety.bottom_mm : 0;
+    const safetyLeft = safety?.enabled ? safety.left_mm : 0;
+    const safetyWidthMm = Math.max(0, doc.dimensions.width_mm - safetyLeft - safetyRight);
+    const safetyHeightMm = Math.max(0, doc.dimensions.height_mm - safetyTop - safetyBottom);
+
+    const safetyGuideRect = new fabric.Rect({
+      left: mmToPx(safetyLeft),
+      top: mmToPx(safetyTop),
+      width: mmToPx(safetyWidthMm),
+      height: mmToPx(safetyHeightMm),
+      fill: 'transparent',
+      stroke: '#10b981',
+      strokeWidth: 1,
+      strokeDashArray: [3, 3],
+      selectable: false,
+      evented: false,
+      visible: !!safety?.enabled,
+    });
+    safetyGuideRectRef.current = safetyGuideRect;
+    canvas.add(safetyGuideRect);
+
+    // Stacking: Artboard no fundo, depois Bleed e Safety
+    canvas.sendObjectToBack(safetyGuideRect);
+    canvas.sendObjectToBack(bleedGuideRect);
     canvas.sendObjectToBack(artboardRect);
 
     // Centraliza a prancheta no container
@@ -215,27 +269,80 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       fabricCanvasRef.current = null;
       fabricAdapterRef.current = null;
       artboardRectRef.current = null;
+      bleedGuideRectRef.current = null;
+      safetyGuideRectRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Atualização das Dimensões da Prancheta (sem recriar o canvas)
+  // 2. Atualização das Dimensões da Prancheta e Guias Técnicas (sem recriar o canvas)
   useEffect(() => {
-    const artboardRect = artboardRectRef.current;
     const canvas = fabricCanvasRef.current;
-    if (!artboardRect || !canvas) return;
+    const artboardRect = artboardRectRef.current;
+    const bleedGuide = bleedGuideRectRef.current;
+    const safetyGuide = safetyGuideRectRef.current;
+    if (!canvas) return;
 
-    const widthPx = mmToPx(doc.dimensions.width_mm);
-    const heightPx = mmToPx(doc.dimensions.height_mm);
+    const widthMm = doc.dimensions.width_mm;
+    const heightMm = doc.dimensions.height_mm;
 
-    artboardRect.set({
-      width: widthPx,
-      height: heightPx,
-    });
-    artboardRect.setCoords();
-    canvas.sendObjectToBack(artboardRect);
+    if (artboardRect) {
+      artboardRect.set({
+        width: mmToPx(widthMm),
+        height: mmToPx(heightMm),
+      });
+      artboardRect.setCoords();
+    }
+
+    const bleed = doc.productionSettings?.bleed;
+    if (bleedGuide) {
+      if (bleed && bleed.enabled) {
+        const top = bleed.top_mm;
+        const right = bleed.right_mm;
+        const bottom = bleed.bottom_mm;
+        const left = bleed.left_mm;
+        bleedGuide.set({
+          left: mmToPx(-left),
+          top: mmToPx(-top),
+          width: mmToPx(widthMm + left + right),
+          height: mmToPx(heightMm + top + bottom),
+          visible: true,
+        });
+      } else {
+        bleedGuide.set({ visible: false });
+      }
+      bleedGuide.setCoords();
+    }
+
+    const safety = doc.productionSettings?.safetyMargin;
+    if (safetyGuide) {
+      if (safety && safety.enabled) {
+        const top = safety.top_mm;
+        const right = safety.right_mm;
+        const bottom = safety.bottom_mm;
+        const left = safety.left_mm;
+        const safeW = Math.max(0, widthMm - left - right);
+        const safeH = Math.max(0, heightMm - top - bottom);
+        safetyGuide.set({
+          left: mmToPx(left),
+          top: mmToPx(top),
+          width: mmToPx(safeW),
+          height: mmToPx(safeH),
+          visible: true,
+        });
+      } else {
+        safetyGuide.set({ visible: false });
+      }
+      safetyGuide.setCoords();
+    }
+
+    // Stacking: Artboard no fundo, depois Bleed e Safety
+    if (safetyGuide) canvas.sendObjectToBack(safetyGuide);
+    if (bleedGuide) canvas.sendObjectToBack(bleedGuide);
+    if (artboardRect) canvas.sendObjectToBack(artboardRect);
+
     canvas.requestRenderAll();
-  }, [doc.dimensions.width_mm, doc.dimensions.height_mm]);
+  }, [doc.dimensions.width_mm, doc.dimensions.height_mm, doc.productionSettings]);
 
   // 3. Sincroniza nós do PDM com o Fabric sempre que doc, selectedNodeId, comparisonMode ou previewNode mudar
   useEffect(() => {
@@ -243,20 +350,6 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode);
     }
   }, [doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode]);
-
-  // 3.1 Sincroniza dimensões da prancheta (Artboard) no retângulo visual
-  useEffect(() => {
-    if (artboardRectRef.current && fabricCanvasRef.current) {
-      const widthPx = mmToPx(doc.dimensions.width_mm);
-      const heightPx = mmToPx(doc.dimensions.height_mm);
-      artboardRectRef.current.set({
-        width: widthPx,
-        height: heightPx,
-      });
-      artboardRectRef.current.setCoords();
-      fabricCanvasRef.current.requestRenderAll();
-    }
-  }, [doc.dimensions.width_mm, doc.dimensions.height_mm]);
 
   // 4. Sincroniza o zoom quando alterado via botões externos do Header
   useEffect(() => {

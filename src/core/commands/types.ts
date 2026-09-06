@@ -15,6 +15,9 @@ import {
   DocumentNode,
   DocumentDimensions,
   Position_mm,
+  BleedSettings,
+  SafetyMarginSettings,
+  TechnicalGuideNode,
 } from '../pdm/types';
 import {
   addNode,
@@ -23,6 +26,9 @@ import {
   updateNodeDimensions,
   updateNodePosition,
   updateArtboardDimensions,
+  updateBleedSettings,
+  updateSafetyMarginSettings,
+  updateTechnicalGuideNode,
 } from '../pdm/document';
 
 export interface CommandResult {
@@ -274,9 +280,12 @@ export class DeleteNodeCommand implements DocumentCommand {
 
   constructor(
     public readonly deletedNode: DocumentNode,
-    public readonly childNodes: DocumentNode[] = []
+    public readonly childNodes: DocumentNode[] = [],
+    public readonly dependentCutNode?: CutContourNode,
+    public readonly originalRootIndex?: number,
+    public readonly dependentCutRootIndex?: number
   ) {
-    this.id = `cmd_del_${deletedNode.id}`;
+    this.id = `cmd_del_${deletedNode.id}_${Date.now()}`;
     this.name = `Remover ${deletedNode.name}`;
     this.timestamp = Date.now();
   }
@@ -285,18 +294,18 @@ export class DeleteNodeCommand implements DocumentCommand {
     const newDoc = removeNode(doc, this.deletedNode.id);
     return {
       doc: newDoc,
-      selectedNodeId: newDoc.rootNodeIds[0] ?? null,
+      selectedNodeId: null,
     };
   }
 
   undo(doc: PrexyonDocument): CommandResult {
-    let newDoc = {
+    let newDoc: PrexyonDocument = {
       ...doc,
       nodes: {
         ...doc.nodes,
         [this.deletedNode.id]: this.deletedNode,
       },
-      rootNodeIds: [...doc.rootNodeIds, this.deletedNode.id],
+      rootNodeIds: [...doc.rootNodeIds.filter((id) => id !== this.deletedNode.id), this.deletedNode.id],
       updatedAt: new Date().toISOString(),
     };
 
@@ -308,6 +317,17 @@ export class DeleteNodeCommand implements DocumentCommand {
       newDoc = {
         ...newDoc,
         nodes: childrenMap,
+      };
+    }
+
+    if (this.dependentCutNode) {
+      newDoc = {
+        ...newDoc,
+        nodes: {
+          ...newDoc.nodes,
+          [this.dependentCutNode.id]: this.dependentCutNode,
+        },
+        rootNodeIds: [...newDoc.rootNodeIds.filter((id) => id !== this.dependentCutNode!.id), this.dependentCutNode.id],
       };
     }
 
@@ -628,6 +648,175 @@ export class CenterCutContourCommand implements DocumentCommand {
     return {
       doc: newDoc,
       selectedNodeId: this.nodeId,
+    };
+  }
+}
+
+/**
+ * Comando de Atualização das Configurações de Sangria (Bleed)
+ */
+export class UpdateBleedSettingsCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly prevBleed: BleedSettings,
+    public readonly nextBleed: BleedSettings
+  ) {
+    this.id = `cmd_bleed_${Date.now()}`;
+    this.name = nextBleed.enabled
+      ? `Sangria (${nextBleed.top_mm} mm)`
+      : 'Desativar Sangria';
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateBleedSettings(doc, this.nextBleed);
+    return {
+      doc: newDoc,
+      selectedNodeId: doc.rootNodeIds[0] ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateBleedSettings(doc, this.prevBleed);
+    return {
+      doc: newDoc,
+      selectedNodeId: doc.rootNodeIds[0] ?? null,
+    };
+  }
+}
+
+/**
+ * Comando de Atualização das Configurações de Margem de Segurança (Safety Margin)
+ */
+export class UpdateSafetyMarginCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly prevSafety: SafetyMarginSettings,
+    public readonly nextSafety: SafetyMarginSettings
+  ) {
+    this.id = `cmd_safety_${Date.now()}`;
+    this.name = nextSafety.enabled
+      ? `Margem de Segurança (${nextSafety.top_mm} mm)`
+      : 'Desativar Margem de Segurança';
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateSafetyMarginSettings(doc, this.nextSafety);
+    return {
+      doc: newDoc,
+      selectedNodeId: doc.rootNodeIds[0] ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateSafetyMarginSettings(doc, this.prevSafety);
+    return {
+      doc: newDoc,
+      selectedNodeId: doc.rootNodeIds[0] ?? null,
+    };
+  }
+}
+
+/**
+ * Comando de Criação de Guia Técnica
+ */
+export class CreateTechnicalGuideCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(public readonly guideNode: TechnicalGuideNode) {
+    this.id = `cmd_create_guide_${Date.now()}`;
+    this.name = `Criar ${guideNode.name}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = addNode(doc, this.guideNode);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.guideNode.id,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = removeNode(doc, this.guideNode.id);
+    return {
+      doc: newDoc,
+      selectedNodeId: null,
+    };
+  }
+}
+
+/**
+ * Comando de Atualização de Guia Técnica
+ */
+export class UpdateTechnicalGuideCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevGuide: TechnicalGuideNode,
+    public readonly nextGuide: TechnicalGuideNode
+  ) {
+    this.id = `cmd_update_guide_${Date.now()}`;
+    this.name = `Atualizar ${nextGuide.name}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateTechnicalGuideNode(doc, this.nodeId, this.nextGuide);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = updateTechnicalGuideNode(doc, this.nodeId, this.prevGuide);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+}
+
+/**
+ * Comando de Exclusão de Guia Técnica
+ */
+export class DeleteTechnicalGuideCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(public readonly guideNode: TechnicalGuideNode) {
+    this.id = `cmd_delete_guide_${Date.now()}`;
+    this.name = `Excluir ${guideNode.name}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newDoc = removeNode(doc, this.guideNode.id);
+    return {
+      doc: newDoc,
+      selectedNodeId: null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newDoc = addNode(doc, this.guideNode);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.guideNode.id,
     };
   }
 }

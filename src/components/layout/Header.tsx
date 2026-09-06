@@ -8,7 +8,8 @@ import {
   Upload,
   RefreshCw,
   Undo2,
-  Redo2
+  Redo2,
+  Download
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -24,6 +25,7 @@ interface HeaderProps {
   onRedo: () => void;
   onImportFile: (file: File) => void;
   onArchitecturalTest: () => void;
+  onOpenExport: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRedo,
   onImportFile,
   onArchitecturalTest,
+  onOpenExport,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +96,16 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Upload className="w-3.5 h-3.5" />
           <span>Importar Arquivo (PNG/JPG)</span>
+        </button>
+
+        {/* Botão de Exportação de Produção */}
+        <button
+          onClick={onOpenExport}
+          className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-all shadow-md shadow-emerald-600/20 active:scale-[0.98]"
+          title="Exportar arquivo para produção gráfica (PNG, SVG, Faca SVG, Manifesto)"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>Exportar</span>
         </button>
 
         {/* Undo / Redo Controls */}

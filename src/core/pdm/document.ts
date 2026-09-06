@@ -16,6 +16,12 @@ import {
   ContourPolygon,
   JoinStyle,
   Position_mm,
+  BleedSettings,
+  SafetyMarginSettings,
+  ProductionSettings,
+  TechnicalGuideNode,
+  TechnicalGuideOrientation,
+  TechnicalGuideRole,
 } from './types';
 import {
   calculateHeightFromWidth,
@@ -40,10 +46,33 @@ export function generateUUID(): string {
 }
 
 /**
+ * Configurações padrão de produção técnica (Sangria e Margem de Segurança)
+ */
+export const DEFAULT_PRODUCTION_SETTINGS: ProductionSettings = {
+  bleed: {
+    enabled: false,
+    top_mm: 3,
+    right_mm: 3,
+    bottom_mm: 3,
+    left_mm: 3,
+    linked: true,
+  },
+  safetyMargin: {
+    enabled: false,
+    top_mm: 5,
+    right_mm: 5,
+    bottom_mm: 5,
+    left_mm: 5,
+    linked: true,
+  },
+};
+
+/**
  * Cria um novo documento Prexyon vazio com prancheta padrão 100x100 mm.
  */
 export function createDocument(
-  dimensions: Partial<DocumentDimensions> = {}
+  dimensions: Partial<DocumentDimensions> = {},
+  productionSettings?: Partial<ProductionSettings>
 ): PrexyonDocument {
   const now = new Date().toISOString();
   return {
@@ -53,6 +82,16 @@ export function createDocument(
       width_mm: dimensions.width_mm ?? 100,
       height_mm: dimensions.height_mm ?? 100,
       unit: 'mm',
+    },
+    productionSettings: {
+      bleed: {
+        ...DEFAULT_PRODUCTION_SETTINGS.bleed,
+        ...(productionSettings?.bleed || {}),
+      },
+      safetyMargin: {
+        ...DEFAULT_PRODUCTION_SETTINGS.safetyMargin,
+        ...(productionSettings?.safetyMargin || {}),
+      },
     },
     nodes: {},
     rootNodeIds: [],
@@ -158,6 +197,157 @@ export function createCutContourNode(params: CreateCutContourNodeParams): CutCon
       manualScaleApplied: false,
     },
   };
+}
+
+export interface CreateTechnicalGuideParams {
+  id?: string;
+  name?: string;
+  orientation: TechnicalGuideOrientation;
+  position_mm?: number;
+  guidePosition_mm?: number;
+  guideRole?: TechnicalGuideRole;
+  strokeColor?: string;
+  strokeWidth_mm?: number;
+  dashPattern?: number[];
+  visible?: boolean;
+  locked?: boolean;
+}
+
+/**
+ * Cria um novo TechnicalGuideNode no PDM.
+ */
+export function createTechnicalGuideNode(
+  params: CreateTechnicalGuideParams,
+  artboardDimensions?: DocumentDimensions
+): TechnicalGuideNode {
+  const defaultPos = artboardDimensions
+    ? (params.orientation === 'vertical' ? artboardDimensions.width_mm / 2 : artboardDimensions.height_mm / 2)
+    : 50;
+
+  const rawPos = params.guidePosition_mm !== undefined
+    ? params.guidePosition_mm
+    : (params.position_mm !== undefined ? params.position_mm : defaultPos);
+
+  const maxDim = artboardDimensions
+    ? (params.orientation === 'vertical' ? artboardDimensions.width_mm : artboardDimensions.height_mm)
+    : 5000;
+  const clampedPos = roundPrecision(Math.max(0, Math.min(maxDim, rawPos)), 2);
+
+  const roleLabels: Record<TechnicalGuideRole, string> = {
+    generic: 'Guia',
+    fold: 'Dobra',
+    crease: 'Vinco',
+    cut_reference: 'Ref. Corte',
+    alignment: 'Alinhamento',
+  };
+
+  const defaultName = `${roleLabels[params.guideRole ?? 'generic']} ${params.orientation === 'vertical' ? 'vertical' : 'horizontal'} — ${clampedPos.toFixed(1)} mm`;
+
+  return {
+    id: params.id ?? generateUUID(),
+    type: 'technical_guide',
+    name: params.name ?? defaultName,
+    orientation: params.orientation,
+    guidePosition_mm: clampedPos,
+    position_mm: {
+      x: params.orientation === 'vertical' ? clampedPos : 0,
+      y: params.orientation === 'horizontal' ? clampedPos : 0,
+    },
+    guideRole: params.guideRole ?? 'generic',
+    strokeColor: params.strokeColor,
+    strokeWidth_mm: params.strokeWidth_mm ?? 0.3,
+    dashPattern: params.dashPattern,
+    productionRole: 'guide',
+    rotation_deg: 0,
+    opacity: 1.0,
+    visible: params.visible ?? true,
+    locked: params.locked ?? false,
+    metadata: {
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Atualiza propriedades de um TechnicalGuideNode de forma pura e imutável.
+ * Se a orientação for alterada, faz clamp automático aos limites da nova dimensão.
+ */
+export function updateTechnicalGuideNode(
+  doc: PrexyonDocument,
+  nodeId: string,
+  updates: Partial<TechnicalGuideNode>
+): PrexyonDocument {
+  const node = doc.nodes[nodeId];
+  if (!node || node.type !== 'technical_guide') {
+    throw new Error(`Guia técnica "${nodeId}" não encontrada.`);
+  }
+
+  const currentGuide = node as TechnicalGuideNode;
+  const nextOrientation = updates.orientation ?? currentGuide.orientation;
+  const maxDim = nextOrientation === 'vertical' ? doc.dimensions.width_mm : doc.dimensions.height_mm;
+
+  let nextPos = updates.guidePosition_mm !== undefined
+    ? updates.guidePosition_mm
+    : (updates.position_mm !== undefined
+        ? (nextOrientation === 'vertical' ? updates.position_mm.x : updates.position_mm.y)
+        : currentGuide.guidePosition_mm);
+
+  nextPos = roundPrecision(Math.max(0, Math.min(maxDim, nextPos)), 2);
+
+  const updatedGuide: TechnicalGuideNode = {
+    ...currentGuide,
+    ...updates,
+    orientation: nextOrientation,
+    guidePosition_mm: nextPos,
+    position_mm: {
+      x: nextOrientation === 'vertical' ? nextPos : 0,
+      y: nextOrientation === 'horizontal' ? nextPos : 0,
+    },
+  };
+
+  return {
+    ...doc,
+    nodes: {
+      ...doc.nodes,
+      [nodeId]: updatedGuide,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Duplica uma guia técnica existente com deslocamento de +5 mm (ou -5 mm se ultrapassar o limite).
+ */
+export function duplicateTechnicalGuideNode(
+  doc: PrexyonDocument,
+  sourceNodeId: string
+): { doc: PrexyonDocument; newGuide: TechnicalGuideNode; duplicatedNode: TechnicalGuideNode } {
+  const node = doc.nodes[sourceNodeId];
+  if (!node || node.type !== 'technical_guide') {
+    throw new Error(`Guia técnica "${sourceNodeId}" não encontrada.`);
+  }
+  const guide = node as TechnicalGuideNode;
+  const maxDim = guide.orientation === 'vertical' ? doc.dimensions.width_mm : doc.dimensions.height_mm;
+
+  // Tenta +5 mm; se ultrapassar, usa -5 mm
+  let targetPos = guide.guidePosition_mm + 5.0;
+  if (targetPos > maxDim) {
+    targetPos = Math.max(0, guide.guidePosition_mm - 5.0);
+  }
+
+  const newGuide = createTechnicalGuideNode({
+    orientation: guide.orientation,
+    position_mm: targetPos,
+    guideRole: guide.guideRole,
+    strokeColor: guide.strokeColor,
+    strokeWidth_mm: guide.strokeWidth_mm,
+    dashPattern: guide.dashPattern ? [...guide.dashPattern] : undefined,
+    visible: guide.visible,
+    locked: false,
+  }, doc.dimensions);
+
+  const nextDoc = addNode(doc, newGuide);
+  return { doc: nextDoc, newGuide, duplicatedNode: newGuide };
 }
 
 /**
@@ -494,6 +684,32 @@ export function updateNodePosition(
     return doc;
   }
 
+  // --- CASO 0: O NÓ MOVIDO É UMA GUIA TÉCNICA ---
+  if (node.type === 'technical_guide') {
+    const guide = node as TechnicalGuideNode;
+    const maxDim = guide.orientation === 'vertical' ? doc.dimensions.width_mm : doc.dimensions.height_mm;
+    const rawPos = guide.orientation === 'vertical' ? newPos.x : newPos.y;
+    const clampedPos = roundPrecision(Math.max(0, Math.min(maxDim, rawPos)), 2);
+
+    const updatedGuide: TechnicalGuideNode = {
+      ...guide,
+      guidePosition_mm: clampedPos,
+      position_mm: {
+        x: guide.orientation === 'vertical' ? clampedPos : 0,
+        y: guide.orientation === 'horizontal' ? clampedPos : 0,
+      },
+    };
+
+    return {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [nodeId]: updatedGuide,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   // --- CASO 1: O NÓ MOVIDO É A PRÓPRIA FACA DE CORTE ---
   if (node.type === 'cut_contour') {
     const cutNode = node as CutContourNode;
@@ -607,10 +823,209 @@ export function serializeDocument(doc: PrexyonDocument): string {
  */
 export function deserializeDocument(json: string): PrexyonDocument {
   const parsed = JSON.parse(json);
-  if (!parsed || (parsed.version !== '0.1.0' && parsed.version !== '0.2.0') || !parsed.dimensions || !parsed.nodes) {
+  if (!parsed || !parsed.version || !parsed.dimensions || !parsed.nodes) {
     throw new Error('Formato inválido de PrexyonDocument.');
   }
+  if (!parsed.productionSettings) {
+    parsed.productionSettings = JSON.parse(JSON.stringify(DEFAULT_PRODUCTION_SETTINGS));
+  } else {
+    parsed.productionSettings = {
+      bleed: {
+        ...DEFAULT_PRODUCTION_SETTINGS.bleed,
+        ...parsed.productionSettings.bleed,
+      },
+      safetyMargin: {
+        ...DEFAULT_PRODUCTION_SETTINGS.safetyMargin,
+        ...parsed.productionSettings.safetyMargin,
+      },
+    };
+  }
   return parsed as PrexyonDocument;
+}
+
+/**
+ * Calcula a área total e dimensões totais considerando a prancheta nominal e a sangria.
+ */
+export function calculateBleedDimensions(
+  dimensions: DocumentDimensions,
+  bleed: BleedSettings
+): {
+  width_mm: number;
+  height_mm: number;
+  totalWidth_mm: number;
+  totalHeight_mm: number;
+  offsetX_mm: number;
+  offsetY_mm: number;
+} {
+  const left = bleed.enabled ? bleed.left_mm : 0;
+  const right = bleed.enabled ? bleed.right_mm : 0;
+  const top = bleed.enabled ? bleed.top_mm : 0;
+  const bottom = bleed.enabled ? bleed.bottom_mm : 0;
+  const totalW = roundPrecision(dimensions.width_mm + left + right, 2);
+  const totalH = roundPrecision(dimensions.height_mm + top + bottom, 2);
+
+  return {
+    width_mm: totalW,
+    height_mm: totalH,
+    totalWidth_mm: totalW,
+    totalHeight_mm: totalH,
+    offsetX_mm: roundPrecision(-left, 2),
+    offsetY_mm: roundPrecision(-top, 2),
+  };
+}
+
+/**
+ * Calcula a área segura interna e sua posição na prancheta.
+ */
+export function calculateSafetyArea(
+  dimensions: DocumentDimensions,
+  safety: SafetyMarginSettings
+): {
+  width_mm: number;
+  height_mm: number;
+  x_mm: number;
+  y_mm: number;
+  safeWidth_mm: number;
+  safeHeight_mm: number;
+  safePosX_mm: number;
+  safePosY_mm: number;
+} {
+  const left = safety.enabled ? safety.left_mm : 0;
+  const right = safety.enabled ? safety.right_mm : 0;
+  const top = safety.enabled ? safety.top_mm : 0;
+  const bottom = safety.enabled ? safety.bottom_mm : 0;
+  const safeW = roundPrecision(Math.max(0, dimensions.width_mm - left - right), 2);
+  const safeH = roundPrecision(Math.max(0, dimensions.height_mm - top - bottom), 2);
+
+  return {
+    width_mm: safeW,
+    height_mm: safeH,
+    x_mm: roundPrecision(left, 2),
+    y_mm: roundPrecision(top, 2),
+    safeWidth_mm: safeW,
+    safeHeight_mm: safeH,
+    safePosX_mm: roundPrecision(left, 2),
+    safePosY_mm: roundPrecision(top, 2),
+  };
+}
+
+/**
+ * Valida e atualiza as configurações de sangria (BleedSettings).
+ * Limites: 0 mm a 100 mm por lado.
+ */
+export function updateBleedSettings(
+  doc: PrexyonDocument,
+  bleedUpdates: Partial<BleedSettings>
+): PrexyonDocument {
+  const currentBleed = doc.productionSettings?.bleed ?? DEFAULT_PRODUCTION_SETTINGS.bleed;
+  const nextBleed: BleedSettings = {
+    ...currentBleed,
+    ...bleedUpdates,
+  };
+
+  // Se linked for true e um valor de lado foi modificado, sincroniza todos os 4 lados
+  if (nextBleed.linked) {
+    if (bleedUpdates.top_mm !== undefined) {
+      nextBleed.right_mm = bleedUpdates.top_mm;
+      nextBleed.bottom_mm = bleedUpdates.top_mm;
+      nextBleed.left_mm = bleedUpdates.top_mm;
+    } else if (bleedUpdates.right_mm !== undefined) {
+      nextBleed.top_mm = bleedUpdates.right_mm;
+      nextBleed.bottom_mm = bleedUpdates.right_mm;
+      nextBleed.left_mm = bleedUpdates.right_mm;
+    } else if (bleedUpdates.bottom_mm !== undefined) {
+      nextBleed.top_mm = bleedUpdates.bottom_mm;
+      nextBleed.right_mm = bleedUpdates.bottom_mm;
+      nextBleed.left_mm = bleedUpdates.bottom_mm;
+    } else if (bleedUpdates.left_mm !== undefined) {
+      nextBleed.top_mm = bleedUpdates.left_mm;
+      nextBleed.right_mm = bleedUpdates.left_mm;
+      nextBleed.bottom_mm = bleedUpdates.left_mm;
+    }
+  }
+
+  // Validação de limites (0 a 100 mm)
+  for (const side of ['top_mm', 'right_mm', 'bottom_mm', 'left_mm'] as const) {
+    const val = nextBleed[side];
+    if (typeof val !== 'number' || isNaN(val) || val < 0 || val > 100) {
+      throw new Error(`Valor de sangria inválido (${val} mm). Deve ser entre 0 e 100 mm.`);
+    }
+    nextBleed[side] = roundPrecision(val, 2);
+  }
+
+  return {
+    ...doc,
+    productionSettings: {
+      bleed: nextBleed,
+      safetyMargin: doc.productionSettings?.safetyMargin ?? DEFAULT_PRODUCTION_SETTINGS.safetyMargin,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Valida e atualiza as configurações de margem de segurança (SafetyMarginSettings).
+ * Validação: left + right < artboard.width e top + bottom < artboard.height
+ */
+export function updateSafetyMarginSettings(
+  doc: PrexyonDocument,
+  safetyUpdates: Partial<SafetyMarginSettings>
+): PrexyonDocument {
+  const currentSafety = doc.productionSettings?.safetyMargin ?? DEFAULT_PRODUCTION_SETTINGS.safetyMargin;
+  const nextSafety: SafetyMarginSettings = {
+    ...currentSafety,
+    ...safetyUpdates,
+  };
+
+  if (nextSafety.linked) {
+    if (safetyUpdates.top_mm !== undefined) {
+      nextSafety.right_mm = safetyUpdates.top_mm;
+      nextSafety.bottom_mm = safetyUpdates.top_mm;
+      nextSafety.left_mm = safetyUpdates.top_mm;
+    } else if (safetyUpdates.right_mm !== undefined) {
+      nextSafety.top_mm = safetyUpdates.right_mm;
+      nextSafety.bottom_mm = safetyUpdates.right_mm;
+      nextSafety.left_mm = safetyUpdates.right_mm;
+    } else if (safetyUpdates.bottom_mm !== undefined) {
+      nextSafety.top_mm = safetyUpdates.bottom_mm;
+      nextSafety.right_mm = safetyUpdates.bottom_mm;
+      nextSafety.left_mm = safetyUpdates.bottom_mm;
+    } else if (safetyUpdates.left_mm !== undefined) {
+      nextSafety.top_mm = safetyUpdates.left_mm;
+      nextSafety.right_mm = safetyUpdates.left_mm;
+      nextSafety.bottom_mm = safetyUpdates.left_mm;
+    }
+  }
+
+  for (const side of ['top_mm', 'right_mm', 'bottom_mm', 'left_mm'] as const) {
+    const val = nextSafety[side];
+    if (typeof val !== 'number' || isNaN(val) || val < 0) {
+      throw new Error(`Valor de margem de segurança inválido (${val} mm). Deve ser >= 0 mm.`);
+    }
+    nextSafety[side] = roundPrecision(val, 2);
+  }
+
+  // Validação contra as dimensões da prancheta
+  if (nextSafety.left_mm + nextSafety.right_mm >= doc.dimensions.width_mm) {
+    throw new Error(
+      `Soma das margens horizontais (${nextSafety.left_mm + nextSafety.right_mm} mm) excede ou iguala a largura da prancheta (${doc.dimensions.width_mm} mm).`
+    );
+  }
+
+  if (nextSafety.top_mm + nextSafety.bottom_mm >= doc.dimensions.height_mm) {
+    throw new Error(
+      `Soma das margens verticais (${nextSafety.top_mm + nextSafety.bottom_mm} mm) excede ou iguala a altura da prancheta (${doc.dimensions.height_mm} mm).`
+    );
+  }
+
+  return {
+    ...doc,
+    productionSettings: {
+      bleed: doc.productionSettings?.bleed ?? DEFAULT_PRODUCTION_SETTINGS.bleed,
+      safetyMargin: nextSafety,
+    },
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -641,6 +1056,35 @@ export function updateArtboardDimensions(
     return doc;
   }
 
+  // Clampa quaisquer guias técnicas que excederem as novas dimensões da prancheta
+  let hasGuideUpdates = false;
+  const nextNodes: Record<string, DocumentNode> = {};
+
+  for (const [id, node] of Object.entries(doc.nodes)) {
+    if (node.type === 'technical_guide') {
+      const guide = node as TechnicalGuideNode;
+      if (guide.orientation === 'vertical' && guide.guidePosition_mm > width_mm) {
+        hasGuideUpdates = true;
+        nextNodes[id] = {
+          ...guide,
+          guidePosition_mm: width_mm,
+          position_mm: { x: width_mm, y: 0 },
+        };
+      } else if (guide.orientation === 'horizontal' && guide.guidePosition_mm > height_mm) {
+        hasGuideUpdates = true;
+        nextNodes[id] = {
+          ...guide,
+          guidePosition_mm: height_mm,
+          position_mm: { x: 0, y: height_mm },
+        };
+      } else {
+        nextNodes[id] = node;
+      }
+    } else {
+      nextNodes[id] = node;
+    }
+  }
+
   return {
     ...doc,
     dimensions: {
@@ -648,6 +1092,7 @@ export function updateArtboardDimensions(
       width_mm,
       height_mm,
     },
+    nodes: hasGuideUpdates ? nextNodes : doc.nodes,
     updatedAt: new Date().toISOString(),
   };
 }

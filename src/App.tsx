@@ -6,6 +6,7 @@ import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PropertiesPanel } from '@/components/properties/PropertiesPanel';
 import { CanvasViewport } from '@/components/canvas/CanvasViewport';
 import { ToastContainer } from '@/components/ui/ToastContainer';
+import { ExportModal } from '@/components/export/ExportModal';
 import { useEditorStore } from '@/store/editorStore';
 import { NodeTransformPayload } from '@/core/renderer/fabricAdapter';
 
@@ -22,6 +23,7 @@ export const App: React.FC = () => {
     overlayOpacity,
     canUndo,
     canRedo,
+    validationReport,
     toasts,
     actions,
   } = useEditorStore();
@@ -29,6 +31,7 @@ export const App: React.FC = () => {
   // Estado de Visualização do Viewport (Zoom e Coordenadas do Cursor)
   const [zoom, setZoom] = useState<number>(1.0);
   const [cursorMm, setCursorMm] = useState<{ x: number; y: number } | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Ações de Zoom do Header
   const handleZoomIn = useCallback(() => {
@@ -57,6 +60,13 @@ export const App: React.FC = () => {
     [actions]
   );
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__PREXYON_DOC__ = doc;
+      (window as any).__PREXYON_ACTIONS__ = actions;
+    }
+  }, [doc, actions]);
+
   return (
     <>
       <AppLayout
@@ -74,6 +84,7 @@ export const App: React.FC = () => {
             onRedo={actions.redo}
             onImportFile={actions.importRasterFile}
             onArchitecturalTest={actions.triggerArchitecturalRebuild}
+            onOpenExport={() => setIsExportModalOpen(true)}
           />
         }
         chatPanel={<ChatPanel />}
@@ -121,12 +132,24 @@ export const App: React.FC = () => {
             onCommitDimensions={actions.commitNodeDimensions}
             onCommitPosition={actions.commitNodePosition}
             onSetArtboardDimensions={actions.setArtboardDimensions}
+            onCommitArtboardDimensions={actions.commitArtboardDimensions}
+            onUpdateBleedSettings={actions.setBleedSettings}
+            onCommitBleedSettings={actions.commitBleedSettings}
+            onUpdateSafetyMarginSettings={actions.setSafetyMarginSettings}
+            onCommitSafetyMarginSettings={actions.commitSafetyMarginSettings}
+            onCreateTechnicalGuide={actions.createTechnicalGuide}
+            onUpdateTechnicalGuide={actions.updateTechnicalGuide}
+            onCommitTechnicalGuide={actions.commitTechnicalGuide}
+            onDuplicateTechnicalGuide={actions.duplicateTechnicalGuide}
+            onChangeTechnicalGuideOrientation={actions.changeTechnicalGuideOrientation}
             onUpdateName={actions.setNodeName}
             onResetAspectRatio={actions.resetNodeAspectRatio}
             onToggleVisibility={actions.toggleNodeVisibility}
             onToggleLock={actions.toggleNodeLock}
             onDeleteNode={actions.deleteNode}
             onToggleKeepAspectRatio={() => actions.setKeepAspectRatio(!keepAspectRatio)}
+            validationReport={validationReport}
+            onRunValidation={actions.runProductionValidation}
           />
         }
         statusBar={
@@ -137,6 +160,16 @@ export const App: React.FC = () => {
             artboardHeightMm={doc.dimensions.height_mm}
           />
         }
+      />
+
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        doc={doc}
+        selectedNodeId={selectedNodeId}
+        validationReport={validationReport}
+        onRunValidation={actions.runProductionValidation}
+        onToast={actions.addToast}
       />
 
       <ToastContainer toasts={toasts} onDismiss={actions.removeToast} />
