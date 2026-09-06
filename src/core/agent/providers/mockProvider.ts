@@ -239,23 +239,71 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 6. Mensagens normais sem tool (ex: "Olá", "Oi", "Como você funciona?")
-  if (text.includes('olá') || text.includes('ola') || text.includes('oi') || text.includes('ajuda') || text.includes('help')) {
+  // 6. Pedido de exportação em PDF (formato ainda não suportado no Tool Registry)
+  if (text.includes('pdf')) {
     return [
       {
         response: {
-          text: 'Olá! Sou o assistente de arte-final do Prexyon Agent. Posso ajudar você a mover, redimensionar objetos, criar facas de corte e validar seu arquivo para produção.',
+          text: 'Essa função ainda não está disponível no Prexyon Agent. No momento, a exportação de produção suporta exclusivamente: PNG, SVG, Cut-SVG e Manifesto JSON.',
           finishReason: 'STOP',
         },
       },
     ];
   }
 
-  // 7. Fallback geral para mensagens normais
+  // 7. Pedido de exportação em formatos válidos (PNG, SVG, Cut-SVG, Manifest JSON)
+  if (text.includes('export') || text.includes('salv') || text.includes('baixar')) {
+    let fmt: 'png' | 'svg' | 'cut-svg' | 'manifest-json' = 'png';
+    if (text.includes('cut-svg') || text.includes('faca svg') || text.includes('faca isolada')) {
+      fmt = 'cut-svg';
+    } else if (text.includes('svg')) {
+      fmt = 'svg';
+    } else if (text.includes('manifest') || text.includes('json')) {
+      fmt = 'manifest-json';
+    }
+
+    return [
+      {
+        response: {
+          text: `Gerando arquivo de produção no formato ${fmt.toUpperCase()}.`,
+          functionCalls: [
+            {
+              id: `call_exp_${Date.now()}`,
+              name: 'export_production',
+              args: {
+                format: fmt,
+                dpi: 300,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: `Arquivo de produção no formato ${fmt.toUpperCase()} exportado com sucesso.`,
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 8. Mensagens normais sem tool (ex: "Olá", "Oi", "Como você funciona?")
+  if (text.includes('olá') || text.includes('ola') || text.includes('oi') || text.includes('ajuda') || text.includes('help')) {
+    return [
+      {
+        response: {
+          text: 'Olá! Sou o assistente de arte-final do Prexyon Agent. Posso ajudar você a mover, redimensionar objetos, criar facas de corte, exportar (PNG, SVG, Cut-SVG, Manifest) e validar seu arquivo para produção.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 9. Fallback geral para mensagens normais
   return [
     {
       response: {
-        text: `Comando recebido: "${message}". No modo de simulação da Etapa 6.3, você pode testar ações como "Mova este objeto 10 mm para a direita", "Deixe a logo com 50 mm de largura" ou "Crie uma faca 2 mm para fora".`,
+        text: `Comando recebido: "${message}". Você pode solicitar ações como mover ou redimensionar objetos, criar faca de corte, validar o documento ou exportar em PNG/SVG.`,
         finishReason: 'STOP',
       },
     },

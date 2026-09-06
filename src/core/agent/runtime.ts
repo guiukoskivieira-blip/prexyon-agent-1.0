@@ -15,7 +15,7 @@ import {
   AgentRunResult,
   ExecutedToolRecord,
 } from './types';
-import { buildDocumentContextSummary } from './context';
+import { buildDocumentContextSummary, buildAgentCapabilitiesSummary } from './context';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './providers/base';
 
 export const DEFAULT_MAX_ITERATIONS = 5;
@@ -86,11 +86,11 @@ export class AgentRuntime {
       while (iteration < maxIterations) {
         iteration++;
 
-        // Constrói o contexto atualizado do documento PDM para injeção no prompt de sistema
+        // Constrói o contexto atualizado do documento PDM e o catálogo de capacidades para o prompt de sistema
         const docContext = buildDocumentContextSummary(currentDoc, options?.selectedNodeId);
-        const systemPrompt = options?.systemPrompt
-          ? `${options.systemPrompt}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`
-          : `${DEFAULT_AGENT_SYSTEM_PROMPT}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
+        const capabilitiesContext = buildAgentCapabilitiesSummary(tools);
+        const basePrompt = options?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT;
+        const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
 
         // 1. Consulta o provedor de IA com as mensagens e ferramentas registradas
         const providerResponse = await this.provider.generateResponse(messages, tools, {

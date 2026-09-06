@@ -592,5 +592,155 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
       expect(modelMsg.functionCalls[0].rawPart).toEqual(canonicalPart);
     });
   });
+
+  describe('9. Etapa 6.4 — Fidelidade Operacional e Prevenção de Alucinações', () => {
+    it('deve derivar capacidades dinamicamente a partir do Tool Registry', async () => {
+      const { buildAgentCapabilitiesSummary } = await import('../src/core/agent');
+      const declarations = defaultToolRegistry.getToolDeclarations();
+      const capabilitiesText = buildAgentCapabilitiesSummary(declarations);
+
+      // 1. Todas as 8 tools registradas devem estar presentes
+      for (const tool of declarations) {
+        expect(capabilitiesText).toContain(`\`${tool.name}\``);
+      }
+
+      // 2. export_production deve ter seus formatos especificados e clarificação sobre PDF
+      expect(capabilitiesText).toContain('png, svg, cut-svg, manifest-json');
+      expect(capabilitiesText).toContain('export_production');
+      expect(capabilitiesText).toContain('Não existe suporte para PDF no momento');
+      expect(capabilitiesText).toContain('DIRETRIZES ESTRITAS DE FIDELIDADE OPERACIONAL');
+    });
+
+    it('deve injetar o catálogo de capacidades no systemPrompt do provedor', async () => {
+      let capturedSystemPrompt = '';
+      const spyProvider = {
+        name: 'spy_mock',
+        generateResponse: async (_msgs: any, _tools: any, options: any) => {
+          capturedSystemPrompt = options?.systemPrompt || '';
+          return {
+            text: 'Resposta.',
+            finishReason: 'STOP',
+          };
+        },
+      };
+
+      const runtime = new AgentRuntime(spyProvider as any, defaultToolRegistry);
+      const doc = createTestDoc();
+      await runtime.run('Olá', doc);
+
+      expect(capturedSystemPrompt).toContain('CAPACIDADES E FERRAMENTAS DISPONÍVEIS NO TOOL REGISTRY (8 FERRAMENTAS)');
+      expect(capturedSystemPrompt).toContain('`move_node`');
+      expect(capturedSystemPrompt).toContain('`export_production`');
+      expect(capturedSystemPrompt).toContain('DIRETRIZES ESTRITAS DE FIDELIDADE OPERACIONAL');
+    });
+
+    it('pedido de exportação em PDF não deve inventar suporte e deve informar indisponibilidade', async () => {
+      const doc = createTestDoc();
+      const result = await processAgentChatRequest({
+        message: 'Exporte meu arquivo em PDF para impressão.',
+        doc,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools.length).toBe(0);
+      expect(result.reply).toContain('Essa função ainda não está disponível no Prexyon Agent');
+      expect(result.reply).toContain('PNG, SVG, Cut-SVG e Manifesto JSON');
+    });
+
+    it('tool inexistente deve retornar erro controlado sem modificar o documento', async () => {
+      const doc = createTestDoc();
+      const providerWithGhostTool = new MockAIProvider([
+        {
+          response: {
+            functionCalls: [
+              {
+                name: 'generate_3d_render',
+                args: { quality: 'ultra' },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: 'A ferramenta "generate_3d_render" não está disponível no Prexyon Agent.',
+            finishReason: 'STOP',
+          },
+        },
+      ]);
+
+      const runtime = new AgentRuntime(providerWithGhostTool, defaultToolRegistry);
+      const result = await runtime.run('Gere um render 3D', doc);
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools.length).toBe(1);
+      expect(result.executedTools[0].toolName).toBe('generate_3d_render');
+      expect(result.executedTools[0].result.success).toBe(false);
+      expect((result.executedTools[0].result as any).error.code).toBe('TOOL_NOT_FOUND');
+      // PDM original intacto
+      expect(result.doc).toEqual(doc);
+    });
+
+    it('tool que falha não deve resultar em confirmação falsa de sucesso', async () => {
+      const doc = createTestDoc();
+      const faultyProvider = new MockAIProvider([
+        {
+          response: {
+            functionCalls: [
+              {
+                name: 'move_node',
+                args: { nodeId: 'inexistent_node_id', x_mm: 50, y_mm: 50 },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: 'Não foi possível mover o objeto pois o nó especificado não existe.',
+            finishReason: 'STOP',
+          },
+        },
+      ]);
+
+      const runtime = new AgentRuntime(faultyProvider, defaultToolRegistry);
+      const result = await runtime.run('Mova o nó inexistente', doc);
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools.length).toBe(1);
+      expect(result.executedTools[0].result.success).toBe(false);
+      expect((result.executedTools[0].result as any).error.code).toBe('NODE_NOT_FOUND');
+      expect(result.doc).toEqual(doc);
+    });
+
+    it('tool executada com sucesso deve atualizar o PDM e confirmar a alteração', async () => {
+      const doc = createTestDoc();
+      const successProvider = new MockAIProvider([
+        {
+          response: {
+            functionCalls: [
+              {
+                name: 'move_node',
+                args: { nodeId: 'vector_group_1', x_mm: 20, y_mm: 30 },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: 'O objeto "vector_group_1" foi movido para X: 20 mm e Y: 30 mm.',
+            finishReason: 'STOP',
+          },
+        },
+      ]);
+
+      const runtime = new AgentRuntime(successProvider, defaultToolRegistry);
+      const result = await runtime.run('Mova para 20, 30', doc);
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools.length).toBe(1);
+      expect(result.executedTools[0].result.success).toBe(true);
+      expect(result.doc?.nodes['vector_group_1'].position_mm).toEqual({ x: 20, y: 30 });
+      expect(result.reply).toContain('20 mm');
+    });
+  });
 });
 

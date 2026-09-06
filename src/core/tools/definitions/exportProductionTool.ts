@@ -21,13 +21,13 @@ export interface ExportProductionArgs {
 
 export const exportProductionTool: ToolDefinition<ExportProductionArgs, ExportResult> = {
   name: 'export_production',
-  description: 'Gera arquivos gráficos de saída para produção (PNG em alta resolução, SVG vetorial, Faca SVG isolada ou Manifesto JSON) baseados no PDM.',
+  description: 'Gera arquivos de saída para produção gráfica baseados no PDM. Formatos suportados exclusivamente: PNG (alta resolução), SVG (vetor), Cut-SVG (faca de corte isolada) e Manifest JSON. NOTA: PDF não é suportado.',
   parameters: {
     type: 'object',
     properties: {
       format: {
         type: 'string',
-        description: 'Formato de saída desejado.',
+        description: 'Formato de saída desejado. Suporta exclusivamente: "png", "svg", "cut-svg", "manifest-json". Formatos como PDF, AI, EPS ou CDR NÃO são suportados.',
         enum: ['png', 'svg', 'cut-svg', 'manifest-json'],
       },
       dpi: {
