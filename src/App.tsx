@@ -88,7 +88,14 @@ export const App: React.FC = () => {
             onOpenExport={() => setIsExportModalOpen(true)}
           />
         }
-        chatPanel={<ChatPanel />}
+        chatPanel={
+          <ChatPanel
+            doc={doc}
+            selectedNodeId={selectedNodeId}
+            onApplyDoc={actions.applyAgentDocumentChange}
+            addToast={actions.addToast}
+          />
+        }
         canvasViewport={
           <CanvasViewport
             doc={doc}

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — Google Gemini AI Provider (v1.0)
  *
  * Implementação agnóstica e segura do provedor Gemini via REST API direta (Node/Server).
@@ -17,7 +17,7 @@ export class GeminiProvider implements AIProvider {
     this.defaultModel =
       defaultModel ||
       (typeof process !== 'undefined' && process.env?.GEMINI_MODEL) ||
-      'gemini-2.0-flash';
+      'gemini-2.5-flash';
   }
 
   /**

@@ -820,3 +820,36 @@ export class DeleteTechnicalGuideCommand implements DocumentCommand {
     };
   }
 }
+
+/**
+ * Comando de Aplicação de Mudança de Documento pelo Agente de IA
+ * Permite que mutações determinísticas do agente sejam revertidas com precisão via Undo/Redo (Ctrl+Z / Ctrl+Y).
+ */
+export class ApplyAgentDocumentChangeCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    private readonly prevDoc: PrexyonDocument,
+    private readonly nextDoc: PrexyonDocument,
+    description: string = 'Ação do Agente'
+  ) {
+    this.id = `cmd_agent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    this.name = description;
+    this.timestamp = Date.now();
+  }
+
+  execute(_currentDoc: PrexyonDocument): CommandResult {
+    return {
+      doc: this.nextDoc,
+    };
+  }
+
+  undo(_currentDoc: PrexyonDocument): CommandResult {
+    return {
+      doc: this.prevDoc,
+    };
+  }
+}
+

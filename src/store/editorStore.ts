@@ -83,6 +83,7 @@ import {
   CenterCutContourCommand,
   UpdateBleedSettingsCommand,
   UpdateSafetyMarginCommand,
+  ApplyAgentDocumentChangeCommand,
 } from '../core/commands/types';
 
 export interface ToastMessage {
@@ -1552,6 +1553,23 @@ export function useEditorStore() {
   const canRedo = useMemo(() => historyManagerRef.current.canRedo, [historyVersion]);
 
   /**
+   * Aplica uma mutação de documento retornada pelo Agente de IA registrando um comando no histórico.
+   * Permite que as ações do agente sejam revertidas via Undo/Redo (Ctrl+Z / Ctrl+Y).
+   */
+  const applyAgentDocumentChange = useCallback(
+    (newDoc: PrexyonDocument, description: string = 'Ação do Agente') => {
+      if (!newDoc || JSON.stringify(doc) === JSON.stringify(newDoc)) {
+        return;
+      }
+      const cmd = new ApplyAgentDocumentChangeCommand(doc, newDoc, description);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      setHistoryVersion((v) => v + 1);
+    },
+    [doc]
+  );
+
+  /**
    * Executa uma ferramenta determinística via Tool Registry conectada à UI e ao Histórico de Undo/Redo.
    */
   const executeAgentTool = useCallback(
@@ -1616,6 +1634,7 @@ export function useEditorStore() {
       removeToast,
       setDoc,
       executeAgentTool,
+      applyAgentDocumentChange,
     }),
     [
       importRasterFile,
@@ -1663,6 +1682,7 @@ export function useEditorStore() {
       removeToast,
       setDoc,
       executeAgentTool,
+      applyAgentDocumentChange,
     ]
   );
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — AI Provider Bridge & Runtime Types (v1.0)
  *
  * Interfaces e tipagens padronizadas e agnósticas de provedor de IA (Gemini, OpenAI, Anthropic, etc.).
@@ -57,6 +57,7 @@ export interface AgentRunOptions {
   temperature?: number;
   model?: string;
   history?: ChatMessage[];
+  selectedNodeId?: string;
 }
 
 export interface ExecutedToolRecord {
