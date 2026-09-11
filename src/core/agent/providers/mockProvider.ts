@@ -4,6 +4,7 @@
 
 import { AIProvider, AIProviderResponse, ChatMessage, AIProviderOptions } from '../types';
 import { ToolDeclaration } from '../../tools/types';
+import { defaultProposalManager } from '../../autofix';
 
 export interface ScriptedTurn {
   response: AIProviderResponse;
@@ -67,6 +68,42 @@ export function createDeterministicTurnsForRequest(
     nodes.find((n) => n.type === 'raster_image' || (n as any).type === 'raster') ||
     nodes[0];
   const targetNodeId = targetNode?.id || 'node_1';
+
+  // 0. Confirmação explícita de proposta assistida (ex: "Pode aplicar a proposta", "Confirmo a alteração", "Sim, aplique", "pode aplicar")
+  if (
+    text.includes('pode aplicar') ||
+    text.includes('aplicar proposta') ||
+    text.includes('confirmo a proposta') ||
+    text.includes('aplique a proposta') ||
+    text.includes('aplique essa alteração') ||
+    text.includes('pode corrigir') ||
+    (text.startsWith('sim') && (text.includes('aplique') || text.includes('reduza') || text.includes('mova') || text.includes('proposta') || text.includes('correção')))
+  ) {
+    const pendingProps = defaultProposalManager.getPendingProposals();
+    const propId = pendingProps[0]?.id || 'prop_default';
+
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_apply_prop_${Date.now()}`,
+              name: 'apply_proposed_fix',
+              args: {
+                proposalId: propId,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Proposta de correção assistida aplicada e revalidada com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
 
   // 1. Comando de Mover Objeto (ex: "Mova este objeto 10 mm para a direita.")
   if (text.includes('mova') || text.includes('mover') || text.includes('desloque')) {
@@ -342,7 +379,7 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 6. Comando de Validação de Produção (ex: "Valide o documento.")
+  // 7. Comando de Validação de Produção (ex: "Valide o documento.")
   if (text.includes('valid') || text.includes('verific') || text.includes('produção') || text.includes('producao')) {
     return [
       {

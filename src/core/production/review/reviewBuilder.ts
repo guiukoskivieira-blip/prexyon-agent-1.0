@@ -23,6 +23,7 @@ import {
 import { buildToolExecutionReceipt } from './receiptBuilder';
 import { validateDocumentForPackage } from '../package/packageValidator';
 import { GENERIC_STICKER_PROFILE } from '../profile/genericStickerProfile';
+import { generateProposedFixes, defaultProposalManager } from '../../autofix';
 
 export interface BuildReviewParams {
   executedTools: ExecutedToolRecord[];
@@ -246,7 +247,11 @@ export function buildProductionReview({
     };
   }
 
-  // 9. Cálculo Consolidado de Status
+  // 9. Geração e Registro de Propostas Assistidas (REQUIRES_CONFIRMATION)
+  const proposedFixes = generateProposedFixes(afterDoc);
+  defaultProposalManager.registerProposals(proposedFixes);
+
+  // 10. Cálculo Consolidado de Status
   let status: ReviewStatus = 'READY';
   let statusLabel = 'Pronto para produção';
   let statusVariant: ProductionReviewModel['statusVariant'] = 'success';
@@ -267,7 +272,7 @@ export function buildProductionReview({
     statusVariant = 'info';
   }
 
-  // 10. Resumo Geral
+  // 11. Resumo Geral
   let summary = 'Operação analisada com sucesso.';
   if (autoFixSummary && autoFixSummary.appliedCount > 0) {
     summary = `${autoFixSummary.appliedCount} problema(s) corrigido(s) automaticamente de forma segura.`;
@@ -293,6 +298,7 @@ export function buildProductionReview({
     cutContourEvidence,
     packageEvidence,
     autoFixSummary,
+    proposedFixes,
     validation: {
       status: validationReport.status,
       blockers,

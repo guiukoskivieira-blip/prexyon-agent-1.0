@@ -6,6 +6,9 @@
  */
 
 export * from './types';
+export * from './proposalTypes';
 export * from './issueDetector';
 export * from './fixRegistry';
 export * from './autoFixEngine';
+export * from './proposalGenerator';
+export * from './proposalManager';

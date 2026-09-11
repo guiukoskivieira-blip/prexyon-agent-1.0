@@ -22,6 +22,8 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  Sliders,
+  Check,
 } from 'lucide-react';
 import { ProductionReviewModel } from '@/core/production/review/types';
 import { downloadExportResult } from '@/core/export/exportEngine';
@@ -32,6 +34,8 @@ export interface ProductionReviewPanelProps {
   isCutContourVisible?: boolean;
   onToggleCutContourVisibility?: () => void;
   onHighlightNode?: (nodeId: string) => void;
+  onApplyProposal?: (proposalId: string) => void;
+  onRejectProposal?: (proposalId: string) => void;
   isUndone?: boolean;
 }
 
@@ -41,6 +45,8 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
   isCutContourVisible = true,
   onToggleCutContourVisibility,
   onHighlightNode,
+  onApplyProposal,
+  onRejectProposal,
   isUndone = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'steps' | 'diff' | 'validation'>('overview');
@@ -269,6 +275,61 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
                           )}
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Cartão de Correções Sugeridas (Requer Confirmação) */}
+                {review.proposedFixes && review.proposedFixes.filter((p) => p.status === 'PENDING').length > 0 && (
+                  <div className="p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-indigo-200 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                        Correções Sugeridas (Requer Confirmação)
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-medium">
+                        {review.proposedFixes.filter((p) => p.status === 'PENDING').length} proposta(s)
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 pt-0.5">
+                      {review.proposedFixes
+                        .filter((p) => p.status === 'PENDING')
+                        .map((prop) => (
+                          <div
+                            key={prop.id}
+                            className="p-2.5 rounded bg-surface-base/80 border border-surface-border space-y-2 text-[11px]"
+                          >
+                            <div>
+                              <div className="font-semibold text-slate-100 flex items-center justify-between">
+                                <span>{prop.title}</span>
+                                <span className="text-[10px] text-amber-400 font-normal">Requer decisão</span>
+                              </div>
+                              <p className="text-slate-300 text-[11px] mt-0.5">{prop.description}</p>
+                              <p className="text-slate-400 text-[10px] mt-0.5 italic">{prop.expectedImpact.summary}</p>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-1 border-t border-surface-border/50">
+                              {onRejectProposal && (
+                                <button
+                                  onClick={() => onRejectProposal(prop.id)}
+                                  className="px-2.5 py-1 rounded bg-surface-elevated hover:bg-surface-base text-slate-300 text-[11px] border border-surface-border transition-colors"
+                                >
+                                  Manter como está
+                                </button>
+                              )}
+                              {onApplyProposal && (
+                                <button
+                                  onClick={() => onApplyProposal(prop.id)}
+                                  className="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] flex items-center gap-1 shadow-sm transition-colors"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  Aplicar correção
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                     </div>
                   </div>
                 )}

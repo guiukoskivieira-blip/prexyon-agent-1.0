@@ -6,6 +6,7 @@
  */
 
 import { PackageStatus } from '../package/types';
+import { ProposedFix } from '../../autofix/proposalTypes';
 
 export type ReviewStatus = 'READY' | 'READY_WITH_WARNINGS' | 'BLOCKED' | 'INFO';
 
@@ -151,6 +152,8 @@ export interface ProductionReviewModel {
   packageEvidence?: PackageEvidence;
   /** Resumo estruturado de Safe Auto-Fix (quando aplicável) */
   autoFixSummary?: AutoFixSummaryReview;
+  /** Propostas de correções assistidas que exigem confirmação (REQUIRES_CONFIRMATION) */
+  proposedFixes?: ProposedFix[];
   /** Auditoria de validação */
   validation: {
     status: PackageStatus;

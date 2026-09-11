@@ -15,6 +15,7 @@ import { validateProductionTool } from './definitions/validateProductionTool';
 import { exportProductionTool } from './definitions/exportProductionTool';
 import { createProductionPackageTool } from './definitions/createProductionPackageTool';
 import { autoFixPrepressIssuesTool } from './definitions/autoFixPrepressIssuesTool';
+import { applyProposedFixTool } from './definitions/applyProposedFixTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -29,6 +30,7 @@ export * from './definitions/validateProductionTool';
 export * from './definitions/exportProductionTool';
 export * from './definitions/createProductionPackageTool';
 export * from './definitions/autoFixPrepressIssuesTool';
+export * from './definitions/applyProposedFixTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -44,6 +46,7 @@ export const defaultToolRegistry = new ToolRegistry([
   exportProductionTool,
   createProductionPackageTool,
   autoFixPrepressIssuesTool,
+  applyProposedFixTool,
 ]);
 
 /**

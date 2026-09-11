@@ -302,14 +302,14 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
   });
 
   describe('7. Hotfix 01 — Compatibilidade Estrita de Schemas com a API Gemini', () => {
-    it('deve converter perfeitamente todas as 10 ferramentas para o formato oficial do Gemini', () => {
+    it('deve converter perfeitamente todas as 11 ferramentas para o formato oficial do Gemini', () => {
       const provider = new GeminiProvider();
       const allTools = defaultToolRegistry.getToolDeclarations();
-      expect(allTools.length).toBe(10);
+      expect(allTools.length).toBe(11);
 
       const formatted = provider.formatTools(allTools);
       expect(formatted.length).toBe(1);
-      expect(formatted[0].functionDeclarations.length).toBe(10);
+      expect(formatted[0].functionDeclarations.length).toBe(11);
 
       const validGeminiTypes = ['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'];
 
@@ -628,11 +628,12 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
       const doc = createTestDoc();
       await runtime.run('Olá', doc);
 
-      expect(capturedSystemPrompt).toContain('CAPACIDADES E FERRAMENTAS DISPONÍVEIS NO TOOL REGISTRY (10 FERRAMENTAS)');
+      expect(capturedSystemPrompt).toContain('CAPACIDADES E FERRAMENTAS DISPONÍVEIS NO TOOL REGISTRY (11 FERRAMENTAS)');
       expect(capturedSystemPrompt).toContain('`move_node`');
       expect(capturedSystemPrompt).toContain('`export_production`');
       expect(capturedSystemPrompt).toContain('`create_production_package`');
       expect(capturedSystemPrompt).toContain('`auto_fix_prepress_issues`');
+      expect(capturedSystemPrompt).toContain('`apply_proposed_fix`');
       expect(capturedSystemPrompt).toContain('DIRETRIZES ESTRITAS DE FIDELIDADE OPERACIONAL');
     });
 

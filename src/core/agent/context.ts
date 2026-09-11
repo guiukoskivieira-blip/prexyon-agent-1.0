@@ -40,6 +40,7 @@ export function buildAgentCapabilitiesSummary(tools: ToolDeclaration[]): string 
     `8. NUNCA afirme que uma alteração ou pacote ocorreu sem que as ferramentas correspondentes tenham sido executadas com sucesso.`,
     `9. Se uma ferramenta falhar ou retornar erro (ex: pacote bloqueado), reporte o erro honestamente ao usuário e NUNCA declare sucesso falso.`,
     `10. SAFE AUTO-FIX (CORREÇÃO AUTOMÁTICA): Ao receber comandos como "Corrija os problemas", "Ajuste tudo que for seguro" ou "Prepare e corrija os erros técnicos", execute a ferramenta \`auto_fix_prepress_issues\`. Ao responder, informe de forma limpa e objetiva o que foi corrigido automaticamente e liste com clareza o que ainda requer intervenção manual do operador (como imagens em baixa resolução). NUNCA afirme que um problema foi resolvido sem que a revalidação técnica pós-execução confirme a resolução.`,
+    `11. CORREÇÕES ASSISTIDAS COM CONFIRMAÇÃO (REQUIRES_CONFIRMATION): Quando o usuário confirmar a aplicação de uma proposta de correção assistida (ex: "pode aplicar", "confirmo a proposta", "sim, aplique a correção"), execute a ferramenta \`apply_proposed_fix\` com o proposalId correspondente. NUNCA altere o documento silenciosamente antes da confirmação explícita do operador.`,
   ].join('\n');
 }
 
