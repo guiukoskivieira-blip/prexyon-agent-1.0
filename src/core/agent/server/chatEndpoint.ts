@@ -99,12 +99,15 @@ export async function processAgentChatRequest(
     },
   });
 
-  // Fallback determinístico resiliente: SOMENTE se o provedor remoto tiver erro de infraestrutura/rede/provedor
+  // Fallback determinístico resiliente: SOMENTE se o provedor remoto tiver erro de infraestrutura/rede/provedor/timeout
   const isProviderInfrastructureError =
     result.error?.code === 'PROVIDER_ERROR' ||
-    result.error?.code === 'PLANNER_ERROR';
+    result.error?.code === 'PLANNER_ERROR' ||
+    result.error?.code === 'PROVIDER_TIMEOUT';
 
-  if (!result.success && isGeminiAvailable && isProviderInfrastructureError) {
+  const canTriggerFallback = isGeminiAvailable || Boolean(customProvider);
+
+  if (!result.success && canTriggerFallback && isProviderInfrastructureError) {
     const fallbackTurns = createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId);
     if (fallbackTurns.length > 0) {
       const fallbackProvider = new MockAIProvider(fallbackTurns);

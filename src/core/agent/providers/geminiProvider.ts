@@ -9,6 +9,8 @@ import { AIProvider, AIProviderResponse, ChatMessage, AIProviderOptions } from '
 import { ToolDeclaration } from '../../tools/types';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './base';
 
+export const GEMINI_REQUEST_TIMEOUT_MS = 8000;
+
 export class GeminiProvider implements AIProvider {
   public readonly name = 'gemini';
   private defaultModel: string;
@@ -210,13 +212,26 @@ export class GeminiProvider implements AIProvider {
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError') {
+        console.warn(`[GeminiProvider] timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms; usando fallback determinístico`);
+        const err = new Error(`[GeminiProvider Error]: Timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms na API Gemini.`);
+        (err as any).name = 'TimeoutError';
+        (err as any).code = 'PROVIDER_TIMEOUT';
+        throw err;
+      }
+      throw fetchErr;
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -272,7 +287,7 @@ export class GeminiProvider implements AIProvider {
    */
   public async generateActionPlan(
     userMessage: string,
-    tools: ToolDeclaration[] = [],
+    _tools: ToolDeclaration[] = [],
     options?: AIProviderOptions
   ): Promise<import('../planner').AgentActionPlan> {
     const apiKey = this.getApiKey(options?.apiKey);
@@ -282,7 +297,6 @@ export class GeminiProvider implements AIProvider {
     const formattedContents = this.formatContents([
       { role: 'user', content: userMessage },
     ]);
-    const formattedTools = this.formatTools(tools);
 
     const { AGENT_ACTION_PLAN_GEMINI_SCHEMA } = await import('../planner');
 
@@ -298,19 +312,28 @@ export class GeminiProvider implements AIProvider {
       },
     };
 
-    if (formattedTools.length > 0) {
-      payload.tools = formattedTools;
-    }
-
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError') {
+        console.warn(`[GeminiProvider] timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms; usando fallback determinístico`);
+        const err = new Error(`[GeminiProvider Error]: Timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms na API Gemini.`);
+        (err as any).name = 'TimeoutError';
+        (err as any).code = 'PROVIDER_TIMEOUT';
+        throw err;
+      }
+      throw fetchErr;
+    }
 
     if (!response.ok) {
       const errorText = await response.text();

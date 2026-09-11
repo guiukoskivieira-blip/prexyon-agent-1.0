@@ -1,0 +1,162 @@
+import { describe, it, expect, vi } from 'vitest';
+import { processAgentChatRequest } from '../src/core/agent/server/chatEndpoint';
+import { PrexyonDocument, RasterNode } from '../src/core/pdm/types';
+import { AIProvider } from '../src/core/agent/types';
+import { GEMINI_REQUEST_TIMEOUT_MS } from '../src/core/agent/providers/geminiProvider';
+
+function createSampleDoc(): PrexyonDocument {
+  return {
+    id: 'doc_timeout_test',
+    name: 'test_art.png',
+    profileId: 'default',
+    dimensions: { width_mm: 100, height_mm: 100, unit: 'mm' },
+    rootNodeIds: ['node_raster_1'],
+    nodes: {
+      'node_raster_1': {
+        id: 'node_raster_1',
+        type: 'raster_image',
+        name: 'test_art.png',
+        visible: true,
+        locked: false,
+        position_mm: { x: 10, y: 10 },
+        rotation_deg: 0,
+        opacity: 1,
+        src: '',
+        hasRasterSource: true,
+        naturalWidth: 800,
+        naturalHeight: 600,
+        physicalWidth_mm: 50,
+        physicalHeight_mm: 37.5,
+        aspectRatio: 800 / 600,
+        mimeType: 'image/png',
+        fileSize_bytes: 1024,
+        fileName: 'test_art.png',
+      } as RasterNode,
+    },
+    groups: {},
+    colorSpace: 'sRGB',
+    renderIntent: 'RelativeColorimetric',
+    dpi: 300,
+    separations: {},
+  };
+}
+
+describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determinístico', () => {
+  it('TESTE A: Constante de timeout está configurada para 8000ms', () => {
+    expect(GEMINI_REQUEST_TIMEOUT_MS).toBe(8000);
+  });
+
+  it('TESTE B: Provedor com TimeoutError aciona fallback determinístico sem crash', async () => {
+    const doc = createSampleDoc();
+
+    // Simula um provider que sofre timeout
+    const timeoutProvider: AIProvider = {
+      name: 'gemini',
+      async generateActionPlan() {
+        const timeoutErr = new Error('Timeout após 8000ms na API Gemini.');
+        (timeoutErr as any).name = 'TimeoutError';
+        (timeoutErr as any).code = 'PROVIDER_TIMEOUT';
+        throw timeoutErr;
+      },
+      async generateResponse() {
+        throw new Error('Segunda chamada externa não deve ocorrer!');
+      },
+    } as any;
+
+    const result = await processAgentChatRequest(
+      {
+        message: 'quero isso para dtf uv',
+        doc,
+      },
+      timeoutProvider
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.doc?.profileId).toBe('dtf-uv');
+    expect(result.reply.toLowerCase()).toContain('dtf uv');
+  });
+
+  it('TESTE C: DTF UV multi-step executa corretamente via fallback em caso de timeout', async () => {
+    const doc = createSampleDoc();
+
+    let externalCallCount = 0;
+    const slowProvider: AIProvider = {
+      name: 'gemini',
+      async generateActionPlan() {
+        externalCallCount++;
+        const timeoutErr = new Error('Timeout');
+        timeoutErr.name = 'TimeoutError';
+        throw timeoutErr;
+      },
+      async generateResponse() {
+        externalCallCount++;
+        throw new Error('Não deve chamar generateResponse após timeout!');
+      },
+    } as any;
+
+    const result = await processAgentChatRequest(
+      {
+        message: 'prepara para dtf uv, coloca branco por baixo e passa verniz só na arte',
+        doc,
+      },
+      slowProvider
+    );
+
+    // Garante que só fez UMA tentativa no provider e não repetiu chamadas externas
+    expect(externalCallCount).toBe(1);
+    expect(result.success).toBe(true);
+    expect(result.doc?.profileId).toBe('dtf-uv');
+    expect(result.doc?.separations.WHITE?.status).toBe('GENERATED');
+    expect(result.doc?.separations.CLEAR?.metadata?.mode).toBe('ARTWORK');
+  });
+
+  it('TESTE D: Frase não suportada com timeout retorna erro factual sem mutações falsas', async () => {
+    const doc = createSampleDoc();
+
+    const slowProvider: AIProvider = {
+      name: 'gemini',
+      async generateActionPlan() {
+        const timeoutErr = new Error('Timeout');
+        timeoutErr.name = 'TimeoutError';
+        throw timeoutErr;
+      },
+    } as any;
+
+    const result = await processAgentChatRequest(
+      {
+        message: 'comando totalmente inventado xyz 999',
+        doc,
+      },
+      slowProvider
+    );
+
+    expect(result.executedTools.length).toBe(0);
+    // Não inventou nenhuma mutação no PDM
+    expect(result.doc?.separations.WHITE).toBeUndefined();
+    expect(result.doc?.separations.CLEAR).toBeUndefined();
+    expect(Object.keys(result.doc?.nodes || {}).length).toBe(1);
+  });
+
+  it('TESTE E: P0-03 preservado em caso de timeout — não declara sucesso sem mutação real', async () => {
+    const doc = createSampleDoc();
+
+    const slowProvider: AIProvider = {
+      name: 'gemini',
+      async generateActionPlan() {
+        const timeoutErr = new Error('Timeout');
+        timeoutErr.name = 'TimeoutError';
+        throw timeoutErr;
+      },
+    } as any;
+
+    const result = await processAgentChatRequest(
+      {
+        message: 'gere o pacote de produção para algo inexistente',
+        doc,
+      },
+      slowProvider
+    );
+
+    expect(result.reply).not.toMatch(/pacote gerado com sucesso/i);
+  });
+});
