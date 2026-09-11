@@ -316,9 +316,12 @@ export class AgentRuntime {
                   userMessage.toLowerCase().includes('nao coloca branco'),
                 forbidCutContour:
                   userMessage.toLowerCase().includes('sem faca') ||
-                  userMessage.toLowerCase().includes('sem corte') ||
                   userMessage.toLowerCase().includes('não crie faca') ||
-                  userMessage.toLowerCase().includes('nao crie faca'),
+                  userMessage.toLowerCase().includes('nao crie faca') ||
+                  (userMessage.toLowerCase().includes('sem corte') &&
+                    !userMessage.toLowerCase().includes('sem corte dentro') &&
+                    !userMessage.toLowerCase().includes('sem corte interno') &&
+                    !userMessage.toLowerCase().includes('sem cortes internos')),
                 preserveDimensions:
                   userMessage.toLowerCase().includes('sem alterar tamanho') ||
                   userMessage.toLowerCase().includes('manter tamanho') ||
@@ -359,7 +362,24 @@ export class AgentRuntime {
             }
 
             const sanitizedStep = validation.resolvedPlan?.steps[0];
-            const execArgs = sanitizedStep ? sanitizedStep.arguments : call.args;
+            let execArgs = sanitizedStep ? { ...sanitizedStep.arguments } : { ...(call.args || {}) };
+
+            if (call.name === 'create_cut_contour') {
+              const currentSource = execArgs.sourceNodeId ? currentDoc.nodes[execArgs.sourceNodeId as string] : null;
+              if (!currentSource || currentSource.type !== 'group') {
+                const targetRasterId = (execArgs.sourceNodeId as string) || options?.selectedNodeId;
+                const allNodes = Object.values(currentDoc.nodes);
+                const matchingVector = allNodes.find(
+                  (n) =>
+                    n.type === 'group' &&
+                    ((n as any).sourceRasterNodeId === targetRasterId ||
+                      (targetRasterId && currentDoc.nodes[targetRasterId] && n.name === `Vetor: ${currentDoc.nodes[targetRasterId].name}`))
+                );
+                if (matchingVector) {
+                  execArgs.sourceNodeId = matchingVector.id;
+                }
+              }
+            }
 
             // Executa no Tool Registry passando o PDM atual
             const executionResult = await this.registry.executeTool(call.name, execArgs, {

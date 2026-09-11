@@ -56,22 +56,6 @@ export class MockAIProvider implements AIProvider {
  * proporções ("x proporcional", "mantendo proporção") e comandos compostos DTF UV.
  */
 export function parseResizeCommand(text: string): { width_mm?: number; height_mm?: number; keepAspectRatio: boolean } | null {
-  // Ignora se o comando for especificamente sobre contorno de corte / faca / espessura de linha / movimento
-  if (
-    text.includes('faca') ||
-    text.includes('sangria') ||
-    text.includes('bleed') ||
-    text.includes('linhas finas') ||
-    text.includes('espessura') ||
-    text.includes('traço fino') ||
-    text.includes('traco fino') ||
-    text.includes('mova') ||
-    text.includes('mover') ||
-    text.includes('desloque')
-  ) {
-    return null;
-  }
-
   const parsed = parseDimensionsFromNaturalText(text);
   if (parsed && !parsed.isAmbiguous) {
     return {
@@ -241,8 +225,96 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 2. Comando de Redimensionar / Escalar / DTF UV Proporcional (ex: "crie um adesivo dtf uv com 5cm x proporcional", "Deixe a logo com 50 mm de largura", "redimensione para 5cm")
+  // 2. Comando de Redimensionar / Escalar / DTF UV Proporcional / Combinado com Faca
   const resizeParams = parseResizeCommand(text);
+  const isForbidCut =
+    text.includes('sem faca') ||
+    text.includes('não crie faca') ||
+    text.includes('nao crie faca') ||
+    (text.includes('sem corte') &&
+      !text.includes('sem corte dentro') &&
+      !text.includes('sem corte interno') &&
+      !text.includes('sem cortes internos'));
+
+  const wantsCutContour =
+    (text.includes('faca') || text.includes('corte') || text.includes('sangria')) &&
+    !text.includes('feche a faca') &&
+    !text.includes('fechar faca') &&
+    !isForbidCut &&
+    doc.profileId !== 'dtf-uv';
+
+  if (resizeParams && wantsCutContour) {
+    const matchMm = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i) || text.match(/(\d+(?:[.,]\d+)?)\s*mm/i);
+    const offset = matchMm ? parseFloat(matchMm[1].replace(',', '.')) : 2.0;
+    const includeInnerContours = !(
+      text.includes('sem corte dentro') ||
+      text.includes('sem vazado') ||
+      text.includes('sem vazados') ||
+      text.includes('sem corte interno') ||
+      text.includes('sem cortes internos') ||
+      text.includes('somente externo') ||
+      text.includes('somente contorno externo')
+    );
+
+    const calls: any[] = [
+      {
+        id: `call_resize_${Date.now()}`,
+        name: 'resize_node',
+        args: {
+          nodeId: targetNodeId,
+          node_id: targetNodeId,
+          ...(resizeParams.width_mm !== undefined ? { width_mm: resizeParams.width_mm } : {}),
+          ...(resizeParams.height_mm !== undefined ? { height_mm: resizeParams.height_mm } : {}),
+          keepAspectRatio: resizeParams.keepAspectRatio,
+        },
+      },
+    ];
+
+    let vectorTargetId = targetNodeId;
+    if (targetNode?.type === 'raster_image' || (targetNode as any)?.type === 'raster') {
+      const derivedVector = nodes.find(
+        (n) =>
+          (n.type === 'group' || (n as any).type === 'vector_group') &&
+          ((n as any).sourceRasterNodeId === targetNode.id || n.name === `Vetor: ${targetNode.name}`)
+      );
+      if (derivedVector) {
+        vectorTargetId = derivedVector.id;
+      } else {
+        calls.push({
+          id: `call_vec_${Date.now()}`,
+          name: 'vectorize_raster',
+          args: {
+            nodeId: targetNode.id,
+            preset: 'logo',
+          },
+        });
+      }
+    }
+
+    calls.push({
+      id: `call_cut_${Date.now()}`,
+      name: 'create_cut_contour',
+      args: {
+        sourceNodeId: vectorTargetId,
+        offset_mm: offset,
+        includeInnerContours,
+      },
+    });
+
+    const turns: ScriptedTurn[] = calls.map((c) => ({
+      response: { functionCalls: [c] },
+    }));
+
+    turns.push({
+      response: {
+        text: `Objeto redimensionado para ${resizeParams.width_mm || resizeParams.height_mm} mm e faca de corte criada com ${offset} mm de offset${!includeInnerContours ? ' (sem corte interno)' : ''}.`,
+        finishReason: 'STOP',
+      },
+    });
+
+    return turns;
+  }
+
   if (resizeParams) {
     const dimSummary = resizeParams.width_mm && resizeParams.height_mm
       ? `${resizeParams.width_mm} × ${resizeParams.height_mm} mm`
@@ -744,13 +816,23 @@ export function createDeterministicTurnsForRequest(
     }
   }
 
-  // 5. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.")
+  // 5. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.", "crie uma faca de 1 mm sem corte dentro")
   if (text.includes('faca') || text.includes('corte') || text.includes('sangria')) {
     const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
     const offset = matchMm ? parseFloat(matchMm[1]) : 2;
+    const includeInnerContours = !(
+      text.includes('sem corte dentro') ||
+      text.includes('sem vazado') ||
+      text.includes('sem vazados') ||
+      text.includes('sem corte interno') ||
+      text.includes('sem cortes internos') ||
+      text.includes('somente externo') ||
+      text.includes('somente contorno externo')
+    );
 
-    // Se o nó alvo for uma imagem raster, localiza o grupo vetorial correspondente no PDM
+    const calls: any[] = [];
     let vectorTargetId = targetNodeId;
+
     if (targetNode?.type === 'raster_image' || (targetNode as any)?.type === 'raster') {
       const derivedVector = nodes.find(
         (n) =>
@@ -759,31 +841,40 @@ export function createDeterministicTurnsForRequest(
       );
       if (derivedVector) {
         vectorTargetId = derivedVector.id;
+      } else {
+        calls.push({
+          id: `call_vec_${Date.now()}`,
+          name: 'vectorize_raster',
+          args: {
+            nodeId: targetNode.id,
+            preset: 'logo',
+          },
+        });
       }
     }
 
-    return [
-      {
-        response: {
-          functionCalls: [
-            {
-              id: `call_cut_${Date.now()}`,
-              name: 'create_cut_contour',
-              args: {
-                sourceNodeId: vectorTargetId,
-                offset_mm: offset,
-              },
-            },
-          ],
-        },
+    calls.push({
+      id: `call_cut_${Date.now()}`,
+      name: 'create_cut_contour',
+      args: {
+        sourceNodeId: vectorTargetId,
+        offset_mm: offset,
+        includeInnerContours,
       },
-      {
-        response: {
-          text: `Faca de corte criada com sucesso (${offset} mm de offset).`,
-          finishReason: 'STOP',
-        },
+    });
+
+    const turns: ScriptedTurn[] = calls.map((c) => ({
+      response: { functionCalls: [c] },
+    }));
+
+    turns.push({
+      response: {
+        text: `Faca de corte criada com sucesso (${offset} mm de offset)${!includeInnerContours ? ' sem corte interno' : ''}.`,
+        finishReason: 'STOP',
       },
-    ];
+    });
+
+    return turns;
   }
 
   // 5. Comando de Auto-Fix / Correção Automática (ex: "Corrija os problemas que puder automaticamente", "Ajuste tudo que for seguro")

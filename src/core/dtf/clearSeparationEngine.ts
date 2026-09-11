@@ -178,6 +178,7 @@ export function generateClearSeparationMask(
     generationMethod: mode === 'FULL' ? 'CLEAR_FULL_V1' : 'CLEAR_ARTWORK_PROPORTIONAL_V1',
     coverageRatio,
     maskDataUrl,
+    maskBuffer,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     metadata: {

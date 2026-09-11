@@ -221,6 +221,7 @@ export function generateWhiteUnderbaseMask(
     generationMethod: 'ALPHA_PROPORTIONAL_V1',
     coverageRatio,
     maskDataUrl,
+    maskBuffer,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     metadata: {

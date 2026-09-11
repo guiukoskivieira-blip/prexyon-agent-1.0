@@ -8,8 +8,10 @@ import {
   CheckCircle2,
   User,
 } from 'lucide-react';
-import { PrexyonDocument } from '@/core/pdm/types';
+import { PrexyonDocument, DocumentNode, RasterNode } from '@/core/pdm/types';
 import { sanitizeDocumentForAgentTransport, mergeAgentResultDocument } from '@/core/pdm/document';
+import { vtracerBridge } from '@/core/vectorizer/vtracerBridge';
+import { getVTracerOptionsForPreset } from '@/core/vectorizer/presets';
 import { materializeAgentExports } from '@/core/agent/clientExportMaterializer';
 import { ProductionReviewModel } from '@/core/production/review/types';
 import { buildProductionReview } from '@/core/production/review/reviewBuilder';
@@ -215,8 +217,54 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setIsProcessing(true);
 
     try {
+      let activeDoc = doc;
+      const textLower = cleanText.toLowerCase();
+      const wantsCutOrVectorize =
+        textLower.includes('faca') ||
+        textLower.includes('corte') ||
+        textLower.includes('sangria') ||
+        textLower.includes('contorno') ||
+        textLower.includes('vetor') ||
+        textLower.includes('vector');
+
+      // Se a intenção demandar geometria vetorial (faca/vetorização) e houver imagem raster sem vetor:
+      if (wantsCutOrVectorize && doc.nodes) {
+        const nodes = Object.values(doc.nodes) as DocumentNode[];
+        const targetRaster = (selectedNodeId && doc.nodes[selectedNodeId]?.type === 'raster_image'
+          ? doc.nodes[selectedNodeId]
+          : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
+
+        if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {
+          const hasDerivedVector = nodes.some(
+            (n) =>
+              n &&
+              (n.type === 'group' || (n as any).type === 'vector_group') &&
+              ((n as any).sourceRasterNodeId === targetRaster.id || n.name === `Vetor: ${targetRaster.name}`)
+          );
+
+          if (!hasDerivedVector) {
+            try {
+              const options = getVTracerOptionsForPreset('logo');
+              const vResult = await vtracerBridge.vectorizeRasterNode(targetRaster, options);
+              const updatedNodes = { ...activeDoc.nodes };
+              updatedNodes[vResult.groupNode.id] = vResult.groupNode;
+              for (const pNode of vResult.pathNodes) {
+                updatedNodes[pNode.id] = pNode;
+              }
+              activeDoc = {
+                ...activeDoc,
+                nodes: updatedNodes,
+                rootNodeIds: [...activeDoc.rootNodeIds, vResult.groupNode.id],
+              };
+            } catch (vErr) {
+              console.warn('Vetorização local no navegador não pôde ser executada:', vErr);
+            }
+          }
+        }
+      }
+
       // 2. Envia para o endpoint backend POST /api/agent/chat com documento sanitizado (sem base64)
-      const transportDoc = sanitizeDocumentForAgentTransport(doc);
+      const transportDoc = sanitizeDocumentForAgentTransport(activeDoc);
       const response = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: {

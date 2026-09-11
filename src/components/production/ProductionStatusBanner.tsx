@@ -45,7 +45,7 @@ export const ProductionStatusBanner: React.FC<ProductionStatusBannerProps> = ({
                 Aguardando Arquivo
               </div>
               <p className="text-[11px] text-slate-400 truncate">
-                Nenhuma arte foi importada.
+                Aguardando arquivo para iniciar a validação.
               </p>
             </div>
           </div>
@@ -67,7 +67,7 @@ export const ProductionStatusBanner: React.FC<ProductionStatusBannerProps> = ({
                 Pronto para Produção
               </div>
               <p className="text-[11px] text-emerald-400/80 truncate">
-                Arquivo validado e em conformidade técnica.
+                Arquivo pronto para produção.
               </p>
             </div>
           </div>
@@ -118,9 +118,11 @@ export const ProductionStatusBanner: React.FC<ProductionStatusBannerProps> = ({
                 Produção Bloqueada
               </div>
               <p className="text-[11px] text-rose-300/80 truncate">
-                {blockerCount === 1
-                  ? '1 problema crítico precisa de correção manual.'
-                  : `${blockerCount} problemas críticos impedem a produção.`}
+                {blockerCount > 0
+                  ? blockerCount === 1
+                    ? '1 problema crítico precisa de correção manual.'
+                    : `${blockerCount} problemas críticos impedem a produção.`
+                  : 'Existem requisitos pendentes antes da produção.'}
               </p>
             </div>
           </div>

@@ -79,13 +79,24 @@ export function buildActionPlanFromUserRequest(
   ) {
     constraints.forbidWhite = true;
   }
-  if (text.includes('não crie faca') || text.includes('nao crie faca') || text.includes('sem faca') || text.includes('sem corte')) {
+  const isForbidCut =
+    text.includes('não crie faca') ||
+    text.includes('nao crie faca') ||
+    text.includes('sem faca') ||
+    text.includes('sem contorno de corte') ||
+    (text.includes('sem corte') &&
+      !text.includes('sem corte dentro') &&
+      !text.includes('sem corte interno') &&
+      !text.includes('sem cortes internos'));
+
+  if (isForbidCut) {
     constraints.forbidCutContour = true;
   }
 
-  // 3. Ambiguidade de dimensão isolada (ex: "deixe com 5 cm" sem eixo e sem proporção explícita)
+  // 3. Ambiguidade de dimensão isolada (ex: número sem unidade como "deixe com 5 de largura" ou dimensão sem eixo como "deixe com 5 cm")
   const parsedDims = parseDimensionsFromNaturalText(text);
-  if (parsedDims?.isAmbiguous && !text.includes('largura') && !text.includes('altura') && !text.includes('dtf') && !text.includes('adesivo')) {
+  if (parsedDims?.isAmbiguous) {
+    const hasUnit = text.includes('cm') || text.includes('mm') || text.includes('cent') || text.includes('mili');
     return {
       schemaVersion: '1.0',
       intent: 'ASK_USER',
@@ -93,7 +104,9 @@ export function buildActionPlanFromUserRequest(
       target: { type: 'SELECTED_OBJECT' },
       constraints,
       steps: [],
-      ambiguityQuestion: 'Você quer aplicar essa medida na largura ou na altura da arte?',
+      ambiguityQuestion: hasUnit
+        ? 'Você quer aplicar essa medida na largura ou na altura da arte?'
+        : 'Por favor, informe a unidade de medida desejada (ex: 50 mm ou 5 cm) para redimensionar com segurança.',
     };
   }
 
@@ -277,16 +290,42 @@ export function buildActionPlanFromUserRequest(
   if (wantsCutContour) {
     const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
     const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
+    const includeInnerContours = !(
+      text.includes('sem corte dentro') ||
+      text.includes('sem vazado') ||
+      text.includes('sem vazados') ||
+      text.includes('sem corte interno') ||
+      text.includes('sem cortes internos') ||
+      text.includes('somente externo') ||
+      text.includes('somente contorno externo')
+    );
+
+    // Se o documento possui imagem raster e ainda não há vetor gerado, insere a etapa intermediária de vetorização
+    const nodes = Object.values(doc.nodes || {});
+    const hasVectorGroup = nodes.some((n) => n.type === 'group' || (n as any).type === 'vector_group');
+    const hasRaster = nodes.some((n) => n.type === 'raster_image' || (n as any).type === 'raster');
+    const needsAutoVectorize = hasRaster && !hasVectorGroup && !steps.some((s) => s.tool === 'vectorize_raster');
+
+    if (needsAutoVectorize) {
+      const prevStepIds = steps.map((s) => s.id!).filter(Boolean);
+      steps.push({
+        id: 'step_vectorize',
+        tool: 'vectorize_raster',
+        arguments: { preset: 'logo' },
+        description: 'Vetorizar imagem raster para gerar geometria de corte.',
+        dependsOn: prevStepIds.length > 0 ? prevStepIds : undefined,
+      });
+    }
 
     const previousStepIds = steps.map((s) => s.id!).filter(Boolean);
     steps.push({
       id: 'step_cut_contour',
       tool: 'create_cut_contour',
-      arguments: { offset_mm, joinStyle: 'round' },
-      description: `Gerar contorno técnico de corte com offset de ${offset_mm} mm.`,
+      arguments: { offset_mm, joinStyle: 'round', includeInnerContours },
+      description: `Gerar contorno técnico de corte com offset de ${offset_mm} mm${!includeInnerContours ? ' (sem corte interno)' : ''}.`,
       dependsOn: previousStepIds.length > 0 ? previousStepIds : undefined,
     });
-    intent = wantsVectorize ? 'MODIFY' : 'GENERATE_CUT';
+    intent = steps.length > 1 ? 'MODIFY' : 'GENERATE_CUT';
   }
 
   // Se o comando for "prepare essa logo para dtf uv" sem steps adicionais

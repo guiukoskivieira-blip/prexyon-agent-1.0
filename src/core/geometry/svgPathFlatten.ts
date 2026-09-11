@@ -163,8 +163,8 @@ export function flattenSvgPathToPolygons(
     tolerance_mm = GEOMETRY_FLATTEN_TOLERANCE_MM,
   } = options;
 
-  const scaleX = physicalWidth_mm / (sourceViewBox.width || 100);
-  const scaleY = physicalHeight_mm / (sourceViewBox.height || 100);
+  const scaleX = physicalWidth_mm / ((sourceViewBox && sourceViewBox.width) || physicalWidth_mm || 100);
+  const scaleY = physicalHeight_mm / ((sourceViewBox && sourceViewBox.height) || physicalHeight_mm || 100);
   const tolSq = tolerance_mm * tolerance_mm;
 
   // Função de mapeamento de coordenadas locais do SVG -> coordenadas físicas globais (mm)

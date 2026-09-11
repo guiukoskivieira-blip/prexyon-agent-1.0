@@ -98,7 +98,7 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
         success: false,
         error: {
           code: 'INVALID_NODE_TYPE',
-          message: `O nó "${targetNode.name}" é do tipo "${targetNode.type}". Facas de corte só podem ser geradas a partir de nós do tipo "group" (vetores).`,
+          message: `O nó "${args.sourceNodeId}" é do tipo "${targetNode.type}". A ferramenta create_cut_contour só pode ser aplicada a grupos vetoriais ("group").`,
         },
       };
     }

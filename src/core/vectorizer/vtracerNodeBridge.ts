@@ -35,7 +35,7 @@ export const vtracerNodeBridge = {
     options: VTracerOptions = { mode: 'spline', clustering: 'color-cluster' }
   ): Promise<VectorizationResult> {
     if (!node || !node.src || !node.src.trim()) {
-      throw new Error('A imagem raster não possui conteúdo binário carregado no servidor para vetorização.');
+      throw new Error('Não foi possível processar a imagem raster para vetorização.');
     }
     const encodedBytes = decodeRasterDataUrl(node.src);
     const startedAt = performance.now();

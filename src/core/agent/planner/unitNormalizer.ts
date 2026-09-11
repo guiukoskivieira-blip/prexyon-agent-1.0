@@ -123,15 +123,12 @@ export function parseDimensionsFromNaturalText(text: string): {
 
   let clean = text.toLowerCase().trim();
 
-  // Ignora se o comando for especificamente sobre contorno de corte / faca / espessura de linha / movimento
+  // Comandos de espessura de linha ou deslocamento não são redimensionamento de objeto
   if (
-    clean.includes('faca') ||
-    clean.includes('sangria') ||
-    clean.includes('bleed') ||
+    clean.includes('engrosse') ||
+    clean.includes('espessura') ||
     clean.includes('linhas finas') ||
     clean.includes('linha fina') ||
-    clean.includes('linhas') ||
-    clean.includes('espessura') ||
     clean.includes('traço fino') ||
     clean.includes('traco fino') ||
     clean.includes('mova') ||
@@ -146,8 +143,22 @@ export function parseDimensionsFromNaturalText(text: string): {
     clean = clean.replace(new RegExp(`\\b${word}\\b`, 'g'), String(num));
   }
 
+  // Remove expressões que representam offset de faca, sangria ou bleed
+  // para isolar as dimensões de redimensionamento do objeto/arte
+  const textForDims = clean
+    .replace(/faca(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?(?:\s+para\s+fora)?(?:\s+sem\s+corte\s+dentro)?/gi, '')
+    .replace(/contorno(?:\s+de\s+corte)?(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/sangria(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/bleed(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .trim();
+
+  // Se após remover essas expressões não sobrou texto com números ou intenção de redimensionamento
+  if (!textForDims || !/\d/.test(textForDims)) {
+    return null;
+  }
+
   // 1. Duas dimensões explícitas: "5cm x 3cm", "50mm x 30mm", "50 x 30 mm", "5 x 3 cm"
-  const twoDimMatch = clean.match(/(\d+(?:[.,]\d+)?)\s*(cm|mm)?\s*(?:x|×|por|\*)\s*(\d+(?:[.,]\d+)?)\s*(cm|mm)/i);
+  const twoDimMatch = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|mm)?\s*(?:x|×|por|\*)\s*(\d+(?:[.,]\d+)?)\s*(cm|mm)/i);
   if (twoDimMatch) {
     const w = normalizeDimensionMm(twoDimMatch[1], twoDimMatch[2] || twoDimMatch[4] || 'mm');
     const h = normalizeDimensionMm(twoDimMatch[3], twoDimMatch[4] || 'mm');
@@ -156,22 +167,22 @@ export function parseDimensionsFromNaturalText(text: string): {
     }
   }
 
-  // 2. Dimensão única com unidade explícita (ex: "5cm", "50mm", "5 cm de largura", "5cm de altura")
-  const singleDimMatch = clean.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
+  // 2. Dimensão única com unidade explícita (ex: "5cm", "50mm", "5 cm de largura", "5cm de altura", "50 mm de largura mantendo a proporção")
+  const singleDimMatch = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
   if (singleDimMatch) {
     const dimMm = normalizeDimensionMm(singleDimMatch[1], singleDimMatch[2]);
     if (dimMm) {
-      const isWidth = clean.includes('largura') || clean.includes('width') || clean.includes('largo');
-      const isHeight = clean.includes('altura') || clean.includes('height') || clean.includes('alto');
+      const isWidth = textForDims.includes('largura') || textForDims.includes('width') || textForDims.includes('largo');
+      const isHeight = textForDims.includes('altura') || textForDims.includes('height') || textForDims.includes('alto');
       const isProp =
-        clean.includes('proporcional') ||
-        clean.includes('proporcao') ||
-        clean.includes('proporção') ||
-        clean.includes('sem distorcer') ||
-        clean.includes('sem deformar') ||
-        clean.includes('mantendo') ||
-        clean.includes('aspect') ||
-        clean.includes('x proporcional');
+        textForDims.includes('proporcional') ||
+        textForDims.includes('proporcao') ||
+        textForDims.includes('proporção') ||
+        textForDims.includes('sem distorcer') ||
+        textForDims.includes('sem deformar') ||
+        textForDims.includes('mantendo') ||
+        textForDims.includes('aspect') ||
+        textForDims.includes('x proporcional');
 
       if (isWidth && !isHeight) {
         return { width_mm: dimMm, keepAspectRatio: isProp || true };
@@ -180,26 +191,34 @@ export function parseDimensionsFromNaturalText(text: string): {
         return { height_mm: dimMm, keepAspectRatio: isProp || true };
       }
 
-      // Se não especificou nem largura nem altura e não tem contexto de proporção ou verbo explícito:
+      // Se não especificou nem largura nem altura e não tem contexto de proporção ou verbo explícito de redimensionamento:
+      // Ex: "deixe com 5 cm" sem especificar se é largura ou altura
       const isExplicitResize =
-        clean.includes('redimension') ||
-        clean.includes('ajuste') ||
-        clean.includes('mude') ||
-        clean.includes('altere') ||
-        clean.includes('escala') ||
-        clean.includes('tamanho') ||
-        clean.includes('adesivo') ||
-        clean.includes('logo') ||
-        clean.includes('imagem') ||
-        clean.includes('arte') ||
-        clean.includes('dtf');
+        textForDims.includes('redimension') ||
+        textForDims.includes('ajust') ||
+        textForDims.includes('mud') ||
+        textForDims.includes('alter') ||
+        textForDims.includes('escal') ||
+        textForDims.includes('tamanho');
 
       if (!isWidth && !isHeight && !isProp && !isExplicitResize) {
-        return { width_mm: dimMm, keepAspectRatio: true, isAmbiguous: true };
+        const isProcessContext = textForDims.includes('adesivo') || textForDims.includes('dtf') || textForDims.includes('logo');
+        if (!isProcessContext) {
+          return { width_mm: dimMm, keepAspectRatio: true, isAmbiguous: true };
+        }
       }
 
       // Padrão gráfico de pré-impressão: 1 dimensão dada para arte/adesivo aplica em largura proporcional
       return { width_mm: dimMm, keepAspectRatio: isProp || true };
+    }
+  }
+
+  // 3. Medida SEM unidade explícita (ex: "deixe com 5 de largura", "largura de 5", "deixe com 5") -> AMBÍGUO
+  const noUnitMatch = textForDims.match(/(?:deixe com|tamanho|com|largura|altura|redimensione para)\s+(\d+(?:[.,]\d+)?)\b/i);
+  if (noUnitMatch) {
+    const rawNum = parseFloat(noUnitMatch[1].replace(',', '.'));
+    if (Number.isFinite(rawNum) && rawNum > 0) {
+      return { width_mm: rawNum, keepAspectRatio: true, isAmbiguous: true };
     }
   }
 

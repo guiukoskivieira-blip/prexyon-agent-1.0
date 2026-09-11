@@ -10,7 +10,7 @@ import { ToolDeclaration } from '../../tools/types';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './base';
 import { AGENT_ACTION_PLAN_GEMINI_SCHEMA } from '../planner/types';
 
-export const GEMINI_REQUEST_TIMEOUT_MS = 3000;
+export const GEMINI_REQUEST_TIMEOUT_MS = 8000;
 
 export class GeminiProvider implements AIProvider {
   public readonly name = 'gemini';
