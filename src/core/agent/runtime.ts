@@ -232,21 +232,21 @@ export class AgentRuntime {
         }
       } catch (err: any) {
         console.warn('[AgentRuntime] generateActionPlan falhou:', err?.message || err);
-        // Se a falha foi por Timeout ou erro de infraestrutura do provedor, encerra o ciclo imediatamente para acionar o fallback
-        if (err?.name === 'TimeoutError' || err?.code === 'PROVIDER_TIMEOUT' || err?.message?.includes('Timeout')) {
-          return {
-            success: false,
-            reply: 'A solicitação excedeu o tempo limite de resposta do modelo.',
-            executedTools: [],
-            doc: currentDoc,
-            iterations: 1,
-            status: 'error',
-            error: {
-              code: 'PROVIDER_TIMEOUT',
-              message: err instanceof Error ? err.message : 'Timeout na API Gemini.',
-            },
-          };
-        }
+        const isTimeout = err?.name === 'TimeoutError' || err?.code === 'PROVIDER_TIMEOUT' || err?.message?.includes('Timeout');
+        return {
+          success: false,
+          reply: isTimeout
+            ? 'A solicitação excedeu o tempo limite de resposta do modelo.'
+            : 'Erro na comunicação com o provedor de IA.',
+          executedTools: [],
+          doc: currentDoc,
+          iterations: 1,
+          status: 'error',
+          error: {
+            code: isTimeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
+            message: err instanceof Error ? err.message : 'Erro na API Gemini.',
+          },
+        };
       }
     }
 

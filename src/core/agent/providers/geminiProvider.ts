@@ -8,6 +8,7 @@
 import { AIProvider, AIProviderResponse, ChatMessage, AIProviderOptions } from '../types';
 import { ToolDeclaration } from '../../tools/types';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './base';
+import { AGENT_ACTION_PLAN_GEMINI_SCHEMA } from '../planner/types';
 
 export const GEMINI_REQUEST_TIMEOUT_MS = 8000;
 
@@ -19,7 +20,7 @@ export class GeminiProvider implements AIProvider {
     this.defaultModel =
       defaultModel ||
       (typeof process !== 'undefined' && process.env?.GEMINI_MODEL) ||
-      'gemini-2.5-flash';
+      'gemini-2.0-flash';
   }
 
   /**
@@ -297,8 +298,6 @@ export class GeminiProvider implements AIProvider {
     const formattedContents = this.formatContents([
       { role: 'user', content: userMessage },
     ]);
-
-    const { AGENT_ACTION_PLAN_GEMINI_SCHEMA } = await import('../planner');
 
     const payload: Record<string, any> = {
       contents: formattedContents,
