@@ -48,9 +48,16 @@ export function resolveTargetReference(
 
   if (refType === 'SELECTED_OBJECT') {
     // 1. Tenta o nó explicitamente selecionado
-    if (selectedNodeId && doc.nodes[selectedNodeId]) {
-      const node = doc.nodes[selectedNodeId];
-      return { nodeId: node.id, node, isDocumentLevel: false };
+    if (selectedNodeId) {
+      if (doc.nodes[selectedNodeId]) {
+        const node = doc.nodes[selectedNodeId];
+        return { nodeId: node.id, node, isDocumentLevel: false };
+      }
+      return {
+        nodeId: selectedNodeId,
+        isDocumentLevel: false,
+        error: `Nó com ID "${selectedNodeId}" não foi encontrado no documento.`,
+      };
     }
 
     // 2. Se há exatamente 1 nó no documento, resolve deterministicamente para ele

@@ -266,4 +266,84 @@ export class GeminiProvider implements AIProvider {
       rawResponse: data,
     };
   }
+
+  /**
+   * Gera um AgentActionPlan estruturado via Gemini Structured Outputs (JSON Schema).
+   */
+  public async generateActionPlan(
+    userMessage: string,
+    tools: ToolDeclaration[] = [],
+    options?: AIProviderOptions
+  ): Promise<import('../planner').AgentActionPlan> {
+    const apiKey = this.getApiKey(options?.apiKey);
+    const model = options?.model || this.defaultModel;
+    const systemPrompt = options?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT;
+
+    const formattedContents = this.formatContents([
+      { role: 'user', content: userMessage },
+    ]);
+    const formattedTools = this.formatTools(tools);
+
+    const { AGENT_ACTION_PLAN_GEMINI_SCHEMA } = await import('../planner');
+
+    const payload: Record<string, any> = {
+      contents: formattedContents,
+      systemInstruction: {
+        parts: [{ text: `${systemPrompt}\n\nATENÇÃO: Você é o interpretador semântico de linguagem natural do Prexyon Agent. Retorne EXCLUSIVAMENTE o plano de ação no formato JSON estruturado seguindo o schema fornecido. Se houver ambiguidade impeditiva (ex: dimensão sem eixo e sem contexto), defina intent: "ASK_USER" e forneça ambiguityQuestion.` }],
+      },
+      generationConfig: {
+        temperature: options?.temperature ?? 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: AGENT_ACTION_PLAN_GEMINI_SCHEMA,
+      },
+    };
+
+    if (formattedTools.length > 0) {
+      payload.tools = formattedTools;
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let parsedError: any;
+      try {
+        parsedError = JSON.parse(errorText);
+      } catch {
+        parsedError = { raw: errorText };
+      }
+      const errMsg = parsedError?.error?.message || `Erro HTTP ${response.status} na API Gemini.`;
+      throw new Error(`[GeminiProvider Error]: ${errMsg}`);
+    }
+
+    const data = await response.json();
+    const candidate = data.candidates?.[0];
+
+    if (!candidate || !candidate.content) {
+      throw new Error('[GeminiProvider Error]: Resposta vazia da API Gemini.');
+    }
+
+    let jsonText = '';
+    for (const part of candidate.content.parts || []) {
+      if (part.text && !part.thought) {
+        jsonText += part.text;
+      }
+    }
+
+    if (!jsonText.trim()) {
+      throw new Error('[GeminiProvider Error]: Nenhum conteúdo JSON retornado pelo modelo.');
+    }
+
+    const planObj = JSON.parse(jsonText) as import('../planner').AgentActionPlan;
+    return planObj;
+  }
 }
+

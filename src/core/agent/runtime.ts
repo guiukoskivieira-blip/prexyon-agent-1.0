@@ -17,6 +17,7 @@ import {
 } from './types';
 import { buildDocumentContextSummary, buildAgentCapabilitiesSummary } from './context';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './providers/base';
+import { validateActionPlan, AgentActionPlan } from './planner';
 
 export const DEFAULT_MAX_ITERATIONS = 5;
 
@@ -101,7 +102,7 @@ export class AgentRuntime {
    * Executa o ciclo do agente para uma mensagem do usuário com o documento PDM fornecido.
    *
    * Fluxo:
-   * Mensagem do usuário → Provider → Tool Call → Tool Registry → Resultado da Tool → Provider → Resposta Final
+   * Mensagem do usuário → Provider → Action Plan / Tool Call → PlanValidator + PolicyGate → Tool Registry → Resultado da Tool → Provider → Resposta Final
    */
   public async run(
     userMessage: string,
@@ -178,16 +179,43 @@ export class AgentRuntime {
 
           const functionResponses: any[] = [];
 
-          // 3. Executa cada tool de forma determinística e segura pelo Tool Registry
+          // 3. Valida cada ação planejada através do PlanValidator e PolicyGate antes de executar
           for (const call of providerResponse.functionCalls) {
-            const toolDef = this.registry.getTool(call.name);
+            const isDtf =
+              userMessage.toLowerCase().includes('dtf') ||
+              currentDoc.profileId === 'dtf-uv';
+            const isGenericSticker =
+              userMessage.toLowerCase().includes('adesivo') &&
+              (userMessage.toLowerCase().includes('corte') || userMessage.toLowerCase().includes('faca'));
 
-            if (!toolDef) {
+            const stepPlan: AgentActionPlan = {
+              schemaVersion: '1.0',
+              intent: isDtf ? (call.name.includes('clear') || call.name.includes('white') ? 'GENERATE_SEPARATION' : 'MODIFY') : 'MODIFY',
+              process: isDtf ? 'DTF_UV' : (isGenericSticker ? 'GENERIC_STICKER' : 'UNSPECIFIED'),
+              target: { type: 'SELECTED_OBJECT', ...(options?.selectedNodeId ? { nodeId: options.selectedNodeId } : {}) },
+              constraints: {
+                preserveAspectRatio: userMessage.toLowerCase().includes('proporc') || userMessage.toLowerCase().includes('sem deformar') || userMessage.toLowerCase().includes('sem distorcer'),
+                forbidClear: userMessage.toLowerCase().includes('sem verniz') || userMessage.toLowerCase().includes('sem clear'),
+                forbidWhite: userMessage.toLowerCase().includes('sem branco'),
+                forbidCutContour: userMessage.toLowerCase().includes('sem faca') || userMessage.toLowerCase().includes('sem corte'),
+                preserveDimensions: userMessage.toLowerCase().includes('sem alterar tamanho') || userMessage.toLowerCase().includes('manter tamanho'),
+              },
+              steps: [{
+                id: `step_${call.name}`,
+                tool: call.name,
+                arguments: call.args || {},
+              }],
+            };
+
+            const validation = validateActionPlan(stepPlan, currentDoc, options?.selectedNodeId, this.registry);
+            if (!validation.valid) {
+              const isPolicyBlocked = validation.errors.some((e) => e.includes('bloqueada'));
+              const isToolNotFound = validation.errors.some((e) => e.includes('não existe'));
               const errorResult = {
                 success: false as const,
                 error: {
-                  code: 'TOOL_NOT_FOUND',
-                  message: `A ferramenta "${call.name}" não existe ou não foi registrada no Prexyon Agent.`,
+                  code: isPolicyBlocked ? 'POLICY_GATE_BLOCKED' : (isToolNotFound ? 'TOOL_NOT_FOUND' : 'PLAN_VALIDATION_FAILED'),
+                  message: validation.errors.join('; '),
                 },
               };
 
@@ -205,15 +233,18 @@ export class AgentRuntime {
               continue;
             }
 
+            const sanitizedStep = validation.resolvedPlan?.steps[0];
+            const execArgs = sanitizedStep ? sanitizedStep.arguments : call.args;
+
             // Executa no Tool Registry passando o PDM atual
-            const executionResult = await this.registry.executeTool(call.name, call.args, {
+            const executionResult = await this.registry.executeTool(call.name, execArgs, {
               ...options?.toolExecutionContext,
               doc: currentDoc,
             });
 
             executedTools.push({
               toolName: call.name,
-              args: call.args,
+              args: execArgs,
               result: executionResult,
               timestamp: Date.now(),
             });

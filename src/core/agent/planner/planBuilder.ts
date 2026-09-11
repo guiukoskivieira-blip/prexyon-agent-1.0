@@ -32,16 +32,38 @@ export function buildActionPlanFromUserRequest(
   if (text.includes('sem distorcer') || text.includes('sem deformar') || text.includes('mantendo proporção') || text.includes('mantendo proporcao') || text.includes('proporcional')) {
     constraints.preserveAspectRatio = true;
   }
-  if (text.includes('não altere as cores') || text.includes('nao altere as cores') || text.includes('sem mexer nas cores') || text.includes('sem alterar as cores') || text.includes('preservar cores')) {
+  if (
+    text.includes('não altere as cores') ||
+    text.includes('nao altere as cores') ||
+    text.includes('mexe nas cores') ||
+    text.includes('mexa nas cores') ||
+    text.includes('mexer nas cores') ||
+    text.includes('sem alterar as cores') ||
+    text.includes('preservar cores')
+  ) {
     constraints.preserveOriginalColors = true;
   }
   if (text.includes('não mexa no tamanho') || text.includes('nao mexa no tamanho') || text.includes('manter tamanho') || text.includes('sem alterar tamanho')) {
     constraints.preserveDimensions = true;
   }
-  if (text.includes('não gere verniz') || text.includes('nao gere verniz') || text.includes('sem verniz') || text.includes('sem clear')) {
+  if (
+    text.includes('não gere verniz') ||
+    text.includes('nao gere verniz') ||
+    text.includes('não coloca verniz') ||
+    text.includes('nao coloca verniz') ||
+    text.includes('sem verniz') ||
+    text.includes('sem clear')
+  ) {
     constraints.forbidClear = true;
   }
-  if (text.includes('não gere branco') || text.includes('nao gere branco') || text.includes('sem branco') || text.includes('sem base branca')) {
+  if (
+    text.includes('não gere branco') ||
+    text.includes('nao gere branco') ||
+    text.includes('não coloca branco') ||
+    text.includes('nao coloca branco') ||
+    text.includes('sem branco') ||
+    text.includes('sem base branca')
+  ) {
     constraints.forbidWhite = true;
   }
   if (text.includes('não crie faca') || text.includes('nao crie faca') || text.includes('sem faca') || text.includes('sem corte')) {
