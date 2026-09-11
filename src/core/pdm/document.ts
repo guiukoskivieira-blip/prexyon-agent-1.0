@@ -1245,9 +1245,23 @@ export function sanitizeDocumentForAgentTransport(doc: PrexyonDocument): Prexyon
     }
   }
 
+  let separations = doc.separations;
+  if (separations && typeof separations === 'object') {
+    const cleanSeparations: Record<string, any> = {};
+    for (const [role, sep] of Object.entries(separations)) {
+      if (sep && typeof sep === 'object') {
+        const cleanSep = { ...sep };
+        delete (cleanSep as any).maskBuffer;
+        cleanSeparations[role] = cleanSep;
+      }
+    }
+    separations = cleanSeparations;
+  }
+
   return {
     ...doc,
     nodes,
+    ...(separations ? { separations } : {}),
   };
 }
 
