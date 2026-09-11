@@ -19,11 +19,13 @@ import {
   ExportDpi, 
   ExportBackground, 
   ExportCutTarget, 
+  ExportArea,
   ExportOptions 
 } from '@/core/export/types';
 import { 
   calculateExportDimensions, 
-  generateExportFileName 
+  generateExportFileName,
+  getArtworkBounds
 } from '@/core/export/geometry';
 import { 
   exportDocument, 
@@ -51,6 +53,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const artworkBounds = useMemo(() => getArtworkBounds(doc, selectedNodeId), [doc, selectedNodeId]);
   const [format, setFormat] = useState<ExportFormat>('png');
   const [dpi, setDpi] = useState<ExportDpi>(300);
   const [background, setBackground] = useState<ExportBackground>('transparent');
@@ -59,6 +62,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [includeCutContour, setIncludeCutContour] = useState<boolean>(false);
   const [includeRasterInSvg, setIncludeRasterInSvg] = useState<boolean>(true);
   const [cutContourTarget, setCutContourTarget] = useState<ExportCutTarget>('all');
+  const [exportArea, setExportArea] = useState<ExportArea>(
+    doc.profileId === 'dtf-uv' || Boolean(artworkBounds) ? 'ARTWORK_BOUNDS' : 'ARTBOARD_BOUNDS'
+  );
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   // Verifica se o nó selecionado é uma CutContourNode
@@ -78,6 +84,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       rasterDpi: dpi,
       cutContourTarget,
       selectedNodeId,
+      exportArea,
     }),
     [
       format,
@@ -89,13 +96,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       dpi,
       cutContourTarget,
       selectedNodeId,
+      exportArea,
     ]
   );
 
   // Resumo de dimensões físicas e em pixels
   const summary = useMemo(
-    () => calculateExportDimensions(doc, includeBleed, dpi),
-    [doc, includeBleed, dpi]
+    () => calculateExportDimensions(doc, includeBleed, dpi, exportOptions),
+    [doc, includeBleed, dpi, exportOptions]
   );
 
   // Nome previsto do arquivo
@@ -200,6 +208,54 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <span>Validação: Pronto para produção (0 erros, 0 avisos).</span>
             </div>
           )}
+
+          {/* Export Area Selection */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block">
+              Área de Exportação
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setExportArea('ARTWORK_BOUNDS')}
+                disabled={!artworkBounds}
+                className={`flex flex-col items-start p-2.5 rounded-lg border text-xs font-medium transition-all ${
+                  exportArea === 'ARTWORK_BOUNDS'
+                    ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm'
+                    : 'bg-surface-subtle hover:bg-surface-hover border-surface-border text-slate-300 hover:text-white'
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <span>Área da Arte</span>
+                  {doc.profileId === 'dtf-uv' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      DTF UV
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                  {artworkBounds ? `${artworkBounds.width_mm} × ${artworkBounds.height_mm} mm (sem borda)` : 'Nenhuma arte detectada'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setExportArea('ARTBOARD_BOUNDS')}
+                className={`flex flex-col items-start p-2.5 rounded-lg border text-xs font-medium transition-all ${
+                  exportArea === 'ARTBOARD_BOUNDS'
+                    ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm'
+                    : 'bg-surface-subtle hover:bg-surface-hover border-surface-border text-slate-300 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <span>Prancheta Inteira</span>
+                </div>
+                <span className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                  {doc.dimensions.width_mm} × {doc.dimensions.height_mm} mm (com borda)
+                </span>
+              </button>
+            </div>
+          </div>
 
           {/* Format Selection */}
           <div className="space-y-2">
@@ -490,9 +546,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           {/* Resumo Técnico ao Vivo */}
           <div className="p-3 rounded-lg bg-surface-base border border-surface-border/80 space-y-1.5 text-xs font-mono">
             <div className="flex justify-between text-slate-400">
-              <span>Formato Físico:</span>
+              <span>Área / Formato Físico:</span>
               <span className="text-white font-semibold">
-                {summary.width_mm} × {summary.height_mm} mm {summary.includeBleed && '(com sangria)'}
+                {summary.width_mm} × {summary.height_mm} mm ({summary.exportArea === 'ARTWORK_BOUNDS' ? 'Área da Arte' : 'Prancheta Inteira'}{summary.includeBleed ? ' + sangria' : ''})
               </span>
             </div>
 

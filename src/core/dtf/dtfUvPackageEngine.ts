@@ -16,6 +16,8 @@ import { validateProductionDocument } from '../validation/productionValidationEn
 import { validateWhiteSeparationAlignment, calculateSeparationFingerprint } from './whiteUnderbaseEngine';
 import { validateClearSeparationAlignment } from './clearSeparationEngine';
 import { encodeGrayscalePng } from './pngEncoder';
+import { getArtworkBounds } from '../export/geometry';
+import { ExportArea } from '../export/types';
 
 export interface DtfUvPackageBuildOptions {
   profileId?: string;
@@ -25,6 +27,7 @@ export interface DtfUvPackageBuildOptions {
   whitePolicy?: 'OPTIONAL' | 'REQUIRED' | 'DISABLED' | 'RIP_CONTROLLED';
   clearPolicy?: 'OPTIONAL' | 'REQUIRED' | 'DISABLED' | 'RIP_CONTROLLED';
   ignoreValidationErrors?: boolean;
+  productionArea?: ExportArea;
 }
 
 export interface DtfUvManifest {
@@ -32,6 +35,17 @@ export interface DtfUvManifest {
   process: string;
   profile: string;
   generatedBy: string;
+  productionArea?: string;
+  artworkBounds?: {
+    widthMm: number;
+    heightMm: number;
+    x?: number;
+    y?: number;
+  };
+  artboard?: {
+    widthMm: number;
+    heightMm: number;
+  };
   document: {
     widthMm: number;
     heightMm: number;
@@ -338,6 +352,18 @@ export async function buildDtfUvProductionPackage(
   const effectiveWhitePolicy = options.whitePolicy || profile.dtfUvConfig?.whitePolicy || 'OPTIONAL';
   const effectiveClearPolicy = options.clearPolicy || profile.dtfUvConfig?.clearPolicy || 'OPTIONAL';
 
+  const artworkBounds = getArtworkBounds(doc);
+  const effectiveArea: ExportArea = options.productionArea
+    ? options.productionArea
+    : (artworkBounds ? 'ARTWORK_BOUNDS' : 'ARTBOARD_BOUNDS');
+
+  const productionWidthMm = effectiveArea === 'ARTWORK_BOUNDS' && artworkBounds
+    ? artworkBounds.width_mm
+    : (doc.dimensions?.width_mm ?? 100);
+  const productionHeightMm = effectiveArea === 'ARTWORK_BOUNDS' && artworkBounds
+    ? artworkBounds.height_mm
+    : (doc.dimensions?.height_mm ?? 100);
+
   // 1. Camada COLOR (Arte de Impressão de Alta Resolução — Fundo Transparente, 300 DPI, Sem Faca de Corte)
   const colorExportResult = await exportDocumentToPng(doc, {
     format: 'png',
@@ -345,6 +371,7 @@ export async function buildDtfUvProductionPackage(
     includeBleed: options.includeBleed ?? false,
     background: 'transparent',
     includeCutContour: false,
+    exportArea: effectiveArea,
   });
 
   const colorFileName = `${baseName}-color.png`;
@@ -370,9 +397,44 @@ export async function buildDtfUvProductionPackage(
     whiteFileName = `${baseName}-white.png`;
     let whiteBlob: Blob;
     let whiteBytes: Uint8Array;
+    let whiteWidthMm = whiteSep.widthMm;
+    let whiteHeightMm = whiteSep.heightMm;
 
     if (whiteSep.maskBuffer && whiteSep.maskBuffer.length > 0) {
-      whiteBytes = encodeGrayscalePng(whiteSep.maskBuffer, whiteSep.widthPx, whiteSep.heightPx);
+      if (
+        effectiveArea === 'ARTWORK_BOUNDS' &&
+        artworkBounds &&
+        Math.abs(whiteSep.widthMm - (doc.dimensions?.width_mm ?? 100)) <= 0.01 &&
+        (artworkBounds.width_mm < (doc.dimensions?.width_mm ?? 100) || artworkBounds.height_mm < (doc.dimensions?.height_mm ?? 100))
+      ) {
+        const artLeftPx = Math.max(0, Math.round((artworkBounds.x * dpi) / 25.4));
+        const artTopPx = Math.max(0, Math.round((artworkBounds.y * dpi) / 25.4));
+        const artWidthPx = Math.max(1, Math.round((artworkBounds.width_mm * dpi) / 25.4));
+        const artHeightPx = Math.max(1, Math.round((artworkBounds.height_mm * dpi) / 25.4));
+        const srcWidthPx = whiteSep.widthPx;
+        const srcHeightPx = whiteSep.heightPx;
+
+        const croppedBuffer = new Uint8ClampedArray(artWidthPx * artHeightPx * 4);
+        for (let y = 0; y < artHeightPx; y++) {
+          const srcY = artTopPx + y;
+          if (srcY >= srcHeightPx) continue;
+          for (let x = 0; x < artWidthPx; x++) {
+            const srcX = artLeftPx + x;
+            if (srcX >= srcWidthPx) continue;
+            const srcIdx = (srcY * srcWidthPx + srcX) * 4;
+            const dstIdx = (y * artWidthPx + x) * 4;
+            croppedBuffer[dstIdx] = whiteSep.maskBuffer[srcIdx];
+            croppedBuffer[dstIdx + 1] = whiteSep.maskBuffer[srcIdx + 1];
+            croppedBuffer[dstIdx + 2] = whiteSep.maskBuffer[srcIdx + 2];
+            croppedBuffer[dstIdx + 3] = whiteSep.maskBuffer[srcIdx + 3];
+          }
+        }
+        whiteBytes = encodeGrayscalePng(croppedBuffer, artWidthPx, artHeightPx);
+        whiteWidthMm = artworkBounds.width_mm;
+        whiteHeightMm = artworkBounds.height_mm;
+      } else {
+        whiteBytes = encodeGrayscalePng(whiteSep.maskBuffer, whiteSep.widthPx, whiteSep.heightPx);
+      }
       whiteBlob = new Blob([whiteBytes.buffer as ArrayBuffer], { type: 'image/png' });
     } else {
       // Fallback a partir de dataUrl se buffer não estiver presente
@@ -386,8 +448,8 @@ export async function buildDtfUvProductionPackage(
       format: 'png',
       description: `Máscara técnica de Base Branca (White Underbase) em escala de cinza de 8 bits (${whiteSep.dpi} DPI, cobertura ${Math.round((whiteSep.coverageRatio || 0) * 100)}%)`,
       blob: whiteBlob,
-      width_mm: whiteSep.widthMm,
-      height_mm: whiteSep.heightMm,
+      width_mm: whiteWidthMm,
+      height_mm: whiteHeightMm,
     };
     (whiteArtifact as any)._bytes = whiteBytes;
     artifacts.push(whiteArtifact);
@@ -404,9 +466,46 @@ export async function buildDtfUvProductionPackage(
     clearFileName = `${baseName}-clear.png`;
     let clearBlob: Blob;
     let clearBytes: Uint8Array;
+    let clearWidthMm = clearSep.widthMm;
+    let clearHeightMm = clearSep.heightMm;
+    const isFullMode = clearSep.metadata?.mode === 'FULL';
 
     if (clearSep.maskBuffer && clearSep.maskBuffer.length > 0) {
-      clearBytes = encodeGrayscalePng(clearSep.maskBuffer, clearSep.widthPx, clearSep.heightPx);
+      if (
+        !isFullMode &&
+        effectiveArea === 'ARTWORK_BOUNDS' &&
+        artworkBounds &&
+        Math.abs(clearSep.widthMm - (doc.dimensions?.width_mm ?? 100)) <= 0.01 &&
+        (artworkBounds.width_mm < (doc.dimensions?.width_mm ?? 100) || artworkBounds.height_mm < (doc.dimensions?.height_mm ?? 100))
+      ) {
+        const artLeftPx = Math.max(0, Math.round((artworkBounds.x * dpi) / 25.4));
+        const artTopPx = Math.max(0, Math.round((artworkBounds.y * dpi) / 25.4));
+        const artWidthPx = Math.max(1, Math.round((artworkBounds.width_mm * dpi) / 25.4));
+        const artHeightPx = Math.max(1, Math.round((artworkBounds.height_mm * dpi) / 25.4));
+        const srcWidthPx = clearSep.widthPx;
+        const srcHeightPx = clearSep.heightPx;
+
+        const croppedBuffer = new Uint8ClampedArray(artWidthPx * artHeightPx * 4);
+        for (let y = 0; y < artHeightPx; y++) {
+          const srcY = artTopPx + y;
+          if (srcY >= srcHeightPx) continue;
+          for (let x = 0; x < artWidthPx; x++) {
+            const srcX = artLeftPx + x;
+            if (srcX >= srcWidthPx) continue;
+            const srcIdx = (srcY * srcWidthPx + srcX) * 4;
+            const dstIdx = (y * artWidthPx + x) * 4;
+            croppedBuffer[dstIdx] = clearSep.maskBuffer[srcIdx];
+            croppedBuffer[dstIdx + 1] = clearSep.maskBuffer[srcIdx + 1];
+            croppedBuffer[dstIdx + 2] = clearSep.maskBuffer[srcIdx + 2];
+            croppedBuffer[dstIdx + 3] = clearSep.maskBuffer[srcIdx + 3];
+          }
+        }
+        clearBytes = encodeGrayscalePng(croppedBuffer, artWidthPx, artHeightPx);
+        clearWidthMm = artworkBounds.width_mm;
+        clearHeightMm = artworkBounds.height_mm;
+      } else {
+        clearBytes = encodeGrayscalePng(clearSep.maskBuffer, clearSep.widthPx, clearSep.heightPx);
+      }
       clearBlob = new Blob([clearBytes.buffer as ArrayBuffer], { type: 'image/png' });
     } else {
       clearBlob = new Blob([], { type: 'image/png' });
@@ -419,8 +518,8 @@ export async function buildDtfUvProductionPackage(
       format: 'png',
       description: `Máscara técnica de Verniz (Clear / Varnish) em escala de cinza de 8 bits (${clearSep.dpi} DPI, modo ${clearSep.metadata?.mode || 'ARTWORK'})`,
       blob: clearBlob,
-      width_mm: clearSep.widthMm,
-      height_mm: clearSep.heightMm,
+      width_mm: clearWidthMm,
+      height_mm: clearHeightMm,
     };
     (clearArtifact as any)._bytes = clearBytes;
     artifacts.push(clearArtifact);
@@ -435,9 +534,22 @@ export async function buildDtfUvProductionPackage(
     process: 'DTF_UV',
     profile: 'dtf-uv',
     generatedBy: 'Prexyon Agent',
-    document: {
+    productionArea: effectiveArea,
+    ...(artworkBounds ? {
+      artworkBounds: {
+        widthMm: artworkBounds.width_mm,
+        heightMm: artworkBounds.height_mm,
+        x: artworkBounds.x,
+        y: artworkBounds.y,
+      },
+    } : {}),
+    artboard: {
       widthMm: doc.dimensions?.width_mm ?? 100,
       heightMm: doc.dimensions?.height_mm ?? 100,
+    },
+    document: {
+      widthMm: productionWidthMm,
+      heightMm: productionHeightMm,
       dpi,
     },
     color: {
@@ -568,8 +680,8 @@ export async function buildDtfUvProductionPackage(
     documentId: doc.id,
     documentName,
     dimensions_mm: {
-      width_mm: doc.dimensions?.width_mm ?? 100,
-      height_mm: doc.dimensions?.height_mm ?? 100,
+      width_mm: productionWidthMm,
+      height_mm: productionHeightMm,
       unit: 'mm',
     },
     artifacts,

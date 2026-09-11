@@ -10,7 +10,7 @@ export async function exportDocumentToPng(
   doc: PrexyonDocument,
   options: ExportOptions
 ): Promise<ExportResult> {
-  const summary = calculateExportDimensions(doc, options.includeBleed, options.rasterDpi || 300);
+  const summary = calculateExportDimensions(doc, options.includeBleed, options.rasterDpi || 300, options);
   const fileName = generateExportFileName(doc, { ...options, format: 'png' });
 
   const { width_mm, height_mm, width_px, height_px } = summary;

@@ -17,7 +17,7 @@ export function exportDocumentToSvg(
   doc: PrexyonDocument,
   options: ExportOptions
 ): ExportResult {
-  const summary = calculateExportDimensions(doc, options.includeBleed, options.rasterDpi || 300);
+  const summary = calculateExportDimensions(doc, options.includeBleed, options.rasterDpi || 300, options);
   const fileName = generateExportFileName(doc, options);
 
   const { width_mm, height_mm, offsetX_mm, offsetY_mm } = summary;

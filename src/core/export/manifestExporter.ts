@@ -1,7 +1,7 @@
 import { PrexyonDocument, RasterNode, VectorGroupNode, CutContourNode, TechnicalGuideNode } from '../pdm/types';
 import { ValidationReport } from '../validation/types';
 import { ExportOptions, ExportResult } from './types';
-import { generateExportFileName } from './geometry';
+import { calculateExportDimensions, generateExportFileName } from './geometry';
 
 /**
  * Exporta um manifesto JSON técnico estruturado com o resumo de produção do documento.
@@ -11,6 +11,7 @@ export function exportDocumentManifest(
   options: ExportOptions,
   validationReport?: ValidationReport
 ): ExportResult {
+  const summary = calculateExportDimensions(doc, options.includeBleed, options.rasterDpi || 300, options);
   const fileName = generateExportFileName(doc, { ...options, format: 'manifest-json' });
 
   const nodesSummary = doc.rootNodeIds.map((id) => {
@@ -79,6 +80,12 @@ export function exportDocumentManifest(
   const manifestData = {
     generator: 'Prexyon Agent — Production Engine v1.0',
     exportedAt: new Date().toISOString(),
+    productionArea: summary.exportArea,
+    artworkBounds: summary.sourceBounds_mm || null,
+    artboard: {
+      width_mm: doc.dimensions.width_mm,
+      height_mm: doc.dimensions.height_mm,
+    },
     document: {
       id: doc.id,
       name: doc.name,
@@ -123,8 +130,8 @@ export function exportDocumentManifest(
     fileName,
     mimeType: 'application/json',
     blob,
-    width_mm: doc.dimensions.width_mm,
-    height_mm: doc.dimensions.height_mm,
+    width_mm: summary.width_mm,
+    height_mm: summary.height_mm,
     dataString: jsonString,
   };
 }

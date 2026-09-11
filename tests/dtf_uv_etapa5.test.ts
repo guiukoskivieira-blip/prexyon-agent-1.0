@@ -226,8 +226,8 @@ describe('Prexyon Agent — DTF UV Etapa 5 (Production Package & Pipeline Closur
 
     expect(colorArt).toBeDefined();
     expect(colorArt?.mimeType).toBe('image/png');
-    expect(colorArt?.width_mm).toBe(100);
-    expect(colorArt?.height_mm).toBe(100);
+    expect(colorArt?.width_mm).toBe(50);
+    expect(colorArt?.height_mm).toBe(50);
   });
 
   // Test N: DPI correto (300)

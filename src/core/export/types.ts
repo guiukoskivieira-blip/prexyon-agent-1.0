@@ -10,6 +10,8 @@ export type ExportBackground = 'transparent' | 'white';
 
 export type ExportCutTarget = 'all' | 'selected';
 
+export type ExportArea = 'ARTWORK_BOUNDS' | 'ARTBOARD_BOUNDS';
+
 export interface ExportOptions {
   /** Formato de saída desejado */
   format: ExportFormat;
@@ -37,6 +39,9 @@ export interface ExportOptions {
 
   /** ID do nó atualmente selecionado no editor */
   selectedNodeId?: string | null;
+
+  /** Delimitação da área de exportação: 'ARTWORK_BOUNDS' (área da arte/objeto) ou 'ARTBOARD_BOUNDS' (prancheta inteira) */
+  exportArea?: ExportArea;
 }
 
 export interface ExportResult {
@@ -71,4 +76,11 @@ export interface ExportDimensionSummary {
   bleedLeft_mm: number;
   offsetX_mm: number;
   offsetY_mm: number;
+  exportArea: ExportArea;
+  sourceBounds_mm?: {
+    x: number;
+    y: number;
+    width_mm: number;
+    height_mm: number;
+  };
 }

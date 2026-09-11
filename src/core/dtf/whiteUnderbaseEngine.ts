@@ -8,6 +8,7 @@
 import { PrexyonDocument, RasterNode, VectorPathNode, VectorGroupNode } from '../pdm/types';
 import { ProductionSeparation, SeparationStatus, AlphaAnalysis } from './types';
 import { analyzeAlphaFromRgbaBuffer } from './alphaAnalyzer';
+import { getArtworkBounds } from '../export/geometry';
 
 export interface GenerateWhiteUnderbaseOptions {
   dpi?: number;
@@ -251,16 +252,22 @@ export function validateWhiteSeparationAlignment(
 
   const currentWidthMm = doc.dimensions?.width_mm ?? 100;
   const currentHeightMm = doc.dimensions?.height_mm ?? 100;
+  const artworkBounds = getArtworkBounds(doc);
+
+  const matchesArtboard =
+    Math.abs(separation.widthMm - currentWidthMm) <= 0.01 &&
+    Math.abs(separation.heightMm - currentHeightMm) <= 0.01;
+  const matchesArtwork =
+    Boolean(artworkBounds &&
+    Math.abs(separation.widthMm - artworkBounds.width_mm) <= 0.01 &&
+    Math.abs(separation.heightMm - artworkBounds.height_mm) <= 0.01);
 
   // 1. Checa divergência dimensional (INVALID)
-  if (
-    Math.abs(separation.widthMm - currentWidthMm) > 0.01 ||
-    Math.abs(separation.heightMm - currentHeightMm) > 0.01
-  ) {
+  if (!matchesArtboard && !matchesArtwork) {
     return {
       valid: false,
       status: 'INVALID',
-      reason: `As dimensões da prancheta (${currentWidthMm}x${currentHeightMm} mm) divergem da máscara de Base Branca (${separation.widthMm}x${separation.heightMm} mm).`,
+      reason: `As dimensões da prancheta (${currentWidthMm}x${currentHeightMm} mm) e da arte (${artworkBounds ? `${artworkBounds.width_mm}x${artworkBounds.height_mm}` : 'N/A'} mm) divergem da máscara de Base Branca (${separation.widthMm}x${separation.heightMm} mm).`,
     };
   }
 
