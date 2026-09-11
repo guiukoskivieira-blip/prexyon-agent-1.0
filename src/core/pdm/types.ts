@@ -278,6 +278,8 @@ export interface PrexyonDocument {
   nodes: Record<string, DocumentNode>;
   /** Ordem de empilhamento dos nós na raiz (z-index da prancheta) */
   rootNodeIds: string[];
+  /** Separações técnicas de produção (Base Branca, Verniz, etc.) */
+  separations?: Record<string, import('../dtf/types').ProductionSeparation>;
   /** Timestamp de criação ISO */
   createdAt: string;
   /** Timestamp da última modificação ISO */

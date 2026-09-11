@@ -12,6 +12,7 @@
 import { PrexyonDocument, RasterNode } from '../../pdm/types';
 import { ValidationIssue, ValidationPolicy, DEFAULT_VALIDATION_POLICY } from '../types';
 import { analyzeRasterNodeAlpha } from '../../dtf/alphaAnalyzer';
+import { validateWhiteSeparationAlignment } from '../../dtf/whiteUnderbaseEngine';
 
 export function validateDtfUvTransparency(
   doc: PrexyonDocument,
@@ -98,5 +99,51 @@ export function validateDtfUvTransparency(
     }
   }
 
+  // 4. VALIDAÇÃO DE SEPARAÇÃO TÉCNICA DE BASE BRANCA (WHITE UNDERBASE)
+  const whitePolicy = policy.customConfig?.dtfUv?.whitePolicy || 'OPTIONAL';
+  const whiteSeparation = doc.separations?.['WHITE'];
+
+  if (whitePolicy === 'REQUIRED' && !whiteSeparation) {
+    issues.push({
+      id: 'DTF_UV:doc:white_required_not_generated',
+      ruleId: 'WHITE_REQUIRED_NOT_GENERATED',
+      severity: 'error',
+      category: 'document',
+      title: 'Base Branca Obrigatória Não Gerada',
+      message: 'O perfil de produção exige a preparação da camada de Base Branca (White Underbase) antes da liberação.',
+      fixable: true,
+      suggestedAction: 'Gere a base branca executando "generate_white_underbase" ou solicite ao assistente.',
+    });
+  }
+
+  if (whiteSeparation) {
+    const alignment = validateWhiteSeparationAlignment(doc, whiteSeparation);
+
+    if (alignment.status === 'STALE') {
+      issues.push({
+        id: `DTF_UV:${whiteSeparation.id}:white_stale`,
+        ruleId: 'WHITE_SEPARATION_STALE',
+        severity: 'error',
+        category: 'document',
+        title: 'Base Branca Desatualizada (STALE)',
+        message: alignment.reason || 'A arte sofreu alterações após a criação da camada de Base Branca.',
+        fixable: true,
+        suggestedAction: 'Regenere a base branca técnica para sincronizar com as posições e dimensões atuais da arte.',
+      });
+    } else if (alignment.status === 'INVALID') {
+      issues.push({
+        id: `DTF_UV:${whiteSeparation.id}:white_invalid`,
+        ruleId: 'WHITE_SEPARATION_INVALID',
+        severity: 'error',
+        category: 'document',
+        title: 'Base Branca Inválida (INVALID)',
+        message: alignment.reason || 'As dimensões ou parâmetros da Base Branca divergem do documento atual.',
+        fixable: true,
+        suggestedAction: 'Recrie a separação de base branca para corresponder exatamente às dimensões da prancheta.',
+      });
+    }
+  }
+
   return issues;
 }
+

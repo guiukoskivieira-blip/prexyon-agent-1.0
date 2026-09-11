@@ -126,6 +126,27 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
               {getCategoryStatus(areaIssue) === 'PASS' ? 'OK' : 'VERIFICAR'}
             </span>
           </div>
+
+          {/* Item 5: Base Branca (DTF UV) */}
+          <div className="flex items-center justify-between p-2 rounded-lg bg-surface-base border border-surface-border">
+            <div className="flex items-center gap-2">
+              {issues.some((i) => i.ruleId.startsWith('WHITE_SEPARATION_') || i.ruleId === 'WHITE_REQUIRED_NOT_GENERATED') ? (
+                <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span className="text-slate-200">Base branca</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">
+              {issues.some((i) => i.ruleId === 'WHITE_SEPARATION_STALE')
+                ? 'DESATUALIZADA'
+                : issues.some((i) => i.ruleId === 'WHITE_SEPARATION_INVALID')
+                ? 'INVÁLIDA'
+                : issues.some((i) => i.ruleId === 'WHITE_REQUIRED_NOT_GENERATED')
+                ? 'NÃO GERADA'
+                : 'OK'}
+            </span>
+          </div>
         </div>
       </div>
 

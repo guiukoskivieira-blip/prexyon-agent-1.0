@@ -21,6 +21,7 @@ import { setMinimumStrokeWidthTool } from './definitions/setMinimumStrokeWidthTo
 import { closeCutContourTool } from './definitions/closeCutContourTool';
 import { removeRedundantVectorPointsTool } from './definitions/removeRedundantVectorPointsTool';
 import { simplifyVectorPathTool } from './definitions/simplifyVectorPathTool';
+import { generateWhiteUnderbaseTool } from './definitions/generateWhiteUnderbaseTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -41,6 +42,7 @@ export * from './definitions/setMinimumStrokeWidthTool';
 export * from './definitions/closeCutContourTool';
 export * from './definitions/removeRedundantVectorPointsTool';
 export * from './definitions/simplifyVectorPathTool';
+export * from './definitions/generateWhiteUnderbaseTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -62,6 +64,7 @@ export const defaultToolRegistry = new ToolRegistry([
   closeCutContourTool,
   removeRedundantVectorPointsTool,
   simplifyVectorPathTool,
+  generateWhiteUnderbaseTool,
 ]);
 
 /**

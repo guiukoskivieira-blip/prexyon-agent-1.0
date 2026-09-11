@@ -421,7 +421,40 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 3.5. Comando DTF UV (ex: "Prepare esta arte para DTF UV", "analise dtf uv", "transparência dtf")
+  // 3.4. Comando de Geração de Base Branca (White Underbase — DTF UV Etapa 3)
+  if (
+    text.includes('base branca') ||
+    text.includes('camada branca') ||
+    text.includes('prepare o branco') ||
+    text.includes('crie o branco') ||
+    text.includes('gerar branco') ||
+    text.includes('white underbase') ||
+    (text.includes('branco') && (text.includes('cri') || text.includes('ger') || text.includes('prepar')))
+  ) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_white_${Date.now()}`,
+              name: 'generate_white_underbase',
+              args: {
+                dpi: 300,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Máscara de Base Branca (White Underbase) gerada com sucesso a partir do canal alfa da arte para produção DTF UV.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 3.5. Comando DTF UV Pré-Análise (ex: "Prepare esta arte para DTF UV", "analise dtf uv", "transparência dtf")
   if (text.includes('dtf') || text.includes('dtf uv') || (text.includes('uv') && text.includes('prepar'))) {
     return [
       {

@@ -31,19 +31,52 @@ export interface AlphaAnalysis {
   durationMs: number;
 }
 
-export type DtfProductionRole = 'COLOR' | 'WHITE' | 'CLEAR' | 'PRIMER';
+export type ProductionSeparationRole = 'COLOR' | 'WHITE' | 'CLEAR' | 'PRIMER';
 
-export interface DtfSeparationLayer {
-  /** Identificador único da separação */
+export type SeparationStatus = 'GENERATED' | 'STALE' | 'INVALID';
+
+export interface ProductionSeparation {
+  /** Identificador único da separação (ex: 'sep_white_123') */
   id: string;
-  /** Papel produtivo da camada */
-  role: DtfProductionRole;
-  /** Tipo MIME */
-  mimeType: string;
-  /** Resolução em DPI */
+  /** Papel técnico de produção da camada */
+  role: ProductionSeparationRole;
+  /** IDs dos nós do PDM que compõem esta separação */
+  sourceNodeIds: string[];
+  /** Fingerprint de revisão do documento/nós de origem para detecção de STALE */
+  sourceFingerprint: string;
+  /** Largura da máscara em pixels */
+  widthPx: number;
+  /** Altura da máscara em pixels */
+  heightPx: number;
+  /** Largura física da máscara em milímetros */
+  widthMm: number;
+  /** Altura física da máscara em milímetros */
+  heightMm: number;
+  /** Resolução técnica em DPI */
   dpi: number;
-  /** Se a camada foi materializada */
-  isMaterialized: boolean;
+  /** Estado de validade e sincronismo da separação */
+  status: SeparationStatus;
+  /** Método/algoritmo utilizado na derivação técnica */
+  generationMethod: string;
+  /** Proporção de cobertura de tinta branca (0.0 a 1.0) */
+  coverageRatio?: number;
+  /** URI / Data URL da máscara para preview e download */
+  maskDataUrl?: string;
+  /** Buffer bruto de bytes da máscara (RGBA ou 8-bit grayscale) */
+  maskBuffer?: Uint8Array | Uint8ClampedArray;
+  /** Timestamp de geração */
+  createdAt: number;
+  /** Timestamp da última atualização */
+  updatedAt: number;
   /** Metadados adicionais */
   metadata?: Record<string, unknown>;
+}
+
+export type DtfProductionRole = ProductionSeparationRole;
+
+export interface DtfSeparationLayer extends ProductionSeparation {
+  /** Tipo MIME */
+  mimeType: string;
+  /** Se a camada foi materializada */
+  isMaterialized: boolean;
 }
