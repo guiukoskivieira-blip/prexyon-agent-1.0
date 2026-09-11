@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — Production Server (v1.0)
  *
  * Servidor HTTP Node.js autônomo e de alta performance para produção (Railway / Docker / Cloud).
@@ -49,27 +49,36 @@ export function createProductionServer(options?: CreateServerOptions): http.Serv
       req.on('data', (chunk) => {
         bodyStr += chunk;
       });
-      req.on('end', async () => {
-        try {
-          const body = JSON.parse(bodyStr || '{}');
-          const result = await processor(body);
-          res.setHeader('Content-Type', 'application/json');
-          res.statusCode = result.success ? 200 : 400;
-          res.end(JSON.stringify(result));
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Erro interno no servidor.';
-          res.setHeader('Content-Type', 'application/json');
-          res.statusCode = 500;
-          res.end(
-            JSON.stringify({
-              success: false,
-              error: {
-                code: 'INTERNAL_SERVER_ERROR',
-                message: msg,
-              },
-            })
-          );
-        }
+      req.on('end', () => {
+        Promise.resolve().then(async () => {
+          try {
+            const body = JSON.parse(bodyStr || '{}');
+            const result = await processor(body);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = result.success ? 200 : 400;
+            res.end(JSON.stringify(result));
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Erro interno no servidor.';
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(
+              JSON.stringify({
+                success: false,
+                error: {
+                  code: 'INTERNAL_SERVER_ERROR',
+                  message: msg,
+                },
+              })
+            );
+          }
+        }).catch((fatalErr) => {
+          console.error('[FATAL HANDLER ERROR]', fatalErr);
+          if (!res.headersSent) {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ success: false, error: { code: 'FATAL_ERROR', message: String(fatalErr) } }));
+          }
+        });
       });
       return;
     }
@@ -78,7 +87,13 @@ export function createProductionServer(options?: CreateServerOptions): http.Serv
     if ((req.url === '/health' || req.url === '/api/health') && req.method === 'GET') {
       res.setHeader('Content-Type', 'application/json');
       res.statusCode = 200;
-      res.end(JSON.stringify({ status: 'ok', service: 'prexyon-agent', timestamp: new Date().toISOString() }));
+      res.end(JSON.stringify({
+        status: 'ok',
+        service: 'prexyon-agent',
+        version: '0.1.0',
+        node: process.version,
+        timestamp: new Date().toISOString(),
+      }));
       return;
     }
 
