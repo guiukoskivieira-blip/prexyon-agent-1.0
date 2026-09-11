@@ -80,6 +80,10 @@ export interface VectorPreflightProfileConfig {
   minimumStrokeWidthMm: number;
   /** Limite máximo de gap para fechamento automático de contorno de corte em mm */
   maxAutoCloseGapMm: number;
+  /** Tolerância máxima de desvio para pontos colineares em mm */
+  maxCollinearToleranceMm?: number;
+  /** Limite de pontos para alerta de complexidade excessiva */
+  maxComplexityThresholdPoints?: number;
 }
 
 export interface ProductionProfile {

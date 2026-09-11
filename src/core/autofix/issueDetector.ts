@@ -12,6 +12,7 @@ import { validateProductionDocument } from '../validation/productionValidationEn
 import { isVectorPathInvisible } from '../tools/definitions/removeInvisibleVectorObjectsTool';
 import { calculateEffectiveStrokeWidth } from '../tools/definitions/setMinimumStrokeWidthTool';
 import { checkContourOpenGap } from '../tools/definitions/closeCutContourTool';
+import { analyzeSvgPath } from '../geometry/vectorPathCleaner';
 import { PrepressIssue, FixClassification, PrepressIssueCode } from './types';
 
 /**
@@ -254,6 +255,110 @@ export function detectPrepressIssues(
         impact: 'Nenhum impacto técnico adverso para elementos de arte/decoração.',
         recommendation: 'Informativo de arte vetorial.',
       });
+    }
+
+    // D. Limpeza Geométrica Segura (Etapa 6.13)
+    if (d) {
+      const collinearTol = policy.customConfig?.vectorPreflight?.maxCollinearToleranceMm ?? 0.005;
+      const complexityLimit = policy.customConfig?.vectorPreflight?.maxComplexityThresholdPoints ?? 500;
+      const analysis = analyzeSvgPath(d, {
+        collinearToleranceMm: collinearTol,
+        complexityThreshold: complexityLimit,
+      });
+
+      if (analysis.duplicatePointsCount > 0) {
+        issues.push({
+          id: `ISSUE:DUPLICATE_VECTOR_POINT:${path.id}`,
+          code: 'DUPLICATE_VECTOR_POINT',
+          category: 'geometry',
+          severity: 'warning',
+          message: `O vetor "${path.name}" possui ${analysis.duplicatePointsCount} ponto(s) consecutivo(s) duplicado(s).`,
+          affectedNodeId: path.id,
+          affectedNodeName: path.name,
+          evidence: {
+            duplicatePointsCount: analysis.duplicatePointsCount,
+            totalPoints: analysis.totalPoints,
+          },
+          fixClassification: 'AUTO_FIXABLE',
+          capableTool: 'remove_redundant_vector_points',
+          suggestedParams: {
+            nodeId: path.id,
+          },
+          impact: 'Pontos duplicados geram micro-pausas na lâmina da plotter de recorte e peso desnecessário no RIP.',
+          recommendation: 'Remover com segurança pontos duplicados idênticos.',
+        });
+      }
+
+      if (analysis.zeroLengthSegmentsCount > 0) {
+        issues.push({
+          id: `ISSUE:ZERO_LENGTH_SEGMENT:${path.id}`,
+          code: 'ZERO_LENGTH_SEGMENT',
+          category: 'geometry',
+          severity: 'warning',
+          message: `O vetor "${path.name}" contém ${analysis.zeroLengthSegmentsCount} segmento(s) de comprimento zero.`,
+          affectedNodeId: path.id,
+          affectedNodeName: path.name,
+          evidence: {
+            zeroLengthSegmentsCount: analysis.zeroLengthSegmentsCount,
+            totalPoints: analysis.totalPoints,
+          },
+          fixClassification: 'AUTO_FIXABLE',
+          capableTool: 'remove_redundant_vector_points',
+          suggestedParams: {
+            nodeId: path.id,
+          },
+          impact: 'Segmentos de comprimento zero podem gerar artefatos em plotters e atrasos de processamento.',
+          recommendation: 'Remover segmentos degenerados de comprimento nulo.',
+        });
+      }
+
+      if (analysis.collinearPointsCount > 0) {
+        issues.push({
+          id: `ISSUE:REDUNDANT_COLLINEAR_POINT:${path.id}`,
+          code: 'REDUNDANT_COLLINEAR_POINT',
+          category: 'geometry',
+          severity: 'info',
+          message: `O vetor "${path.name}" possui ${analysis.collinearPointsCount} ponto(s) intermediário(s) colinear(es) redundante(s).`,
+          affectedNodeId: path.id,
+          affectedNodeName: path.name,
+          evidence: {
+            collinearPointsCount: analysis.collinearPointsCount,
+            totalPoints: analysis.totalPoints,
+          },
+          fixClassification: 'AUTO_FIXABLE',
+          capableTool: 'remove_redundant_vector_points',
+          suggestedParams: {
+            nodeId: path.id,
+            collinearToleranceMm: collinearTol,
+          },
+          impact: 'Nós colineares em retas são desnecessários para a definição da forma.',
+          recommendation: 'Remover nós colineares mantendo os extremos da reta.',
+        });
+      }
+
+      if (analysis.isExcessivelyComplex) {
+        issues.push({
+          id: `ISSUE:EXCESSIVE_PATH_COMPLEXITY:${path.id}`,
+          code: 'EXCESSIVE_PATH_COMPLEXITY',
+          category: 'geometry',
+          severity: 'warning',
+          message: `O vetor "${path.name}" possui alta densidade de nós (${analysis.totalPoints} pontos, limite recomendado: ${complexityLimit}).`,
+          affectedNodeId: path.id,
+          affectedNodeName: path.name,
+          evidence: {
+            totalPoints: analysis.totalPoints,
+            threshold: complexityLimit,
+          },
+          fixClassification: 'REQUIRES_CONFIRMATION',
+          capableTool: 'simplify_vector_path',
+          suggestedParams: {
+            nodeId: path.id,
+            toleranceMm: 0.05,
+          },
+          impact: 'Caminhos com densidade extrema de nós sobrecarregam o RIP de impressão e plotters de corte.',
+          recommendation: 'Simplificar a curva com tolerância de 0.05 mm após confirmação do operador.',
+        });
+      }
     }
   }
 

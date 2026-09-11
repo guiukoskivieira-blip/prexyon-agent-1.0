@@ -8,6 +8,7 @@
 import { PrexyonDocument, RasterNode } from '../pdm/types';
 import { calculateEffectiveDpi, roundPrecision } from '../pdm/units';
 import { detectPrepressIssues } from './issueDetector';
+import { simplifyVectorPath } from '../geometry/vectorPathCleaner';
 import { PrepressIssue } from './types';
 import { ProposedFix } from './proposalTypes';
 
@@ -280,6 +281,46 @@ export function generateProposedFixes(
           type: 'geometry_shift',
         },
         risks: ['Uma linha reta de corte será traçada entre as extremidades abertas.'],
+        reversible: true,
+        requiresConfirmation: true,
+        status: 'PENDING',
+        docVersionFingerprint: fingerprint,
+        createdAt: Date.now(),
+      });
+    }
+
+    // CASO 5: CAMINHO VETORIAL EXCESSIVAMENTE COMPLEXO (EXCESSIVE_PATH_COMPLEXITY) -> PROPOSTA DE SIMPLIFICAÇÃO
+    if (issue.code === 'EXCESSIVE_PATH_COMPLEXITY' && node.type === 'vector_path') {
+      const pathNode = node as import('../pdm/types').VectorPathNode;
+      const toleranceMm = (issue.suggestedParams?.toleranceMm as number) || 0.05;
+      const simp = simplifyVectorPath(pathNode.d, toleranceMm);
+
+      proposals.push({
+        id: `prop_simplify_${pathNode.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        issueId: issue.id,
+        issueCode: issue.code,
+        targetNodeId: pathNode.id,
+        targetNodeName: pathNode.name,
+        title: `Simplificar Traçado Vetorial (${simp.reductionPercentage}% de redução)`,
+        description: `Reduz o número de nós do vetor "${pathNode.name}" de ${simp.nodesBefore} para ${simp.nodesAfter} nós utilizando Douglas-Peucker (tolerância: ${toleranceMm} mm).`,
+        reason: `Caminhos vetoriais com excesso de vértices (${simp.nodesBefore} nós) causam lentidão no RIP e travamentos em plotters de corte. A simplificação reduz ${simp.nodesReduced} nós com desvio máximo de ~${simp.maxEstimatedError_mm} mm.`,
+        toolName: 'simplify_vector_path',
+        proposedParams: {
+          nodeId: pathNode.id,
+          toleranceMm: toleranceMm,
+        },
+        expectedImpact: {
+          affectedObjectsCount: 1,
+          visualArtChanges: false,
+          technicalGeometryChanges: true,
+          summary: `Redução de ${simp.nodesBefore} para ${simp.nodesAfter} nós (${simp.reductionPercentage}% mais leve, erro geométrico máx: ${simp.maxEstimatedError_mm} mm).`,
+        },
+        previewData: {
+          type: 'geometry_shift',
+        },
+        risks: [
+          `A geometria do traçado sofrerá simplificação com tolerância máxima de ${toleranceMm} mm.`,
+        ],
         reversible: true,
         requiresConfirmation: true,
         status: 'PENDING',

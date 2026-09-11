@@ -19,6 +19,8 @@ import { applyProposedFixTool } from './definitions/applyProposedFixTool';
 import { removeInvisibleVectorObjectsTool } from './definitions/removeInvisibleVectorObjectsTool';
 import { setMinimumStrokeWidthTool } from './definitions/setMinimumStrokeWidthTool';
 import { closeCutContourTool } from './definitions/closeCutContourTool';
+import { removeRedundantVectorPointsTool } from './definitions/removeRedundantVectorPointsTool';
+import { simplifyVectorPathTool } from './definitions/simplifyVectorPathTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -37,6 +39,8 @@ export * from './definitions/applyProposedFixTool';
 export * from './definitions/removeInvisibleVectorObjectsTool';
 export * from './definitions/setMinimumStrokeWidthTool';
 export * from './definitions/closeCutContourTool';
+export * from './definitions/removeRedundantVectorPointsTool';
+export * from './definitions/simplifyVectorPathTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -56,6 +60,8 @@ export const defaultToolRegistry = new ToolRegistry([
   removeInvisibleVectorObjectsTool,
   setMinimumStrokeWidthTool,
   closeCutContourTool,
+  removeRedundantVectorPointsTool,
+  simplifyVectorPathTool,
 ]);
 
 /**

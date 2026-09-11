@@ -77,6 +77,7 @@ export function buildProductionReview({
       b.strokeWidth_mm !== a.strokeWidth_mm ||
       b.visible !== a.visible ||
       b.opacity !== a.opacity ||
+      b.d !== a.d ||
       JSON.stringify(b.contours) !== JSON.stringify(a.contours)
     );
   });

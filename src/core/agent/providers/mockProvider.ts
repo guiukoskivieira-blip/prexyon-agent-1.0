@@ -251,6 +251,77 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
+  // 2.1b. Comando de Limpeza de Pontos Redundantes e Geometria Vetorial (Etapa 6.13)
+  if (
+    text.includes('pontos redundantes') ||
+    text.includes('pontos duplicados') ||
+    text.includes('segmentos nulos') ||
+    text.includes('nós colineares') ||
+    text.includes('nos colineares') ||
+    text.includes('limpar geometria') ||
+    text.includes('limpar nós') ||
+    text.includes('limpar nos')
+  ) {
+    const vectorPathNode = nodes.find((n) => n.type === 'vector_path');
+    const vId = vectorPathNode?.id || targetNodeId;
+
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_clean_points_${Date.now()}`,
+              name: 'remove_redundant_vector_points',
+              args: {
+                nodeId: vId,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Pontos duplicados, segmentos nulos e nós colineares redundantes removidos com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 2.1c. Comando de Simplificação de Traçado Vetorial (Etapa 6.13)
+  if (
+    text.includes('simplificar') ||
+    text.includes('simplifique') ||
+    text.includes('reduzir nós') ||
+    text.includes('reduzir nos')
+  ) {
+    const vectorPathNode = nodes.find((n) => n.type === 'vector_path');
+    const vId = vectorPathNode?.id || targetNodeId;
+
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_simplify_vec_${Date.now()}`,
+              name: 'simplify_vector_path',
+              args: {
+                nodeId: vId,
+                toleranceMm: 0.05,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Traçado vetorial simplificado com sucesso via Douglas-Peucker.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 2.2. Comando de Ajuste de Espessura Mínima de Linhas (ex: "Engrosse as linhas finas", "Ajuste as linhas para 0.2 mm")
   if (
     text.includes('engrosse') ||

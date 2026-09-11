@@ -1073,4 +1073,133 @@ export class CloseCutContourCommand implements DocumentCommand {
   }
 }
 
+export interface CleanVectorAdjustment {
+  nodeId: string;
+  prevD: string;
+  nextD: string;
+}
+
+/**
+ * Comando de Limpeza de Vetores / Remoção de Pontos Redundantes (Etapa 6.13)
+ * Reversível: restaura o path 'd' anterior de cada VectorPathNode.
+ */
+export class CleanVectorPathCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly adjustments: CleanVectorAdjustment[]
+  ) {
+    this.id = `cmd_clean_vec_${Date.now()}`;
+    this.name = adjustments.length === 1 ? 'Limpar Geometria do Vetor' : `Limpar Geometria de ${adjustments.length} Vetores`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newNodes = { ...doc.nodes };
+    for (const adj of this.adjustments) {
+      const node = newNodes[adj.nodeId] as VectorPathNode | undefined;
+      if (node && node.type === 'vector_path') {
+        newNodes[adj.nodeId] = {
+          ...node,
+          d: adj.nextD,
+        };
+      }
+    }
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: newNodes,
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.adjustments[0]?.nodeId ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newNodes = { ...doc.nodes };
+    for (const adj of this.adjustments) {
+      const node = newNodes[adj.nodeId] as VectorPathNode | undefined;
+      if (node && node.type === 'vector_path') {
+        newNodes[adj.nodeId] = {
+          ...node,
+          d: adj.prevD,
+        };
+      }
+    }
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: newNodes,
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.adjustments[0]?.nodeId ?? null,
+    };
+  }
+}
+
+/**
+ * Comando de Simplificação de Caminho Vetorial (Etapa 6.13)
+ * Reversível: restaura o path 'd' original do VectorPathNode.
+ */
+export class SimplifyVectorPathCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevD: string,
+    public readonly nextD: string,
+    public readonly toleranceMm: number = 0.05
+  ) {
+    this.id = `cmd_simplify_vec_${nodeId}_${Date.now()}`;
+    this.name = 'Simplificar Traçado Vetorial';
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId] as VectorPathNode | undefined;
+    if (!node || node.type !== 'vector_path') return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          d: this.nextD,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId] as VectorPathNode | undefined;
+    if (!node || node.type !== 'vector_path') return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          d: this.prevD,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+}
+
 

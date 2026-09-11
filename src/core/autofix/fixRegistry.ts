@@ -185,6 +185,70 @@ export const closeCutContourFix: FixDefinition = {
 };
 
 /**
+ * Fix 5: Pontos Duplicados Consecutivos (DUPLICATE_VECTOR_POINT -> remove_redundant_vector_points)
+ */
+export const duplicateVectorPointFix: FixDefinition = {
+  issueCode: 'DUPLICATE_VECTOR_POINT',
+  toolName: 'remove_redundant_vector_points',
+  classification: 'AUTO_FIXABLE',
+  title: 'Remover Pontos Duplicados do Vetor',
+  description: 'Remove pontos geométricos idênticos e consecutivos sem alterar o contorno da arte.',
+  canApply(issue, doc) {
+    if (!issue.affectedNodeId) return false;
+    const node = doc.nodes[issue.affectedNodeId];
+    return !!node && (node.type === 'vector_path' || node.type === 'group');
+  },
+  resolveParameters(issue) {
+    return {
+      nodeId: issue.affectedNodeId,
+    };
+  },
+};
+
+/**
+ * Fix 6: Segmentos de Comprimento Zero (ZERO_LENGTH_SEGMENT -> remove_redundant_vector_points)
+ */
+export const zeroLengthSegmentFix: FixDefinition = {
+  issueCode: 'ZERO_LENGTH_SEGMENT',
+  toolName: 'remove_redundant_vector_points',
+  classification: 'AUTO_FIXABLE',
+  title: 'Remover Segmentos de Comprimento Zero',
+  description: 'Remove segmentos nulos sem deslocamento no caminho vetorial.',
+  canApply(issue, doc) {
+    if (!issue.affectedNodeId) return false;
+    const node = doc.nodes[issue.affectedNodeId];
+    return !!node && (node.type === 'vector_path' || node.type === 'group');
+  },
+  resolveParameters(issue) {
+    return {
+      nodeId: issue.affectedNodeId,
+    };
+  },
+};
+
+/**
+ * Fix 7: Pontos Colineares Redundantes (REDUNDANT_COLLINEAR_POINT -> remove_redundant_vector_points)
+ */
+export const redundantCollinearPointFix: FixDefinition = {
+  issueCode: 'REDUNDANT_COLLINEAR_POINT',
+  toolName: 'remove_redundant_vector_points',
+  classification: 'AUTO_FIXABLE',
+  title: 'Remover Pontos Colineares Redundantes',
+  description: 'Remove nós intermediários em segmentos retos dentro da tolerância técnica.',
+  canApply(issue, doc) {
+    if (!issue.affectedNodeId) return false;
+    const node = doc.nodes[issue.affectedNodeId];
+    return !!node && (node.type === 'vector_path' || node.type === 'group');
+  },
+  resolveParameters(issue) {
+    return {
+      nodeId: issue.affectedNodeId,
+      collinearToleranceMm: (issue.suggestedParams?.collinearToleranceMm as number) ?? 0.005,
+    };
+  },
+};
+
+/**
  * Instância padrão global do FixRegistry com todos os fixes homologados.
  */
 export const defaultFixRegistry = new FixRegistry([
@@ -192,5 +256,8 @@ export const defaultFixRegistry = new FixRegistry([
   misalignedCutContourFix,
   removeInvisibleVectorObjectsFix,
   closeCutContourFix,
+  duplicateVectorPointFix,
+  zeroLengthSegmentFix,
+  redundantCollinearPointFix,
 ]);
 

@@ -80,6 +80,16 @@ export interface ValidationPolicy {
 
   /** Limite crítico de baixa resolução para aviso enfático (padrão V1: 100 DPI) */
   criticalDpi: number;
+
+  /** Configurações customizadas opcionais do perfil */
+  customConfig?: {
+    vectorPreflight?: {
+      maxCollinearToleranceMm?: number;
+      maxComplexityThresholdPoints?: number;
+      minStrokeWidth_mm?: number;
+    };
+    [key: string]: any;
+  };
 }
 
 export const DEFAULT_VALIDATION_POLICY: ValidationPolicy = {

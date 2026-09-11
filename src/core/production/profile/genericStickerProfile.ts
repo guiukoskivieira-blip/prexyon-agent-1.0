@@ -51,6 +51,8 @@ export const GENERIC_STICKER_PROFILE: ProductionProfile = {
   vectorPreflight: {
     minimumStrokeWidthMm: 0.2,
     maxAutoCloseGapMm: 0.5,
+    maxCollinearToleranceMm: 0.005,
+    maxComplexityThresholdPoints: 500,
   },
   metadata: {
     vendor: 'generic',

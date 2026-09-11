@@ -198,6 +198,42 @@ export function buildPreflightPlan(
     }
   }
 
+  // Regra 3: Limpeza de geometria vetorial precede geração de faca de corte
+  const cleanSteps = rawSteps.filter((s) => s.tool === 'remove_redundant_vector_points' || s.tool === 'remove_invisible_vector_objects');
+  for (const cleanStep of cleanSteps) {
+    const targetId = cleanStep.targetNodeIds[0];
+    if (!targetId) continue;
+    const cleanNode = doc.nodes[targetId];
+    const parentGroupId = cleanNode?.parentId;
+
+    const dependentCutSteps = rawSteps.filter(
+      (s) =>
+        s.id !== cleanStep.id &&
+        s.issueCode === 'MISSING_CUT_CONTOUR' &&
+        s.targetNodeIds.some((cutTargetId) => {
+          if (cutTargetId === targetId) return true;
+          if (parentGroupId && cutTargetId === parentGroupId) return true;
+          const cutNode = doc.nodes[cutTargetId];
+          if (cutNode && cutNode.type === 'group' && (cutNode as import('../pdm/types').VectorGroupNode).childrenIds?.includes(targetId)) {
+            return true;
+          }
+          return false;
+        })
+    );
+    for (const depCut of dependentCutSteps) {
+      if (!depCut.dependsOn.includes(cleanStep.id)) {
+        depCut.dependsOn.push(cleanStep.id);
+        cleanStep.blocks.push(depCut.id);
+        depCut.dependencyExplanation = 'A faca de corte será gerada sobre a geometria vetorial higienizada.';
+        dependencies.push({
+          stepId: depCut.id,
+          dependsOnStepId: cleanStep.id,
+          reason: depCut.dependencyExplanation,
+        });
+      }
+    }
+  }
+
   // 3. Ordenação Topológica Estrita + Priorização por Severidade e Segurança
   const sortedSteps = sortStepsTopologically(rawSteps);
 
@@ -555,6 +591,14 @@ function getFriendlyStepTitle(
       return 'Fechar contorno aberto da faca de corte';
     case 'INVISIBLE_VECTOR_OBJECT':
       return 'Remover objeto vetorial invisível';
+    case 'DUPLICATE_VECTOR_POINT':
+      return 'Remover pontos duplicados do vetor';
+    case 'ZERO_LENGTH_SEGMENT':
+      return 'Remover segmentos de comprimento zero';
+    case 'REDUNDANT_COLLINEAR_POINT':
+      return 'Remover nós colineares redundantes';
+    case 'EXCESSIVE_PATH_COMPLEXITY':
+      return 'Simplificar vetor com alta densidade de nós';
     case 'STROKE_TOO_THIN':
       return 'Ajustar traço fino para espessura mínima';
     case 'OPEN_VECTOR_PATH':
@@ -591,6 +635,14 @@ function getFriendlyStepDescription(
       return 'Conecta as extremidades abertas da faca para formar um contorno de corte fechado.';
     case 'INVISIBLE_VECTOR_OBJECT':
       return 'Remove do documento elementos sem preenchimento, sem traço ou vazios.';
+    case 'DUPLICATE_VECTOR_POINT':
+      return 'Remove pontos geométricos idênticos e consecutivos sem alterar o contorno da arte.';
+    case 'ZERO_LENGTH_SEGMENT':
+      return 'Remove segmentos nulos sem deslocamento no caminho vetorial.';
+    case 'REDUNDANT_COLLINEAR_POINT':
+      return 'Remove vértices intermediários em linhas retas mantendo os extremos.';
+    case 'EXCESSIVE_PATH_COMPLEXITY':
+      return 'Reduz o número de nós do vetor utilizando Douglas-Peucker com tolerância milimétrica.';
     case 'STROKE_TOO_THIN':
       return 'Ajusta a espessura de traços abaixo de 0.20 mm para garantir impressão e recorte nítidos.';
     case 'OPEN_VECTOR_PATH':
