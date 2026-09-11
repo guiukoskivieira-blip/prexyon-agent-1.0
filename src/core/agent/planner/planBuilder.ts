@@ -161,19 +161,40 @@ export function buildActionPlanFromUserRequest(
     text.includes('base branca') ||
     text.includes('camada branca') ||
     text.includes('gere a base branca') ||
+    text.includes('gerar a base branca') ||
+    text.includes('gere o branco') ||
+    text.includes('gerar o branco') ||
+    text.includes('crie o branco') ||
+    text.includes('criar o branco') ||
+    text.includes('cria o branco') ||
+    text.includes('coloca branco') ||
+    text.includes('colocar branco') ||
+    text.includes('coloque branco') ||
+    text.includes('passa branco') ||
+    text.includes('passar branco') ||
     text.includes('white underbase') ||
     text.includes('branco por baixo') ||
     text.includes('branco de fundo') ||
     text.includes('com branco') ||
-    (text.includes('branco') && (text.includes('ger') || text.includes('cri') || text.includes('prepar') || text.includes('coloc') || text.includes('aplic') || text.includes('fundo') || text.includes('baixo')));
+    (text.includes('branco') && (
+      text.includes('ger') ||
+      text.includes('cri') ||
+      text.includes('prepar') ||
+      text.includes('coloc') ||
+      text.includes('aplic') ||
+      text.includes('pass') ||
+      text.includes('fundo') ||
+      text.includes('baixo')
+    ));
 
   if (wantsWhite && !constraints.forbidWhite) {
+    const whiteDependsOn = steps.map((s) => s.id!).filter(Boolean);
     steps.push({
       id: 'step_white',
       tool: 'generate_white_underbase',
       arguments: { dpi: 300 },
       description: 'Gerar máscara de Base Branca para DTF UV.',
-      dependsOn: steps.length > 0 ? ['step_resize'] : undefined,
+      dependsOn: whiteDependsOn.length > 0 ? whiteDependsOn : undefined,
     });
     intent = 'GENERATE_SEPARATION';
   }
@@ -182,44 +203,69 @@ export function buildActionPlanFromUserRequest(
   const wantsClear =
     text.includes('verniz') ||
     text.includes('camada clear') ||
+    text.includes('separação clear') ||
+    text.includes('separacao clear') ||
     text.includes('clear') ||
     text.includes('varnish');
 
   if (wantsClear && !constraints.forbidClear) {
     const isFull =
+      text.includes('área inteira') ||
+      text.includes('area inteira') ||
+      text.includes('área toda') ||
+      text.includes('area toda') ||
+      text.includes('toda a área') ||
+      text.includes('toda a area') ||
       text.includes('peça inteira') ||
       text.includes('peca inteira') ||
-      text.includes('toda a área') ||
       text.includes('toda a prancheta') ||
+      text.includes('prancheta inteira') ||
       text.includes('total') ||
-      text.includes('prancheta inteira');
+      text.includes('modo full') ||
+      text.includes('full');
 
     const mode = isFull ? 'FULL' : 'ARTWORK';
+    const clearDependsOn = steps.map((s) => s.id!).filter(Boolean);
     steps.push({
       id: 'step_clear',
       tool: 'generate_clear_separation',
       arguments: { mode, dpi: 300 },
       description: `Gerar máscara de Verniz no modo ${mode}.`,
-      dependsOn: steps.length > 0 ? ['step_resize'] : undefined,
+      dependsOn: clearDependsOn.length > 0 ? clearDependsOn : undefined,
     });
     intent = 'GENERATE_SEPARATION';
   }
 
-  // 8. Passo de Pacote Técnico DTF UV
-  const wantsDtfPackage =
-    (text.includes('pacote') && (text.includes('dtf') || text.includes('uv'))) ||
-    text.includes('gere o pacote de produção dtf uv') ||
-    text.includes('exportar pacote dtf');
+  // 8. Passo de Pacote Técnico DTF UV ou Adesivo Convencional
+  const wantsPackage =
+    text.includes('pacote') ||
+    text.includes('exportar pacote') ||
+    text.includes('gerar pacote') ||
+    text.includes('gere o pacote');
 
-  if (wantsDtfPackage) {
-    steps.push({
-      id: 'step_dtf_pkg',
-      tool: 'generate_dtf_uv_production_package',
-      arguments: { dpi: 300, generateZip: true },
-      description: 'Gerar pacote consolidado DTF UV.',
-      dependsOn: steps.map((s) => s.id!),
-    });
-    intent = 'GENERATE_PACKAGE';
+  if (wantsPackage) {
+    const isDtfContext = process === 'DTF_UV' || doc.profileId === 'dtf-uv';
+    if (isDtfContext) {
+      const pkgDependsOn = steps.map((s) => s.id!).filter(Boolean);
+      steps.push({
+        id: 'step_dtf_pkg',
+        tool: 'generate_dtf_uv_production_package',
+        arguments: { dpi: 300, generateZip: true },
+        description: 'Gerar pacote consolidado DTF UV.',
+        dependsOn: pkgDependsOn.length > 0 ? pkgDependsOn : undefined,
+      });
+      intent = 'GENERATE_PACKAGE';
+    } else if (process !== 'DTF_UV' && !constraints.forbidCutContour) {
+      const pkgDependsOn = steps.map((s) => s.id!).filter(Boolean);
+      steps.push({
+        id: 'step_pkg',
+        tool: 'create_production_package',
+        arguments: { profileId: 'generic-sticker', cutOffset_mm: 2.0 },
+        description: 'Gerar pacote técnico de produção.',
+        dependsOn: pkgDependsOn.length > 0 ? pkgDependsOn : undefined,
+      });
+      intent = 'GENERATE_PACKAGE';
+    }
   }
 
   // 9. Passo de Faca de Corte para Adesivo Convencional (GENERIC_STICKER)
@@ -244,8 +290,10 @@ export function buildActionPlanFromUserRequest(
   }
 
   // Se o comando for "prepare essa logo para dtf uv" sem steps adicionais
+  let explanation = `Plano estruturado para ${process === 'DTF_UV' ? 'processamento DTF UV' : 'manipulação técnica'}.`;
   if (process === 'DTF_UV' && steps.length === 0) {
     intent = 'PREPARE_FOR_PRODUCTION';
+    explanation = 'Pré-análise DTF UV concluída. O perfil DTF UV foi ativado no documento: o processo DTF UV não exige faca mecânica nem corte por plotter. As separações técnicas de White Underbase e Clear/Verniz estão disponíveis conforme as políticas do perfil.';
   }
 
   return {
@@ -255,6 +303,6 @@ export function buildActionPlanFromUserRequest(
     target: { type: 'SELECTED_OBJECT' },
     constraints,
     steps,
-    explanation: `Plano estruturado para ${process === 'DTF_UV' ? 'processamento DTF UV' : 'manipulação técnica'}.`,
+    explanation,
   };
 }

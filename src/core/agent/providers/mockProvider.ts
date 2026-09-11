@@ -476,16 +476,99 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 3.4. Comando de Geração de Base Branca (White Underbase — DTF UV Etapa 3)
-  if (
+  // 3.4. DTF UV Multi-step (White + Clear) ou passos combinados
+  const wantsWhite =
     text.includes('base branca') ||
     text.includes('camada branca') ||
     text.includes('prepare o branco') ||
     text.includes('crie o branco') ||
+    text.includes('criar o branco') ||
+    text.includes('cria o branco') ||
+    text.includes('coloca branco') ||
+    text.includes('colocar branco') ||
+    text.includes('coloque branco') ||
+    text.includes('passa branco') ||
     text.includes('gerar branco') ||
+    text.includes('gere o branco') ||
     text.includes('white underbase') ||
-    (text.includes('branco') && (text.includes('cri') || text.includes('ger') || text.includes('prepar')))
-  ) {
+    text.includes('branco por baixo') ||
+    text.includes('branco de fundo') ||
+    (text.includes('branco') && (
+      text.includes('cri') ||
+      text.includes('ger') ||
+      text.includes('prepar') ||
+      text.includes('coloc') ||
+      text.includes('aplic') ||
+      text.includes('pass') ||
+      text.includes('fundo') ||
+      text.includes('baixo')
+    ));
+
+  const wantsClear =
+    text.includes('verniz') ||
+    text.includes('camada clear') ||
+    text.includes('separação clear') ||
+    text.includes('separacao clear') ||
+    text.includes('varnish') ||
+    (text.includes('clear') && (
+      text.includes('ger') ||
+      text.includes('cri') ||
+      text.includes('aplic') ||
+      text.includes('pass')
+    ));
+
+  const isFull =
+    text.includes('área inteira') ||
+    text.includes('area inteira') ||
+    text.includes('área toda') ||
+    text.includes('area toda') ||
+    text.includes('toda a área') ||
+    text.includes('toda a area') ||
+    text.includes('peça inteira') ||
+    text.includes('peca inteira') ||
+    text.includes('toda a prancheta') ||
+    text.includes('prancheta inteira') ||
+    text.includes('total') ||
+    text.includes('modo full') ||
+    text.includes('full');
+
+  const clearMode = isFull ? 'FULL' : 'ARTWORK';
+
+  if (wantsWhite && wantsClear) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_white_${Date.now()}`,
+              name: 'generate_white_underbase',
+              args: { dpi: 300 },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_clear_${Date.now()}`,
+              name: 'generate_clear_separation',
+              args: { mode: clearMode, dpi: 300 },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: `Máscara de Base Branca e máscara de Verniz (${clearMode}) geradas com sucesso para produção DTF UV.`,
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 3.4a. Comando de Geração de Base Branca isolada (White Underbase — DTF UV Etapa 3)
+  if (wantsWhite) {
     return [
       {
         response: {
@@ -509,18 +592,8 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 3.4b. Comando de Geração de Verniz / Clear (DTF UV Etapa 4)
-  if (
-    text.includes('verniz') ||
-    text.includes('camada clear') ||
-    text.includes('separação clear') ||
-    text.includes('separacao clear') ||
-    text.includes('varnish') ||
-    (text.includes('clear') && (text.includes('ger') || text.includes('cri') || text.includes('aplic')))
-  ) {
-    const isFull = text.includes('toda a área') || text.includes('toda a prancheta') || text.includes('total');
-    const mode = isFull ? 'FULL' : 'ARTWORK';
-
+  // 3.4b. Comando de Geração de Verniz / Clear isolado (DTF UV Etapa 4)
+  if (wantsClear) {
     return [
       {
         response: {
@@ -529,7 +602,7 @@ export function createDeterministicTurnsForRequest(
               id: `call_clear_${Date.now()}`,
               name: 'generate_clear_separation',
               args: {
-                mode,
+                mode: clearMode,
                 dpi: 300,
               },
             },
@@ -538,18 +611,17 @@ export function createDeterministicTurnsForRequest(
       },
       {
         response: {
-          text: `Máscara de Verniz (Clear / Varnish) gerada com sucesso no modo ${mode} para produção DTF UV.`,
+          text: `Máscara de Verniz (Clear / Varnish) gerada com sucesso no modo ${clearMode} para produção DTF UV.`,
           finishReason: 'STOP',
         },
       },
     ];
   }
 
-  // 3.5. Comando de Pacote Técnico DTF UV (Etapa 5: "Prepare o pacote DTF UV desta arte.", "Gere os arquivos de produção DTF UV.", "Finalize esta arte para DTF UV.")
+  // 3.5. Comando de Pacote Técnico DTF UV
   if (
     (text.includes('dtf') && (text.includes('pacote') || text.includes('arquivos de produç') || text.includes('arquivos de produc') || text.includes('finaliz') || text.includes('exportar pacote') || text.includes('gerar pacote') || text.includes('gerar os arquivos'))) ||
-    (text.includes('pacote') && text.includes('dtf')) ||
-    (text.includes('pacote') && text.includes('uv'))
+    (text.includes('pacote') && (text.includes('dtf') || text.includes('uv') || doc.profileId === 'dtf-uv'))
   ) {
     return [
       {
@@ -575,12 +647,12 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 3.6. Comando DTF UV Pré-Análise (ex: "Prepare esta arte para DTF UV.", "analise dtf uv", "transparência dtf")
+  // 3.6. Comando DTF UV Pré-Análise / Ativação
   if (text.includes('dtf') || text.includes('dtf uv') || (text.includes('uv') && text.includes('prepar'))) {
     return [
       {
         response: {
-          text: 'Pré-análise DTF UV concluída. O perfil DTF UV foi avaliado: a arte não exige faca mecânica e a resolução/transparência foram inspecionadas. As separações White e Clear e o pacote técnico de produção DTF UV estão disponíveis.',
+          text: 'Pré-análise DTF UV concluída. O perfil DTF UV foi ativado no documento: o processo DTF UV não exige faca mecânica nem corte por plotter. As separações técnicas de White Underbase e Clear/Verniz estão disponíveis conforme as políticas do perfil.',
           finishReason: 'STOP',
         },
       },

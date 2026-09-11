@@ -199,11 +199,17 @@ export class AgentRuntime {
           }
 
           if (resolvedPlan.steps.length === 0) {
+            let finalDoc = currentDoc;
+            if (resolvedPlan.process === 'DTF_UV' && finalDoc.profileId !== 'dtf-uv') {
+              finalDoc = { ...finalDoc, profileId: 'dtf-uv' };
+            } else if (resolvedPlan.process === 'GENERIC_STICKER' && finalDoc.profileId !== 'generic-sticker') {
+              finalDoc = { ...finalDoc, profileId: 'generic-sticker' };
+            }
             return {
               success: true,
               reply: resolvedPlan.explanation || 'Análise técnica concluída.',
               executedTools: [],
-              doc: currentDoc,
+              doc: finalDoc,
               iterations: 1,
               status: 'completed',
             };
@@ -274,11 +280,35 @@ export class AgentRuntime {
               process: isDtf ? 'DTF_UV' : (isGenericSticker ? 'GENERIC_STICKER' : 'UNSPECIFIED'),
               target: { type: 'SELECTED_OBJECT', ...(options?.selectedNodeId ? { nodeId: options.selectedNodeId } : {}) },
               constraints: {
-                preserveAspectRatio: userMessage.toLowerCase().includes('proporc') || userMessage.toLowerCase().includes('sem deformar') || userMessage.toLowerCase().includes('sem distorcer'),
-                forbidClear: userMessage.toLowerCase().includes('sem verniz') || userMessage.toLowerCase().includes('sem clear'),
-                forbidWhite: userMessage.toLowerCase().includes('sem branco'),
-                forbidCutContour: userMessage.toLowerCase().includes('sem faca') || userMessage.toLowerCase().includes('sem corte'),
-                preserveDimensions: userMessage.toLowerCase().includes('sem alterar tamanho') || userMessage.toLowerCase().includes('manter tamanho'),
+                preserveAspectRatio:
+                  userMessage.toLowerCase().includes('proporc') ||
+                  userMessage.toLowerCase().includes('sem deformar') ||
+                  userMessage.toLowerCase().includes('sem distorcer') ||
+                  userMessage.toLowerCase().includes('sem esticar'),
+                forbidClear:
+                  userMessage.toLowerCase().includes('sem verniz') ||
+                  userMessage.toLowerCase().includes('sem clear') ||
+                  userMessage.toLowerCase().includes('não gere verniz') ||
+                  userMessage.toLowerCase().includes('nao gere verniz') ||
+                  userMessage.toLowerCase().includes('não coloca verniz') ||
+                  userMessage.toLowerCase().includes('nao coloca verniz'),
+                forbidWhite:
+                  userMessage.toLowerCase().includes('sem branco') ||
+                  userMessage.toLowerCase().includes('sem base branca') ||
+                  userMessage.toLowerCase().includes('não gere branco') ||
+                  userMessage.toLowerCase().includes('nao gere branco') ||
+                  userMessage.toLowerCase().includes('não coloca branco') ||
+                  userMessage.toLowerCase().includes('nao coloca branco'),
+                forbidCutContour:
+                  userMessage.toLowerCase().includes('sem faca') ||
+                  userMessage.toLowerCase().includes('sem corte') ||
+                  userMessage.toLowerCase().includes('não crie faca') ||
+                  userMessage.toLowerCase().includes('nao crie faca'),
+                preserveDimensions:
+                  userMessage.toLowerCase().includes('sem alterar tamanho') ||
+                  userMessage.toLowerCase().includes('manter tamanho') ||
+                  userMessage.toLowerCase().includes('não mexa no tamanho') ||
+                  userMessage.toLowerCase().includes('nao mexa no tamanho'),
               },
               steps: [{
                 id: `step_${call.name}`,

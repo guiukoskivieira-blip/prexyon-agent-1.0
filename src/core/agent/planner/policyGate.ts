@@ -6,6 +6,7 @@
  */
 
 import { PrexyonDocument } from '../../pdm/types';
+import { getProductionProfile } from '../../production/profile';
 import { AgentActionPlan, PlannedAction, AgentConstraints, ProductionProcess } from './types';
 
 export interface PolicyGateDecision {
@@ -63,6 +64,22 @@ export function evaluatePolicyGate(
 
   // 3. Governança de Processo DTF UV
   if (process === 'DTF_UV' || doc.profileId === 'dtf-uv') {
+    const profile = getProductionProfile(doc.profileId || 'dtf-uv');
+    if (profile.dtfUvConfig) {
+      if (tool === 'generate_white_underbase' && profile.dtfUvConfig.whitePolicy === 'DISABLED' && !args.forceBypassPolicy) {
+        return {
+          allowed: false,
+          blockedReason: 'A geração de Base Branca está desabilitada nas políticas do perfil de produção DTF UV selecionado.',
+        };
+      }
+      if (tool === 'generate_clear_separation' && (profile.dtfUvConfig.clearPolicy === 'DISABLED' || !profile.dtfUvConfig.capabilities?.supportsClear) && !args.forceBypassPolicy) {
+        return {
+          allowed: false,
+          blockedReason: 'A geração de Verniz (Clear) está desabilitada nas políticas do perfil de produção DTF UV selecionado.',
+        };
+      }
+    }
+
     // DTF UV não usa corte mecânico nem faca de plotter. Vetorização automática e criação de faca são bloqueadas a menos que o usuário tenha pedido faca explicitamente no intent GENERATE_CUT.
     if (tool === 'create_cut_contour' && plan.intent !== 'GENERATE_CUT') {
       return {
