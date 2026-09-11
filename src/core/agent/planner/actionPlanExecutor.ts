@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — Action Plan Executor
  *
  * Executa planos de ação validados de forma multi-step, sequencial e segura.
@@ -13,6 +13,77 @@ import { ExecutedToolRecord } from '../types';
 import { AgentActionPlan, PlanExecutionResult, ActionStepExecutionResult } from './types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
 import { composePlanResponse } from './responseComposer';
+
+function verifyMutationEvidence(
+  toolName: string,
+  _args: any,
+  _prevDoc: PrexyonDocument,
+  nextDoc: PrexyonDocument,
+  execResult: any
+): { verified: boolean; error?: string } {
+  if (toolName === 'vectorize_raster') {
+    const hasVectorNode = Object.values(nextDoc.nodes || {}).some(
+      (n) => n && (n.type === 'group' || (n as any).type === 'vector_group')
+    );
+    if (!hasVectorNode) {
+      return {
+        verified: false,
+        error: 'Nenhum nó vetorial foi gerado no documento.',
+      };
+    }
+  } else if (toolName === 'create_cut_contour') {
+    const hasCutNode = Object.values(nextDoc.nodes || {}).some(
+      (n) => n && n.type === 'cut_contour'
+    );
+    if (!hasCutNode) {
+      return {
+        verified: false,
+        error: 'Nenhum contorno de corte foi gerado no documento.',
+      };
+    }
+  } else if (toolName === 'generate_white_underbase') {
+    const whiteSep = nextDoc.separations?.white || (nextDoc.separations as any)?.WHITE;
+    const hasWhiteSeparation = Boolean(
+      (whiteSep && whiteSep.valid) ||
+      (execResult.data?.separation && execResult.data.separation.valid) ||
+      execResult.data?.role === 'WHITE'
+    );
+    if (!hasWhiteSeparation) {
+      return {
+        verified: false,
+        error: 'A separação de Base Branca não foi gerada.',
+      };
+    }
+  } else if (toolName === 'generate_clear_separation') {
+    const clearSep = nextDoc.separations?.clear || (nextDoc.separations as any)?.CLEAR;
+    const hasClearSeparation = Boolean(
+      (clearSep && clearSep.valid) ||
+      (execResult.data?.separation && execResult.data.separation.valid) ||
+      execResult.data?.role === 'CLEAR'
+    );
+    if (!hasClearSeparation) {
+      return {
+        verified: false,
+        error: 'A separação de Verniz/Clear não foi gerada.',
+      };
+    }
+  } else if (
+    toolName === 'generate_dtf_uv_production_package' ||
+    toolName === 'create_production_package' ||
+    toolName === 'build_production_package'
+  ) {
+    const pkg = execResult.data?.package || execResult.data;
+    const artifacts = pkg?.artifacts || execResult.data?.artifacts;
+    if (!Array.isArray(artifacts) || artifacts.length === 0) {
+      return {
+        verified: false,
+        error: 'Nenhum artefato de produção foi gerado no pacote.',
+      };
+    }
+  }
+
+  return { verified: true };
+}
 
 export async function executeActionPlan(
   plan: AgentActionPlan,
@@ -66,16 +137,29 @@ export async function executeActionPlan(
       });
 
       if (execResult.success) {
-        if (execResult.doc) {
-          currentDoc = execResult.doc;
+        const nextDoc = execResult.doc || currentDoc;
+        const evidence = verifyMutationEvidence(step.tool, step.arguments, currentDoc, nextDoc, execResult);
+
+        if (evidence.verified) {
+          currentDoc = nextDoc;
+          stepResults.push({
+            stepId,
+            toolName: step.tool,
+            args: step.arguments,
+            status: 'COMPLETED',
+            result: execResult,
+          });
+        } else {
+          executionHalted = true;
+          stepResults.push({
+            stepId,
+            toolName: step.tool,
+            args: step.arguments,
+            status: 'FAILED',
+            result: execResult,
+            error: evidence.error || 'A mutação esperada não foi encontrada no documento.',
+          });
         }
-        stepResults.push({
-          stepId,
-          toolName: step.tool,
-          args: step.arguments,
-          status: 'COMPLETED',
-          result: execResult,
-        });
       } else {
         executionHalted = true;
         stepResults.push({

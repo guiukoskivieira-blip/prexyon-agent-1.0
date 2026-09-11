@@ -19,7 +19,7 @@ export type ValidationCategory =
   | 'guides'
   | 'geometry';
 
-export type ValidationStatus = 'ready' | 'attention' | 'blocked';
+export type ValidationStatus = 'waiting_for_file' | 'ready' | 'attention' | 'blocked';
 
 export interface ValidationIssue {
   /** ID único e determinístico: `${ruleId}:${nodeId ?? 'doc'}:${subKey ?? ''}` */

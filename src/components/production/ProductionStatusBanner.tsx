@@ -1,13 +1,15 @@
-import React from 'react';
 import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
   Clock,
   Loader2,
+  FileQuestion,
 } from 'lucide-react';
 
 export type HumanProductionStatus =
+  | 'EMPTY'
+  | 'WAITING_FOR_FILE'
   | 'ANALYZING'
   | 'ATTENTION'
   | 'WAITING_CONFIRMATION'
@@ -30,6 +32,29 @@ export const ProductionStatusBanner: React.FC<ProductionStatusBannerProps> = ({
   onQuickAction,
 }) => {
   switch (status) {
+    case 'EMPTY':
+    case 'WAITING_FOR_FILE':
+      return (
+        <div className="p-3.5 bg-surface-subtle/60 border-b border-surface-border flex items-center justify-between">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-surface-elevated text-slate-400 border border-surface-border flex items-center justify-center flex-shrink-0">
+              <FileQuestion className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-slate-300 tracking-wide uppercase">
+                Aguardando Arquivo
+              </div>
+              <p className="text-[11px] text-slate-400 truncate">
+                Nenhuma arte foi importada.
+              </p>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 text-[10px] font-medium bg-surface-elevated text-slate-400 border border-surface-border rounded">
+            Aguardando
+          </span>
+        </div>
+      );
+
     case 'READY_FOR_PRODUCTION':
       return (
         <div className="p-3.5 bg-emerald-950/40 border-b border-emerald-500/30 flex items-center justify-between">

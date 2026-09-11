@@ -80,11 +80,11 @@ describe('ETAPA 5 — FASE 5.3: MOTOR DETERMINÍSTICO DE VALIDAÇÃO DE PRODUÇ�
   };
 
   // TESTE 1 — documento limpo
-  it('TESTE 1: Documento limpo com prancheta válida -> status "ready"', () => {
+  it('TESTE 1: Documento limpo com prancheta válida -> status "waiting_for_file"', () => {
     const doc = createDocument({ width_mm: 100, height_mm: 100 });
     const report = validateProductionDocument(doc);
 
-    expect(report.status).toBe('ready');
+    expect(report.status).toBe('waiting_for_file');
     expect(report.errorCount).toBe(0);
     expect(report.warningCount).toBe(0);
     expect(report.issues.length).toBe(0);

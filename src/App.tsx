@@ -12,6 +12,8 @@ import { useEditorStore } from '@/store/editorStore';
 import { NodeTransformPayload } from '@/core/renderer/fabricAdapter';
 import { generateProposedFixes } from '@/core/autofix/proposalGenerator';
 import { executeAutoFix } from '@/core/autofix/autoFixEngine';
+import { buildProductionPackage } from '@/core/production/package/packageBuilder';
+import { ProductionPackage } from '@/core/production/package/types';
 
 export const App: React.FC = () => {
   const {
@@ -32,6 +34,8 @@ export const App: React.FC = () => {
   const [cursorMm, setCursorMm] = useState<{ x: number; y: number } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [rejectedProposalIds, setRejectedProposalIds] = useState<string[]>([]);
+  const [packageResult, setPackageResult] = useState<ProductionPackage | null>(null);
+  const [isGeneratingPackage, setIsGeneratingPackage] = useState<boolean>(false);
 
   // Ações de Zoom do Header
   const handleZoomIn = useCallback(() => {
@@ -119,6 +123,26 @@ export const App: React.FC = () => {
     }
   }, [doc, actions]);
 
+  // Gerar pacote de produção real para o perfil ativo
+  const handleGeneratePackage = useCallback(async () => {
+    setIsGeneratingPackage(true);
+    try {
+      const pkg = await buildProductionPackage(doc, { profileId: doc.profileId });
+      setPackageResult(pkg);
+      if (pkg.status === 'READY') {
+        actions.addToast('success', `Pacote de produção gerado com sucesso (${pkg.artifacts.length} arquivos).`);
+      } else if (pkg.status === 'BLOCKED') {
+        actions.addToast('error', 'Geração de pacote bloqueada por pendências técnicas no documento.');
+      } else {
+        actions.addToast('info', 'Pacote de produção gerado.');
+      }
+    } catch (err: unknown) {
+      actions.addToast('error', 'Erro ao processar pacote de produção.');
+    } finally {
+      setIsGeneratingPackage(false);
+    }
+  }, [doc, actions]);
+
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       (window as any).__PREXYON_DOC__ = doc;
@@ -177,6 +201,8 @@ export const App: React.FC = () => {
             doc={doc}
             validationReport={validationReport}
             proposedFixes={activeProposals}
+            packageResult={packageResult}
+            isGeneratingPackage={isGeneratingPackage}
             chatElement={
               <ChatPanel
                 doc={doc}
@@ -190,6 +216,7 @@ export const App: React.FC = () => {
             onRejectProposal={handleRejectProposal}
             onRunAutoFix={handleRunAutoFix}
             onSelectNode={actions.setSelectedNodeId}
+            onGeneratePackage={handleGeneratePackage}
             onOpenExportModal={() => setIsExportModalOpen(true)}
           />
         }

@@ -13,11 +13,13 @@ export interface ProductionWorkspaceProps {
   validationReport?: ValidationReport | null;
   proposedFixes?: ProposedFix[];
   packageResult?: ProductionPackage | null;
+  isGeneratingPackage?: boolean;
   chatElement: React.ReactNode;
   onApplyProposal?: (proposalId: string) => void;
   onRejectProposal?: (proposalId: string) => void;
   onRunAutoFix?: () => void;
   onSelectNode?: (nodeId: string | null) => void;
+  onGeneratePackage?: () => void;
   onOpenExportModal?: () => void;
 }
 
@@ -26,11 +28,13 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
   validationReport,
   proposedFixes = [],
   packageResult,
+  isGeneratingPackage = false,
   chatElement,
   onApplyProposal,
   onRejectProposal,
   onRunAutoFix,
   onSelectNode,
+  onGeneratePackage,
   onOpenExportModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'issues' | 'review'>('chat');
@@ -41,21 +45,26 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
   const warningsCount = issues.filter((i) => i.severity === 'warning').length;
   const pendingProposalsCount = proposedFixes.filter((p) => p.status === 'PENDING').length;
 
+  const graphicNodes = Object.values(doc?.nodes || {}).filter(
+    (n) => n && n.type !== 'technical_guide'
+  );
+
   let currentStatus: HumanProductionStatus = 'READY_FOR_PRODUCTION';
 
-  if (blockersCount > 0) {
+  if (!doc || graphicNodes.length === 0 || validationReport?.status === 'waiting_for_file') {
+    currentStatus = 'WAITING_FOR_FILE';
+  } else if (blockersCount > 0 || validationReport?.status === 'blocked') {
     currentStatus = 'BLOCKED';
   } else if (pendingProposalsCount > 0) {
     currentStatus = 'WAITING_CONFIRMATION';
-  } else if (warningsCount > 0) {
+  } else if (warningsCount > 0 || validationReport?.status === 'attention') {
     currentStatus = 'ATTENTION';
-  } else if (doc?.profileId === 'dtf-uv') {
-    // DTF UV: sem erros críticos nem avisos, o documento está em conformidade técnica
+  } else if (doc.profileId === 'dtf-uv') {
     currentStatus = 'READY_FOR_PRODUCTION';
   } else {
     // Adesivo convencional: se não há faca de corte e há nós no documento, produção bloqueada
-    const hasCutContour = Object.values(doc?.nodes || {}).some((n) => n.type === 'cut_contour');
-    if (!hasCutContour && Object.keys(doc?.nodes || {}).length > 0) {
+    const hasCutContour = graphicNodes.some((n) => n.type === 'cut_contour');
+    if (!hasCutContour && graphicNodes.length > 0) {
       currentStatus = 'BLOCKED';
     } else {
       currentStatus = 'READY_FOR_PRODUCTION';
@@ -150,8 +159,11 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
         {activeTab === 'review' && (
           <div className="flex-1 overflow-y-auto p-4">
             <ProductionReviewView
+              doc={doc}
               validationReport={validationReport}
               packageResult={packageResult}
+              isGeneratingPackage={isGeneratingPackage}
+              onGeneratePackage={onGeneratePackage}
               onOpenExportModal={onOpenExportModal}
             />
           </div>

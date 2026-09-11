@@ -77,6 +77,13 @@ export function validateProductionDocument(
     status = 'blocked';
   } else if (warningCount > 0) {
     status = 'attention';
+  } else {
+    const graphicNodes = Object.values(doc?.nodes || {}).filter(
+      (n) => n && n.type !== 'technical_guide'
+    );
+    if (!doc || graphicNodes.length === 0) {
+      status = 'waiting_for_file';
+    }
   }
 
   return {

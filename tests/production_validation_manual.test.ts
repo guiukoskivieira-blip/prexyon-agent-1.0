@@ -63,7 +63,7 @@ describe('ETAPA 5 — FASE 5.3 — HOTFIX 02: VALIDAÇÃO MANUAL EXPLÍCITA E CO
     const report = validateProductionDocument(doc);
 
     expect(report).toBeDefined();
-    expect(report.status).toBe('ready');
+    expect(report.status).toBe('waiting_for_file');
     expect(report.documentId).toBe(doc.id);
     expect(typeof report.checkedAt).toBe('string');
   });
@@ -162,7 +162,7 @@ describe('ETAPA 5 — FASE 5.3 — HOTFIX 02: VALIDAÇÃO MANUAL EXPLÍCITA E CO
   it('M08: Auto-validação reflete imediatamente a ativação de sangria e margem de segurança', () => {
     let doc = createDocument({ width_mm: 100, height_mm: 100 });
     let report = validateProductionDocument(doc);
-    expect(report.status).toBe('ready');
+    expect(report.status).toBe('waiting_for_file');
 
     // Ativa sangria de 3 mm sem arte cobrindo
     doc = updateBleedSettings(doc, { enabled: true, top_mm: 3, right_mm: 3, bottom_mm: 3, left_mm: 3 });

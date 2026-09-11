@@ -8,7 +8,26 @@ import { validateCutContourIntegrity } from '../../geometry/vectorPathIntegrity'
 export function validateCutContours(doc: PrexyonDocument, policy?: ValidationPolicy): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  for (const nodeId of doc.rootNodeIds) {
+  const profileId = policy?.profileId || doc.profileId;
+  const allNodes = Object.values(doc.nodes || {});
+  const hasGraphicNodes = allNodes.some((n) => n && n.type !== 'technical_guide' && n.type !== 'cut_contour');
+  const hasCutContour = allNodes.some((n) => n && n.type === 'cut_contour');
+
+  // REGRA V016 — Faca de corte obrigatória ausente em adesivo convencional
+  if (profileId === 'generic-sticker' && hasGraphicNodes && !hasCutContour) {
+    issues.push({
+      id: 'V016:doc:cut_contour_required_missing',
+      ruleId: 'V016_CUT_CONTOUR_REQUIRED_MISSING',
+      severity: 'error',
+      category: 'cut',
+      title: 'Faca de Corte Obrigatória Ausente',
+      message: 'O perfil de Adesivo Convencional exige um contorno de corte vetorial (CutContour) para corte em plotter.',
+      fixable: true,
+      suggestedAction: 'Gere a faca de corte selecionando o elemento e solicitando "crie uma faca de 2 mm".',
+    });
+  }
+
+  for (const nodeId of doc.rootNodeIds || Object.keys(doc.nodes || {})) {
     const node = doc.nodes[nodeId];
     if (!node || node.type !== 'cut_contour') continue;
 
