@@ -421,6 +421,18 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
+  // 3.5. Comando DTF UV (ex: "Prepare esta arte para DTF UV", "analise dtf uv", "transparência dtf")
+  if (text.includes('dtf') || text.includes('dtf uv') || (text.includes('uv') && text.includes('prepar'))) {
+    return [
+      {
+        response: {
+          text: 'Pré-análise DTF UV concluída. O perfil DTF UV foi avaliado: a arte não exige faca mecânica e a resolução/transparência foram inspecionadas. A geração física de separações White e Clear está em desenvolvimento (Etapa 2).',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 4. Comando de Pacote Final de Produção / Preparação de Adesivo (ex: "Prepare esse adesivo para produção com faca de 2 mm.", "Gere o pacote de produção.")
   if (
     text.includes('pacote') ||

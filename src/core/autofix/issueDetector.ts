@@ -40,7 +40,8 @@ export function detectPrepressIssues(
 
   // 1. CHECAGEM DETERMINÍSTICA DE FACA AUSENTE (MISSING_CUT_CONTOUR)
   // Para adesivos e produção gráfica com corte, se há vetor ou imagem mas nenhuma faca válida:
-  if (cutContours.length === 0) {
+  const isCutContourRequired = policy.requireCutContour !== false && policy.profileId !== 'dtf-uv';
+  if (isCutContourRequired && cutContours.length === 0) {
     if (vectorGroups.length > 0) {
       const primaryGroup = vectorGroups[0];
       issues.push({

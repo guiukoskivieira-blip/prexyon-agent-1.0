@@ -1,5 +1,5 @@
 /**
- * Prexyon Agent — Production Package Validator (Etapa 6.7)
+ * Prexyon Agent — Production Package Validator (Etapa 6.7 & DTF UV Etapa 2)
  *
  * Valida de forma determinística a prontidão do documento e dos artefatos
  * antes da liberação do Pacote Final de Produção.
@@ -122,10 +122,13 @@ export function validateDocumentForPackage(
     }
   }
 
-  // 5. Integração com o ProductionValidationEngine da Etapa 5
+  // 5. Integração com o ProductionValidationEngine
   const engineReport = validateProductionDocument(doc, {
     recommendedDpi: profile.validation.recommendedDpi,
     criticalDpi: profile.validation.minDpi,
+    profileId: profile.id,
+    requireCutContour: profile.validation.requireCutContour,
+    checkAlphaTransparency: profile.validation.requireAlphaTransparency,
   });
 
   for (const issue of engineReport.issues) {
@@ -140,7 +143,18 @@ export function validateDocumentForPackage(
     }
   }
 
-  // 6. Cálculo do Status Final
+  // 6. Para o perfil DTF UV na Etapa 2 (separação física de camadas White/Clear em desenvolvimento)
+  if (profile.id === 'dtf-uv') {
+    blockers.push('O pacote de produção DTF UV (separação de camadas White e Clear) ainda não está disponível.');
+    checkedRules.push({
+      rule: 'PKG_DTF_UV_PIPELINE_IN_PROGRESS',
+      passed: false,
+      severity: 'error',
+      message: 'Geração final de pacote DTF UV aguarda pipeline de separação de camadas.',
+    });
+  }
+
+  // 7. Cálculo do Status Final
   let status: PackageStatus = 'READY';
   if (blockers.length > 0) {
     status = 'BLOCKED';

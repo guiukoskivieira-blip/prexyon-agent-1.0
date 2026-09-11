@@ -12,7 +12,8 @@ export function validateRasterResolution(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  for (const nodeId of doc.rootNodeIds) {
+  const nodeIds = doc.rootNodeIds?.length ? doc.rootNodeIds : Object.keys(doc.nodes || {});
+  for (const nodeId of nodeIds) {
     const node = doc.nodes[nodeId];
     if (!node || node.type !== 'raster_image') continue;
 

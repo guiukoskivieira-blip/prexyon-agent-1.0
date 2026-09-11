@@ -1,5 +1,5 @@
 /**
- * Production Validation Engine (v1.0)
+ * Production Validation Engine (v1.0 & DTF UV Etapa 2)
  *
  * Motor determinístico de análise e validação de produção gráfica do Prexyon Agent.
  * Analisa puramente o PrexyonDocument (PDM) sem efeitos colaterais nem dependências de UI/DOM.
@@ -22,6 +22,7 @@ import { validateSafetyMargin } from './rules/safetyRules';
 import { validateRasterResolution } from './rules/rasterRules';
 import { validateCutContours } from './rules/cutContourRules';
 import { validateTechnicalGuides } from './rules/guideRules';
+import { validateDtfUvTransparency } from './rules/dtfUvRules';
 
 const SEVERITY_ORDER: Record<ValidationSeverity, number> = {
   error: 0,
@@ -33,7 +34,7 @@ const SEVERITY_ORDER: Record<ValidationSeverity, number> = {
  * Executa todas as regras de validação contra o documento PDM fornecido.
  *
  * @param doc Documento imutável do PDM a ser inspecionado.
- * @param policy Políticas opcionais de validação (ex: limites de DPI).
+ * @param policy Políticas opcionais de validação (ex: limites de DPI, perfil de produção).
  * @returns Relatório estruturado e determinístico com status consolidado e lista de issues.
  */
 export function validateProductionDocument(
@@ -49,6 +50,7 @@ export function validateProductionDocument(
     ...validateRasterResolution(doc, policy),
     ...validateCutContours(doc, policy),
     ...validateTechnicalGuides(doc),
+    ...validateDtfUvTransparency(doc, policy),
   ];
 
   // Ordenação determinística: Severidade (error -> warning -> info), depois ruleId, depois id

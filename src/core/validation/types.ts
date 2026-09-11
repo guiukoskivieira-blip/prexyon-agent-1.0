@@ -1,9 +1,11 @@
 /**
- * Production Validation Engine — Types (v1.0)
+ * Production Validation Engine — Types (v1.0 & DTF UV Etapa 2)
  *
  * Define o modelo de dados estruturado para o motor determinístico de pré-validação gráfica.
  * Totalmente isolado de qualquer dependência de renderer, DOM ou React.
  */
+
+import { ProductionProfileId } from '../production/profile/types';
 
 export type ValidationSeverity = 'error' | 'warning' | 'info';
 
@@ -81,9 +83,19 @@ export interface ValidationPolicy {
   /** Limite crítico de baixa resolução para aviso enfático (padrão V1: 100 DPI) */
   criticalDpi: number;
 
+  /** ID do perfil de produção ativo ('generic-sticker', 'dtf-uv', etc.) */
+  profileId?: ProductionProfileId;
+
+  /** Se a faca de corte é obrigatória no processo */
+  requireCutContour?: boolean;
+
+  /** Se deve executar regras específicas de transparência DTF UV */
+  checkAlphaTransparency?: boolean;
+
   /** Configurações customizadas opcionais do perfil */
   customConfig?: {
     vectorPreflight?: import('../production/profile/types').VectorPreflightProfileConfig;
+    dtfUv?: import('../production/profile/types').DtfUvProfileConfig;
     [key: string]: any;
   };
 }
@@ -91,4 +103,6 @@ export interface ValidationPolicy {
 export const DEFAULT_VALIDATION_POLICY: ValidationPolicy = {
   recommendedDpi: 150,
   criticalDpi: 100,
+  requireCutContour: true,
+  checkAlphaTransparency: false,
 };

@@ -1,13 +1,16 @@
 /**
- * Prexyon Agent — Production Profile Types (Etapa 6.7)
+ * Prexyon Agent — Production Profile Types (Etapa 6.7 & DTF UV Etapa 2)
  *
- * Modelo de dados tipado para perfis de produção gráfica (Sticker / Print & Cut).
- * Projetado para extensibilidade futura (generic, roland-versaworks, mimaki-rasterlink).
+ * Modelo de dados tipado para perfis de produção gráfica (Sticker / Print & Cut, DTF UV).
+ * Projetado para extensibilidade futura (generic-sticker, dtf-uv, dtf-textile, roland, mimaki).
  */
 
 import { JoinStyle } from '../../pdm/types';
 
-export type ProductionProfileId = 'generic-sticker' | (string & {});
+export type ProductionProfileId = 'generic-sticker' | 'dtf-uv' | (string & {});
+
+export type ProductionFamily = 'sticker' | 'dtf';
+export type ProductionProcessType = 'print_and_cut' | 'uv_transfer' | 'textile_transfer';
 
 export interface CutContourProfileConfig {
   /** Se a presença de faca de corte é obrigatória para este perfil */
@@ -73,6 +76,8 @@ export interface ProductionValidationConfig {
   requirePositiveDimensions: boolean;
   /** Exigir pelo menos um elemento gráfico (raster ou vetor) */
   requireGraphicElements: boolean;
+  /** Se deve validar transparência e canal alfa (DTF UV) */
+  requireAlphaTransparency?: boolean;
 }
 
 export interface VectorPreflightProfileConfig {
@@ -94,9 +99,42 @@ export interface VectorPreflightProfileConfig {
   curveFlatteningToleranceMm?: number;
 }
 
+export type DtfUvOrientationPolicy = 'NORMAL' | 'MIRRORED' | 'RIP_CONTROLLED';
+export type DtfUvWhitePolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED' | 'RIP_CONTROLLED';
+export type DtfUvClearPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED' | 'RIP_CONTROLLED';
+export type DtfUvPrimerPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED' | 'RIP_CONTROLLED';
+
+export interface DtfUvCapabilities {
+  /** Suporte a impressão de tinta branca (White underbase) */
+  supportsWhite: boolean;
+  /** Suporte a verniz UV (Clear gloss / matte / emboss) */
+  supportsClear: boolean;
+  /** Suporte a primer de adesão */
+  supportsPrimer: boolean;
+  /** Suporte a canais de cor especiais / spot channels no RIP */
+  supportsSpotChannels: boolean;
+  /** Suporte a verniz com espessura variável / texturas 3D */
+  supportsVariableClear?: boolean;
+}
+
+export interface DtfUvProfileConfig {
+  family: 'dtf';
+  processType: 'uv_transfer';
+  capabilities: DtfUvCapabilities;
+  orientationPolicy: DtfUvOrientationPolicy;
+  whitePolicy: DtfUvWhitePolicy;
+  clearPolicy: DtfUvClearPolicy;
+  primerPolicy: DtfUvPrimerPolicy;
+  requireAlphaTransparency: boolean;
+}
+
 export interface ProductionProfile {
-  /** Identificador único do perfil (ex: 'generic-sticker') */
+  /** Identificador único do perfil (ex: 'generic-sticker', 'dtf-uv') */
   id: ProductionProfileId;
+  /** Família de processo produtivo */
+  family?: ProductionFamily;
+  /** Tipo específico de processo */
+  processType?: ProductionProcessType;
   /** Nome legível para humanos */
   name: string;
   /** Descrição técnica do perfil */
@@ -117,6 +155,8 @@ export interface ProductionProfile {
   validation: ProductionValidationConfig;
   /** Configurações de pré-voo vetorial (Etapa 6.12) */
   vectorPreflight?: VectorPreflightProfileConfig;
+  /** Configurações específicas de DTF UV (quando aplicável) */
+  dtfUvConfig?: DtfUvProfileConfig;
   /** Metadados adicionais para futura extensibilidade */
   metadata?: Record<string, unknown>;
 }

@@ -64,6 +64,8 @@ export const GENERIC_STICKER_PROFILE: ProductionProfile = {
   },
 };
 
+import { DTF_UV_PROFILE } from './dtfUvProfile';
+
 /**
  * Registro e resolução de perfis de produção.
  * Permite extensibilidade futura para outros perfis sem refatorações.
@@ -71,6 +73,7 @@ export const GENERIC_STICKER_PROFILE: ProductionProfile = {
 const profilesRegistry: Record<string, ProductionProfile> = {
   'generic-sticker': GENERIC_STICKER_PROFILE,
   'generic': GENERIC_STICKER_PROFILE,
+  'dtf-uv': DTF_UV_PROFILE,
 };
 
 export function getProductionProfile(profileId?: string): ProductionProfile {
