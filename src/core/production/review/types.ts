@@ -109,6 +109,21 @@ export interface ValidationIssueReview {
   suggestedAction?: string;
 }
 
+export interface AutoFixReviewItem {
+  code: string;
+  status: 'fixed' | 'pending_manual' | 'requires_confirmation' | 'failed';
+  title: string;
+  message: string;
+  recommendation?: string;
+}
+
+export interface AutoFixSummaryReview {
+  appliedCount: number;
+  pendingCount: number;
+  failedCount: number;
+  items: AutoFixReviewItem[];
+}
+
 export interface ProductionReviewModel {
   /** ID do relatório de revisão */
   id: string;
@@ -134,6 +149,8 @@ export interface ProductionReviewModel {
   cutContourEvidence?: CutContourEvidence;
   /** Evidência específica do pacote de produção gerado */
   packageEvidence?: PackageEvidence;
+  /** Resumo estruturado de Safe Auto-Fix (quando aplicável) */
+  autoFixSummary?: AutoFixSummaryReview;
   /** Auditoria de validação */
   validation: {
     status: PackageStatus;

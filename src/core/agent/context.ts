@@ -39,6 +39,7 @@ export function buildAgentCapabilitiesSummary(tools: ToolDeclaration[]): string 
     `7. PACOTE DE PRODUÇÃO (ADESIVOS): Ao receber uma solicitação como "Prepare esse adesivo para produção com faca de X mm" ou "Gere o pacote de produção", execute a criação da faca de corte ('create_cut_contour') caso ainda não exista e, em seguida, execute 'create_production_package'. Ao confirmar o pacote, responda de forma resumida e profissional, informando o status (Pronto / Pronto com avisos / Bloqueado) e a disponibilidade dos downloads (Arte PNG, Faca Cut-SVG, Manifesto JSON e ZIP). NUNCA despeje código SVG ou JSON bruto no chat.`,
     `8. NUNCA afirme que uma alteração ou pacote ocorreu sem que as ferramentas correspondentes tenham sido executadas com sucesso.`,
     `9. Se uma ferramenta falhar ou retornar erro (ex: pacote bloqueado), reporte o erro honestamente ao usuário e NUNCA declare sucesso falso.`,
+    `10. SAFE AUTO-FIX (CORREÇÃO AUTOMÁTICA): Ao receber comandos como "Corrija os problemas", "Ajuste tudo que for seguro" ou "Prepare e corrija os erros técnicos", execute a ferramenta \`auto_fix_prepress_issues\`. Ao responder, informe de forma limpa e objetiva o que foi corrigido automaticamente e liste com clareza o que ainda requer intervenção manual do operador (como imagens em baixa resolução). NUNCA afirme que um problema foi resolvido sem que a revalidação técnica pós-execução confirme a resolução.`,
   ].join('\n');
 }
 

@@ -14,6 +14,7 @@ import { centerCutContourTool } from './definitions/centerCutContourTool';
 import { validateProductionTool } from './definitions/validateProductionTool';
 import { exportProductionTool } from './definitions/exportProductionTool';
 import { createProductionPackageTool } from './definitions/createProductionPackageTool';
+import { autoFixPrepressIssuesTool } from './definitions/autoFixPrepressIssuesTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -27,6 +28,7 @@ export * from './definitions/centerCutContourTool';
 export * from './definitions/validateProductionTool';
 export * from './definitions/exportProductionTool';
 export * from './definitions/createProductionPackageTool';
+export * from './definitions/autoFixPrepressIssuesTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -41,6 +43,7 @@ export const defaultToolRegistry = new ToolRegistry([
   validateProductionTool,
   exportProductionTool,
   createProductionPackageTool,
+  autoFixPrepressIssuesTool,
 ]);
 
 /**

@@ -226,6 +226,53 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
           <div className="p-3.5 overflow-y-auto space-y-3">
             {activeTab === 'overview' && (
               <div className="space-y-3">
+                {/* Cartão de Correções Automáticas & Pendências */}
+                {review.autoFixSummary && (
+                  <div className="p-3 rounded-lg bg-surface-elevated/60 border border-surface-border space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                        Correções Automáticas (Safe Auto-Fix)
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        {review.autoFixSummary.appliedCount} corrigido(s) • {review.autoFixSummary.pendingCount} pendente(s)
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      {review.autoFixSummary.items.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-2 rounded border text-[11px] space-y-0.5 ${
+                            item.status === 'fixed'
+                              ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
+                              : item.status === 'failed'
+                              ? 'bg-rose-500/5 border-rose-500/20 text-rose-300'
+                              : 'bg-amber-500/5 border-amber-500/20 text-amber-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-semibold">
+                            <span className="flex items-center gap-1.5">
+                              {item.status === 'fixed' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                              {item.status === 'failed' && <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                              {(item.status === 'pending_manual' || item.status === 'requires_confirmation') && (
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              )}
+                              {item.title}
+                            </span>
+                          </div>
+                          <p className="text-slate-300 pl-5">{item.message}</p>
+                          {item.recommendation && (
+                            <p className="text-[10px] text-slate-400 pl-5 italic">
+                              Recomendação: {item.recommendation}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Cartão de Faca de Corte */}
                 {review.cutContourEvidence?.present && (
                   <div className="p-3 rounded-lg bg-surface-elevated/60 border border-surface-border space-y-1.5">

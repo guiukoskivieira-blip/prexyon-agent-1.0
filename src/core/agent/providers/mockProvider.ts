@@ -308,7 +308,41 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 5. Comando de Validação de Produção (ex: "Valide o documento.")
+  // 5. Comando de Auto-Fix / Correção Automática (ex: "Corrija os problemas que puder automaticamente", "Ajuste tudo que for seguro")
+  if (
+    text.includes('corrij') ||
+    text.includes('corrija') ||
+    text.includes('corrigir') ||
+    text.includes('ajuste tudo') ||
+    text.includes('ajustar tudo') ||
+    text.includes('auto-fix') ||
+    text.includes('autofix') ||
+    (text.includes('ajust') && text.includes('seguro'))
+  ) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_autofix_${Date.now()}`,
+              name: 'auto_fix_prepress_issues',
+              args: {
+                mode: 'all_safe',
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Processo de correção automática segura concluído. Os problemas seguros foram corrigidos e revalidados com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 6. Comando de Validação de Produção (ex: "Valide o documento.")
   if (text.includes('valid') || text.includes('verific') || text.includes('produção') || text.includes('producao')) {
     return [
       {

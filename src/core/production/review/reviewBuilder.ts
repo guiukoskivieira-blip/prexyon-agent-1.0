@@ -196,7 +196,57 @@ export function buildProductionReview({
       : 'Verifique se a arte cobre a sangria para evitar bordas brancas após o corte.',
   }));
 
-  // 8. Cálculo Consolidado de Status
+  // 8. Resumo de Auto-Fix (quando auto_fix_prepress_issues ou fixes foram acionados)
+  let autoFixSummary: ProductionReviewModel['autoFixSummary'];
+  const autoFixReceipt = receipts.find((r) => r.toolName === 'auto_fix_prepress_issues');
+
+  if (autoFixReceipt && autoFixReceipt.resultData) {
+    const data = autoFixReceipt.resultData as any;
+    const items: ProductionReviewModel['autoFixSummary'] extends { items: infer T } ? T : any = [];
+
+    if (Array.isArray(data.appliedFixes)) {
+      for (const applied of data.appliedFixes) {
+        items.push({
+          code: applied.issueCode,
+          status: 'fixed',
+          title: 'Corrigido Automaticamente',
+          message: applied.summary,
+        });
+      }
+    }
+
+    if (Array.isArray(data.failedFixes)) {
+      for (const failed of data.failedFixes) {
+        items.push({
+          code: failed.issueCode,
+          status: 'failed',
+          title: 'Falha na Correção',
+          message: failed.reason,
+        });
+      }
+    }
+
+    if (Array.isArray(data.remainingManualIssues)) {
+      for (const iss of data.remainingManualIssues) {
+        items.push({
+          code: iss.code,
+          status: iss.fixClassification === 'REQUIRES_CONFIRMATION' ? 'requires_confirmation' : 'pending_manual',
+          title: iss.fixClassification === 'REQUIRES_CONFIRMATION' ? 'Confirmação Necessária' : 'Ação Manual Necessária',
+          message: iss.message,
+          recommendation: iss.recommendation,
+        });
+      }
+    }
+
+    autoFixSummary = {
+      appliedCount: data.appliedFixes?.length ?? 0,
+      pendingCount: data.remainingManualIssues?.length ?? 0,
+      failedCount: data.failedFixes?.length ?? 0,
+      items,
+    };
+  }
+
+  // 9. Cálculo Consolidado de Status
   let status: ReviewStatus = 'READY';
   let statusLabel = 'Pronto para produção';
   let statusVariant: ProductionReviewModel['statusVariant'] = 'success';
@@ -217,9 +267,11 @@ export function buildProductionReview({
     statusVariant = 'info';
   }
 
-  // 9. Resumo Geral
+  // 10. Resumo Geral
   let summary = 'Operação analisada com sucesso.';
-  if (packageEvidence && cutContourEvidence) {
+  if (autoFixSummary && autoFixSummary.appliedCount > 0) {
+    summary = `${autoFixSummary.appliedCount} problema(s) corrigido(s) automaticamente de forma segura.`;
+  } else if (packageEvidence && cutContourEvidence) {
     summary = `Adesivo preparado com faca de corte (${cutContourEvidence.offset_mm} mm) e pacote final consolidado.`;
   } else if (cutContourEvidence) {
     summary = `Faca de corte técnica (${cutContourEvidence.offset_mm} mm) gerada e vinculada à arte.`;
@@ -240,6 +292,7 @@ export function buildProductionReview({
     beforeAfter,
     cutContourEvidence,
     packageEvidence,
+    autoFixSummary,
     validation: {
       status: validationReport.status,
       blockers,
