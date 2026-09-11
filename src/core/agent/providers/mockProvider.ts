@@ -490,12 +490,42 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 3.5. Comando DTF UV Pré-Análise (ex: "Prepare esta arte para DTF UV", "analise dtf uv", "transparência dtf")
+  // 3.5. Comando de Pacote Técnico DTF UV (Etapa 5: "Prepare o pacote DTF UV desta arte.", "Gere os arquivos de produção DTF UV.", "Finalize esta arte para DTF UV.")
+  if (
+    (text.includes('dtf') && (text.includes('pacote') || text.includes('arquivos de produç') || text.includes('arquivos de produc') || text.includes('finaliz') || text.includes('exportar pacote') || text.includes('gerar pacote') || text.includes('gerar os arquivos'))) ||
+    (text.includes('pacote') && text.includes('dtf')) ||
+    (text.includes('pacote') && text.includes('uv'))
+  ) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_dtf_pkg_${Date.now()}`,
+              name: 'generate_dtf_uv_production_package',
+              args: {
+                dpi: 300,
+                generateZip: true,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Pacote técnico DTF UV preparado.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 3.6. Comando DTF UV Pré-Análise (ex: "Prepare esta arte para DTF UV.", "analise dtf uv", "transparência dtf")
   if (text.includes('dtf') || text.includes('dtf uv') || (text.includes('uv') && text.includes('prepar'))) {
     return [
       {
         response: {
-          text: 'Pré-análise DTF UV concluída. O perfil DTF UV foi avaliado: a arte não exige faca mecânica e a resolução/transparência foram inspecionadas. A geração física de separações White e Clear está em desenvolvimento (Etapa 2).',
+          text: 'Pré-análise DTF UV concluída. O perfil DTF UV foi avaliado: a arte não exige faca mecânica e a resolução/transparência foram inspecionadas. As separações White e Clear e o pacote técnico de produção DTF UV estão disponíveis.',
           finishReason: 'STOP',
         },
       },

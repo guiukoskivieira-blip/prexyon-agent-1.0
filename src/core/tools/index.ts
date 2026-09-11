@@ -23,6 +23,7 @@ import { removeRedundantVectorPointsTool } from './definitions/removeRedundantVe
 import { simplifyVectorPathTool } from './definitions/simplifyVectorPathTool';
 import { generateWhiteUnderbaseTool } from './definitions/generateWhiteUnderbaseTool';
 import { generateClearSeparationTool } from './definitions/generateClearSeparationTool';
+import { generateDtfUvProductionPackageTool } from './definitions/generateDtfUvProductionPackageTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -36,6 +37,7 @@ export * from './definitions/centerCutContourTool';
 export * from './definitions/validateProductionTool';
 export * from './definitions/exportProductionTool';
 export * from './definitions/createProductionPackageTool';
+export * from './definitions/generateDtfUvProductionPackageTool';
 export * from './definitions/autoFixPrepressIssuesTool';
 export * from './definitions/applyProposedFixTool';
 export * from './definitions/removeInvisibleVectorObjectsTool';
@@ -59,6 +61,7 @@ export const defaultToolRegistry = new ToolRegistry([
   validateProductionTool,
   exportProductionTool,
   createProductionPackageTool,
+  generateDtfUvProductionPackageTool,
   autoFixPrepressIssuesTool,
   applyProposedFixTool,
   removeInvisibleVectorObjectsTool,

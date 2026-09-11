@@ -9,6 +9,7 @@ import { PrexyonDocument, CutContourNode, RasterNode } from '../../pdm/types';
 import { ProductionProfile } from '../profile/types';
 import { PackageStatus, PackageValidationReport } from './types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
+import { validateDocumentForDtfUvPackage } from '../../dtf/dtfUvPackageEngine';
 
 export function validateDocumentForPackage(
   doc: PrexyonDocument,
@@ -143,15 +144,9 @@ export function validateDocumentForPackage(
     }
   }
 
-  // 6. Para o perfil DTF UV na Etapa 2 (separação física de camadas White/Clear em desenvolvimento)
+  // 6. Para o perfil DTF UV (Etapa 5 — Validação completa de separações White/Clear e políticas)
   if (profile.id === 'dtf-uv') {
-    blockers.push('O pacote de produção DTF UV (separação de camadas White e Clear) ainda não está disponível.');
-    checkedRules.push({
-      rule: 'PKG_DTF_UV_PIPELINE_IN_PROGRESS',
-      passed: false,
-      severity: 'error',
-      message: 'Geração final de pacote DTF UV aguarda pipeline de separação de camadas.',
-    });
+    return validateDocumentForDtfUvPackage(doc, profile);
   }
 
   // 7. Cálculo do Status Final

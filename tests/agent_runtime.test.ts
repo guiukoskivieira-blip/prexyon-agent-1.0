@@ -305,11 +305,11 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
     it('deve converter perfeitamente todas as ferramentas registradas para o formato oficial do Gemini', () => {
       const provider = new GeminiProvider();
       const allTools = defaultToolRegistry.getToolDeclarations();
-      expect(allTools.length).toBe(18);
+      expect(allTools.length).toBe(19);
 
       const formatted = provider.formatTools(allTools);
       expect(formatted.length).toBe(1);
-      expect(formatted[0].functionDeclarations.length).toBe(18);
+      expect(formatted[0].functionDeclarations.length).toBe(19);
 
       const validGeminiTypes = ['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'];
 
@@ -628,7 +628,7 @@ describe('Prexyon Agent — AI Provider Bridge & Runtime (Etapa 6.2)', () => {
       const doc = createTestDoc();
       await runtime.run('Olá', doc);
 
-      expect(capturedSystemPrompt).toContain('CAPACIDADES E FERRAMENTAS DISPONÍVEIS NO TOOL REGISTRY (18 FERRAMENTAS)');
+      expect(capturedSystemPrompt).toContain('CAPACIDADES E FERRAMENTAS DISPONÍVEIS NO TOOL REGISTRY (19 FERRAMENTAS)');
       expect(capturedSystemPrompt).toContain('`move_node`');
       expect(capturedSystemPrompt).toContain('`export_production`');
       expect(capturedSystemPrompt).toContain('`create_production_package`');

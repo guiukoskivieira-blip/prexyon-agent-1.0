@@ -12,6 +12,7 @@ import { validateDocumentForPackage } from './packageValidator';
 import { exportDocumentToPng } from '../../export/pngExporter';
 import { exportCutContourToSvg } from '../../export/cutContourExporter';
 import { SimpleZipBuilder } from './zipWriter';
+import { buildDtfUvProductionPackage } from '../../dtf/dtfUvPackageEngine';
 
 function slugifyFileName(name: string): string {
   return (name || 'documento')
@@ -28,6 +29,11 @@ export async function buildProductionPackage(
   options: PackageBuildOptions = {}
 ): Promise<ProductionPackage> {
   const profile = getProductionProfile(options.profileId);
+
+  if (profile.id === 'dtf-uv') {
+    return buildDtfUvProductionPackage(doc, options as any);
+  }
+
   const validation = validateDocumentForPackage(doc, profile);
   const packageId = `pkg_${doc.id}_${Date.now()}`;
   const documentName = doc.name || 'Documento sem título';

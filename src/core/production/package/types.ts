@@ -75,6 +75,10 @@ export interface ProductionPackage {
   validation: PackageValidationReport;
   /** Data e hora de geração (ISO 8601) */
   createdAt: string;
+  /** Fingerprint de estado do documento e separações */
+  fingerprint?: string;
+  /** Metadados adicionais específicos do processo (ex: DTF UV manifest e evidências) */
+  metadata?: Record<string, any>;
 }
 
 export interface PackageBuildOptions {

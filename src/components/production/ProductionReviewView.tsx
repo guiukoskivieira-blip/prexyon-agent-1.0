@@ -168,6 +168,17 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
                 : 'OK'}
             </span>
           </div>
+
+          {/* Item 7: Orientação & Cor no RIP (DTF UV) */}
+          <div className="flex items-center justify-between p-2 rounded-lg bg-surface-base border border-surface-border">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="text-slate-200">Orientação & Cor</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">
+              CONTROLADO NO RIP
+            </span>
+          </div>
         </div>
       </div>
 
@@ -189,7 +200,7 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
             <span>Pronto para Gerar Pacote de Produção</span>
           </div>
           <p className="text-slate-300 text-xs">
-            O pacote inclui o arquivo de impressão rasterizado em alta resolução, o SVG técnico de corte e o manifesto JSON.
+            O pacote inclui o arquivo de impressão rasterizado em alta resolução, separações técnicas e manifesto JSON.
           </p>
 
           <button
@@ -201,6 +212,11 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
             <Sparkles className="w-4 h-4" />
             <span>Gerar pacote de produção</span>
           </button>
+
+          {/* Aviso Técnico Discreto */}
+          <div className="pt-2 border-t border-indigo-500/20 text-[10px] text-slate-400 leading-relaxed">
+            O pacote contém as separações preparadas pelo Prexyon. Configurações de tinta, perfil de cor, orientação final e parâmetros específicos da impressora devem ser confirmados no RIP.
+          </div>
         </div>
       )}
 
@@ -213,9 +229,21 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
               Arquivos de Produção Gerados
             </span>
             <span className="text-[10px] text-slate-400">
-              {packageResult.artifacts.length} arquivos
+              {packageResult.artifacts.length + (packageResult.zipArtifact ? 1 : 0)} arquivos
             </span>
           </div>
+
+          {/* Botão de Download do Pacote ZIP Consolidado */}
+          {packageResult.zipArtifact?.blob && (
+            <button
+              type="button"
+              onClick={() => handleDownloadArtifact(packageResult.zipArtifact!)}
+              className="w-full py-2 px-3 mb-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Baixar pacote consolidado ({packageResult.zipArtifact.fileName})</span>
+            </button>
+          )}
 
           <div className="space-y-1.5">
             {packageResult.artifacts.map((art: ProductionArtifact, idx: number) => (

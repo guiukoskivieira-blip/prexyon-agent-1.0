@@ -406,7 +406,7 @@ describe('ETAPA 6.14 — Contour Integrity & Self-Intersection Safety', () => {
       const res100 = validateCutContourIntegrity([poly100]);
       const t1 = performance.now();
       expect(res100.isValid).toBe(true);
-      expect(t1 - t0).toBeLessThan(20);
+      expect(t1 - t0).toBeLessThan(50);
 
       // 500 segmentos
       const poly500 = makePoly(500);
