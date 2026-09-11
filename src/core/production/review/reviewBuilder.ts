@@ -22,7 +22,7 @@ import {
 } from './types';
 import { buildToolExecutionReceipt } from './receiptBuilder';
 import { validateDocumentForPackage } from '../package/packageValidator';
-import { GENERIC_STICKER_PROFILE } from '../profile/genericStickerProfile';
+import { GENERIC_STICKER_PROFILE, DTF_UV_PROFILE } from '../profile';
 import { generateProposedFixes, defaultProposalManager, buildPreflightPlan } from '../../autofix';
 
 export interface BuildReviewParams {
@@ -183,8 +183,9 @@ export function buildProductionReview({
     };
   }
 
-  // 7. Auditoria de Validação Determinística
-  const validationReport = validateDocumentForPackage(afterDoc, GENERIC_STICKER_PROFILE);
+  // 7. Auditoria de Validação Determinística conforme o Profile ativo
+  const activeProfile = afterDoc.profileId === 'dtf-uv' ? DTF_UV_PROFILE : GENERIC_STICKER_PROFILE;
+  const validationReport = validateDocumentForPackage(afterDoc, activeProfile);
 
   const blockers: ValidationIssueReview[] = validationReport.blockers.map((msg) => ({
     title: 'Bloqueio Crítico de Produção',

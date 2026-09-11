@@ -17,7 +17,7 @@ import {
 } from './types';
 import { buildDocumentContextSummary, buildAgentCapabilitiesSummary } from './context';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './providers/base';
-import { validateActionPlan, AgentActionPlan } from './planner';
+import { validateActionPlan, executeActionPlan, AgentActionPlan } from './planner';
 
 export const DEFAULT_MAX_ITERATIONS = 5;
 
@@ -150,6 +150,83 @@ export class AgentRuntime {
       ...(options?.history || []),
       { role: 'user', content: userMessage },
     ];
+
+    // 0. Provedor com suporte a Structured Action Plan (GeminiProvider)
+    if (typeof (this.provider as any).generateActionPlan === 'function') {
+      try {
+        const docContext = buildDocumentContextSummary(currentDoc, options?.selectedNodeId);
+        const capabilitiesContext = buildAgentCapabilitiesSummary(tools);
+        const basePrompt = options?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT;
+        const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
+
+        const plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
+          systemPrompt,
+          temperature: options?.temperature,
+          model: options?.model,
+        });
+
+        if (plan && plan.schemaVersion === '1.0') {
+          const validation = validateActionPlan(plan, currentDoc, options?.selectedNodeId, this.registry);
+          if (!validation.valid) {
+            const isPolicyBlocked = validation.errors.some((e) => e.includes('bloqueada'));
+            const isToolNotFound = validation.errors.some((e) => e.includes('não existe'));
+            return {
+              success: false,
+              reply: `Não foi possível processar a solicitação:\n• ${validation.errors.join('\n• ')}`,
+              executedTools: [],
+              doc: currentDoc,
+              iterations: 1,
+              status: 'error',
+              error: {
+                code: isPolicyBlocked ? 'POLICY_GATE_BLOCKED' : (isToolNotFound ? 'TOOL_NOT_FOUND' : 'PLAN_VALIDATION_FAILED'),
+                message: validation.errors.join('; '),
+              },
+            };
+          }
+
+          const resolvedPlan = validation.resolvedPlan!;
+
+          if (resolvedPlan.intent === 'ASK_USER') {
+            return {
+              success: true,
+              reply: resolvedPlan.ambiguityQuestion || 'Você quer aplicar essa medida na largura ou na altura?',
+              executedTools: [],
+              doc: currentDoc,
+              iterations: 1,
+              status: 'completed',
+            };
+          }
+
+          if (resolvedPlan.steps.length === 0) {
+            return {
+              success: true,
+              reply: resolvedPlan.explanation || 'Análise técnica concluída.',
+              executedTools: [],
+              doc: currentDoc,
+              iterations: 1,
+              status: 'completed',
+            };
+          }
+
+          const planExecResult = await executeActionPlan(resolvedPlan, currentDoc, {
+            registry: this.registry,
+            toolExecutionContext: options?.toolExecutionContext,
+          });
+
+          return {
+            success: planExecResult.success,
+            reply: planExecResult.reply,
+            executedTools: planExecResult.executedTools,
+            doc: planExecResult.doc,
+            iterations: 1,
+            status: planExecResult.success ? 'completed' : 'error',
+            error: planExecResult.error,
+          };
+        }
+      } catch (err) {
+        console.warn('[AgentRuntime] generateActionPlan falhou, prosseguindo com o loop padrão:', err);
+      }
+    }
 
     try {
       while (iteration < maxIterations) {

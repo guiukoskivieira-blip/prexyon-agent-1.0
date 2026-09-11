@@ -29,7 +29,20 @@ export function buildActionPlanFromUserRequest(
 
   // 2. Extração de Restrições (Constraints)
   const constraints: AgentConstraints = {};
-  if (text.includes('sem distorcer') || text.includes('sem deformar') || text.includes('mantendo proporção') || text.includes('mantendo proporcao') || text.includes('proporcional')) {
+  if (
+    text.includes('sem distorcer') ||
+    text.includes('sem deformar') ||
+    text.includes('proporcional') ||
+    text.includes('proporção') ||
+    text.includes('proporcao') ||
+    text.includes('mantendo proporção') ||
+    text.includes('mantendo proporcao') ||
+    text.includes('mantém a proporção') ||
+    text.includes('mantem a proporcao') ||
+    text.includes('mantendo o formato') ||
+    text.includes('manter o formato') ||
+    text.includes('sem esticar')
+  ) {
     constraints.preserveAspectRatio = true;
   }
   if (
@@ -125,7 +138,10 @@ export function buildActionPlanFromUserRequest(
     text.includes('camada branca') ||
     text.includes('gere a base branca') ||
     text.includes('white underbase') ||
-    (text.includes('branco') && (text.includes('ger') || text.includes('cri') || text.includes('prepar')));
+    text.includes('branco por baixo') ||
+    text.includes('branco de fundo') ||
+    text.includes('com branco') ||
+    (text.includes('branco') && (text.includes('ger') || text.includes('cri') || text.includes('prepar') || text.includes('coloc') || text.includes('aplic') || text.includes('fundo') || text.includes('baixo')));
 
   if (wantsWhite && !constraints.forbidWhite) {
     steps.push({

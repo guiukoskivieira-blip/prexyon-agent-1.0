@@ -50,12 +50,8 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
   } else if (warningsCount > 0) {
     currentStatus = 'ATTENTION';
   } else if (doc?.profileId === 'dtf-uv') {
-    // DTF UV: se o pacote de produção ainda não foi consolidado, está em preparação técnica (ATTENTION)
-    if (packageResult?.status === 'READY') {
-      currentStatus = 'READY_FOR_PRODUCTION';
-    } else {
-      currentStatus = 'ATTENTION';
-    }
+    // DTF UV: sem erros críticos nem avisos, o documento está em conformidade técnica
+    currentStatus = 'READY_FOR_PRODUCTION';
   } else {
     // Adesivo convencional: se não há faca de corte e há nós no documento, produção bloqueada
     const hasCutContour = Object.values(doc?.nodes || {}).some((n) => n.type === 'cut_contour');
