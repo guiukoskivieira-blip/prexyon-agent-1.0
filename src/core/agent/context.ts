@@ -59,9 +59,14 @@ export function buildDocumentContextSummary(
 ): string {
   if (!doc) return 'Nenhum documento PDM carregado.';
 
-  const dims = doc.dimensions || { width_mm: 100, height_mm: 100 };
+  const width_mm = (doc.dimensions as any)?.width_mm ?? (doc.dimensions as any)?.width ?? 100;
+  const height_mm = (doc.dimensions as any)?.height_mm ?? (doc.dimensions as any)?.height ?? 100;
   const bleedMm = doc.productionSettings?.bleed?.enabled ? doc.productionSettings.bleed.top_mm : 0;
   const safetyMm = doc.productionSettings?.safetyMargin?.enabled ? doc.productionSettings.safetyMargin.top_mm : 0;
+  const profileId = doc.profileId || 'default';
+
+  const sepList = Object.keys(doc.separations || {});
+  const sepStr = sepList.length > 0 ? sepList.join(', ') : 'Nenhuma';
 
   const nodes = Object.values(doc.nodes || {});
   const nodesSummary = nodes.map((node) => {
@@ -98,7 +103,9 @@ export function buildDocumentContextSummary(
   });
 
   return [
-    `Dimensões da Prancheta (Artboard): ${dims.width_mm} x ${dims.height_mm} mm`,
+    `Perfil de Produção Ativo: ${profileId}`,
+    `Separações Técnicas Ativas: ${sepStr}`,
+    `Dimensões da Prancheta (Artboard): ${width_mm} x ${height_mm} mm`,
     `Configurações de Produção: Sangria = ${bleedMm} mm | Margem de Segurança = ${safetyMm} mm`,
     `Nó Selecionado: ${selectedNodeId ? `"${selectedNodeId}"` : 'Nenhum nó selecionado'}`,
     `Total de Elementos no Documento: ${nodes.length}`,
