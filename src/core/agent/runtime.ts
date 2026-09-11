@@ -20,6 +20,55 @@ import { DEFAULT_AGENT_SYSTEM_PROMPT } from './providers/base';
 
 export const DEFAULT_MAX_ITERATIONS = 5;
 
+/**
+ * Remove payloads binários/pesados (Data URL, código XML de SVG, manifesto completo)
+ * antes de enviar o resultado da ferramenta para o contexto do LLM.
+ */
+export function sanitizeToolResultForLLM(result: any): any {
+  if (!result || typeof result !== 'object') return result;
+
+  const sanitized = { ...result };
+  if (sanitized.doc) {
+    delete sanitized.doc;
+  }
+
+  if (sanitized.data && typeof sanitized.data === 'object') {
+    const cleanData = { ...sanitized.data };
+    delete cleanData.dataString;
+    delete cleanData.dataUrl;
+    delete cleanData.blob;
+    delete cleanData.svgString;
+    sanitized.data = cleanData;
+  }
+
+  return sanitized;
+}
+
+/**
+ * Higieniza a resposta textual final do agente para evitar despejo de código XML/SVG,
+ * Data URLs ou manifesto JSON bruto no chat.
+ */
+export function sanitizeAgentReply(reply: string): string {
+  if (!reply || typeof reply !== 'string') return '';
+
+  let cleaned = reply;
+
+  // 1. Remove blocos inteiros de código SVG ou XML brutos
+  cleaned = cleaned.replace(/```(?:xml|svg)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '');
+  cleaned = cleaned.replace(/<svg[\s\S]*?<\/svg>/gi, '');
+
+  // 2. Remove blocos de manifesto JSON brutos
+  cleaned = cleaned.replace(/```json\s*\{[\s\S]*?"generator":\s*"Prexyon Agent"[\s\S]*?\}\s*```/gi, '');
+
+  // 3. Remove Data URLs brutas
+  cleaned = cleaned.replace(/data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g, '');
+
+  // 4. Limpa quebras de linha excessivas
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+  return cleaned;
+}
+
 export class AgentRuntime {
   private provider: AIProvider;
   private registry: ToolRegistry;
@@ -157,7 +206,7 @@ export class AgentRuntime {
 
             functionResponses.push({
               name: call.name,
-              response: executionResult,
+              response: sanitizeToolResultForLLM(executionResult),
             });
           }
 
@@ -174,7 +223,7 @@ export class AgentRuntime {
         // 5. Se o provedor retornou resposta textual final
         return {
           success: true,
-          reply: providerResponse.text || '',
+          reply: sanitizeAgentReply(providerResponse.text || ''),
           executedTools,
           doc: currentDoc,
           iterations: iteration,

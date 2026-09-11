@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { processAgentChatRequest } from '../src/core/agent/server/chatEndpoint';
 import { MockAIProvider } from '../src/core/agent/providers/mockProvider';
 import { materializeAgentExports } from '../src/core/agent/clientExportMaterializer';
-import { createDocument, createRasterNode } from '../src/core/pdm/document';
+import { createDocument, createRasterNode, addVectorGroup } from '../src/core/pdm/document';
+import { buildVectorGroupFromSvg } from '../src/core/vectorizer/svgParser';
 import { PrexyonDocument } from '../src/core/pdm/types';
 import { ExecutedToolRecord } from '../src/core/agent/types';
 
@@ -176,5 +177,152 @@ describe('Prexyon Agent — Etapa 6.5 — Hotfix do fluxo agentic', () => {
         downloadExportResult: vi.fn().mockReturnValue(false),
       })
     ).rejects.toThrow('não pôde ser iniciado no navegador');
+  });
+
+  describe('Etapa 6.6 — Continuidade Automática do Fluxo e Respostas Limpas', () => {
+    function createVectorizedDocument(): { doc: PrexyonDocument; rasterId: string; vectorGroupId: string } {
+      const { doc: rasterDoc, rasterId } = createRasterOnlyDocument();
+
+      const { groupNode, pathNodes } = buildVectorGroupFromSvg({
+        svgString: '<svg viewBox="0 0 40 40"><path d="M 0 0 L 40 0 L 40 40 L 0 40 Z" fill="#000000"/></svg>',
+        name: 'Vetor: Logo Servidor',
+        sourceRasterNodeId: rasterId,
+        physicalWidth_mm: 40,
+        physicalHeight_mm: 40,
+        position_mm: { x: 10, y: 10 },
+      });
+
+      const vectorGroupId = 'group_vector_test_1';
+      groupNode.id = vectorGroupId;
+
+      const doc = addVectorGroup(rasterDoc, groupNode, pathNodes);
+
+      return { doc, rasterId, vectorGroupId };
+    }
+
+    it('cria faca na mesma solicitação a partir do raster selecionado localizando o vetor correspondente', async () => {
+      const { doc, rasterId, vectorGroupId } = createVectorizedDocument();
+
+      const result = await processAgentChatRequest({
+        message: 'Crie uma faca 2 mm para fora da imagem selecionada.',
+        doc,
+        options: { selectedNodeId: rasterId },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools).toHaveLength(1);
+      expect(result.executedTools[0].toolName).toBe('create_cut_contour');
+      expect(result.executedTools[0].result.success).toBe(true);
+
+      // Confirma que a faca foi criada no PDM e associada ao grupo vetorial correspondente
+      const cutNodes = Object.values(result.doc?.nodes || {}).filter((n) => n.type === 'cut_contour');
+      expect(cutNodes).toHaveLength(1);
+      expect((cutNodes[0] as any).sourceNodeId).toBe(vectorGroupId);
+      expect((cutNodes[0] as any).offset_mm).toBe(2);
+
+      // Não permite respostas apenas em tempo futuro ("vou gerar") sem confirmação
+      expect(result.reply).not.toMatch(/^vou gerar/i);
+      expect(result.reply).toContain('Faca de corte criada com sucesso');
+    });
+
+    it('não exibe XML/SVG completo na resposta de exportação cut-SVG', async () => {
+      const { doc } = createVectorizedDocument();
+
+      const result = await processAgentChatRequest({
+        message: 'Exporte o arquivo em cut-svg.',
+        doc,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools).toHaveLength(1);
+      expect(result.executedTools[0].toolName).toBe('export_production');
+
+      // Resposta limpa: não deve conter tags XML/SVG, dados brutos ou caminhos
+      expect(result.reply).not.toContain('<svg');
+      expect(result.reply).not.toContain('</svg>');
+      expect(result.reply).not.toContain('xmlns="http://www.w3.org/2000/svg"');
+      expect(result.reply).toContain('CUT-SVG');
+      expect(result.reply).toContain('sucesso');
+    });
+
+    it('não exibe manifesto JSON completo na resposta de exportação manifest-json', async () => {
+      const { doc } = createVectorizedDocument();
+
+      const result = await processAgentChatRequest({
+        message: 'Exporte o manifesto json.',
+        doc,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools).toHaveLength(1);
+      expect(result.executedTools[0].toolName).toBe('export_production');
+
+      // Resposta limpa: não deve despejar o JSON completo do manifesto
+      expect(result.reply).not.toContain('"generator": "Prexyon Agent"');
+      expect(result.reply).not.toContain('"dimensions_mm"');
+      expect(result.reply).toContain('MANIFEST-JSON');
+      expect(result.reply).toContain('sucesso');
+    });
+
+    it('preserva funcionamento correto para PNG e SVG', async () => {
+      const { doc } = createVectorizedDocument();
+
+      const resultPng = await processAgentChatRequest({
+        message: 'Exporte em PNG 300 dpi.',
+        doc,
+      });
+      expect(resultPng.success).toBe(true);
+      expect(resultPng.executedTools[0].args.format).toBe('png');
+      expect(resultPng.reply).not.toContain('data:image/');
+
+      const resultSvg = await processAgentChatRequest({
+        message: 'Exporte em SVG.',
+        doc,
+      });
+      expect(resultSvg.success).toBe(true);
+      expect(resultSvg.executedTools[0].args.format).toBe('svg');
+      expect(resultSvg.reply).not.toContain('<svg');
+    });
+
+    it('falha da ferramenta não gera confirmação de sucesso', async () => {
+      const { doc: unvectorizedDoc, rasterId } = createRasterOnlyDocument();
+
+      // Tentativa de criar faca em raster que NÃO foi vetorizado ainda
+      const provider = new MockAIProvider([
+        {
+          response: {
+            functionCalls: [
+              {
+                name: 'create_cut_contour',
+                args: { sourceNodeId: rasterId, offset_mm: 2 },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: 'Não foi possível criar a faca de corte pois a imagem ainda não foi vetorizada.',
+            finishReason: 'STOP',
+          },
+        },
+      ]);
+
+      const result = await processAgentChatRequest(
+        {
+          message: 'Crie uma faca na imagem selecionada.',
+          doc: unvectorizedDoc,
+          options: { selectedNodeId: rasterId },
+        },
+        provider
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.executedTools).toHaveLength(1);
+      expect(result.executedTools[0].result.success).toBe(false);
+      expect(['INVALID_NODE_TYPE', 'RASTER_NOT_VECTORIZED']).toContain(
+        (result.executedTools[0].result as any).error?.code
+      );
+      expect(result.reply).not.toContain('criada com sucesso');
+    });
   });
 });

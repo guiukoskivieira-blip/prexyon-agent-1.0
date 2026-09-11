@@ -97,7 +97,6 @@ export function createDeterministicTurnsForRequest(
     return [
       {
         response: {
-          text: `Vou mover o objeto ${dirName}.`,
           functionCalls: [
             {
               id: `call_move_${Date.now()}`,
@@ -130,7 +129,6 @@ export function createDeterministicTurnsForRequest(
     return [
       {
         response: {
-          text: `Vou redimensionar o objeto para ${dim} mm de largura.`,
           functionCalls: [
             {
               id: `call_resize_${Date.now()}`,
@@ -162,7 +160,6 @@ export function createDeterministicTurnsForRequest(
     return [
       {
         response: {
-          text: 'Iniciando a vetorização determinística da imagem.',
           functionCalls: [
             {
               id: `call_vec_${Date.now()}`,
@@ -184,22 +181,33 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 4. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora.")
+  // 4. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.")
   if (text.includes('faca') || text.includes('corte') || text.includes('sangria')) {
     const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
     const offset = matchMm ? parseFloat(matchMm[1]) : 2;
 
+    // Se o nó alvo for uma imagem raster, localiza o grupo vetorial correspondente no PDM
+    let vectorTargetId = targetNodeId;
+    if (targetNode?.type === 'raster_image' || (targetNode as any)?.type === 'raster') {
+      const derivedVector = nodes.find(
+        (n) =>
+          (n.type === 'group' || (n as any).type === 'vector_group') &&
+          ((n as any).sourceRasterNodeId === targetNode.id || n.name === `Vetor: ${targetNode.name}`)
+      );
+      if (derivedVector) {
+        vectorTargetId = derivedVector.id;
+      }
+    }
+
     return [
       {
         response: {
-          text: `Gerando faca de corte com ${offset} mm de sangria.`,
           functionCalls: [
             {
               id: `call_cut_${Date.now()}`,
               name: 'create_cut_contour',
               args: {
-                sourceNodeId: targetNodeId,
-                source_node_id: targetNodeId,
+                sourceNodeId: vectorTargetId,
                 offset_mm: offset,
               },
             },
@@ -220,7 +228,6 @@ export function createDeterministicTurnsForRequest(
     return [
       {
         response: {
-          text: 'Executando validação de regras de produção gráfica.',
           functionCalls: [
             {
               id: `call_val_${Date.now()}`,
@@ -265,7 +272,6 @@ export function createDeterministicTurnsForRequest(
     return [
       {
         response: {
-          text: `Gerando arquivo de produção no formato ${fmt.toUpperCase()}.`,
           functionCalls: [
             {
               id: `call_exp_${Date.now()}`,

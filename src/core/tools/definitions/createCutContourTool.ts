@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tool: create_cut_contour
  *
  * Gera um contorno de corte (CutContour) para um grupo vetorial no PDM.
@@ -37,13 +37,13 @@ export interface CreateCutContourResultData {
 
 export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCutContourResultData> = {
   name: 'create_cut_contour',
-  description: 'Gera um contorno de corte externo (faca de corte/sangria técnica) para um grupo vetorial com offset milimétrico e estilo de cantos.',
+  description: 'Gera um contorno de corte externo (faca de corte/sangria técnica) para um grupo vetorial ou imagem raster já vetorizada com offset milimétrico e estilo de cantos.',
   parameters: {
     type: 'object',
     properties: {
       sourceNodeId: {
         type: 'string',
-        description: 'ID do grupo vetorial de origem.',
+        description: 'ID do grupo vetorial de origem (ou ID da imagem raster correspondente ao vetor gerado).',
       },
       offset_mm: {
         type: 'number',
@@ -103,6 +103,8 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
       };
     }
 
+    const groupNode = targetNode as VectorGroupNode;
+
     const offset_mm = args.offset_mm !== undefined ? args.offset_mm : 2.0;
     if (typeof offset_mm !== 'number' || !Number.isFinite(offset_mm) || offset_mm < 0.1 || offset_mm > 50.0) {
       return {
@@ -130,7 +132,7 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
     const strokeWidth_mm = args.strokeWidth_mm !== undefined ? args.strokeWidth_mm : 0.30;
 
     try {
-      const group = targetNode as VectorGroupNode;
+      const group = groupNode;
       const result = generateCutContour(group, doc, {
         offset_mm,
         joinStyle,

@@ -29,13 +29,15 @@ export function buildAgentCapabilitiesSummary(tools: ToolDeclaration[]): string 
     `[CAPACIDADES E FERRAMENTAS DISPONÍVEIS NO TOOL REGISTRY (${tools.length} FERRAMENTAS)]:`,
     toolLines.length > 0 ? toolLines.join('\n') : '(Nenhuma ferramenta registrada)',
     '',
-    `[DIRETRIZES ESTRITAS DE FIDELIDADE OPERACIONAL]:`,
+    `[DIRETRIZES ESTRITAS DE FIDELIDADE OPERACIONAL E CONTINUIDADE]:`,
     `1. Suas capacidades operacionais são EXCLUSIVAMENTE as ferramentas listadas acima.`,
     `2. NUNCA invente, ofereça ou prometa ferramentas, formatos ou capacidades inexistentes (como exportação PDF, IA generativa de imagens, filtros 3D, etc.).`,
     `3. Para pedidos de funções ou formatos não suportados pelo Tool Registry (ex: exportação PDF), responda com naturalidade e honestidade: "Essa função ainda não está disponível no Prexyon Agent." e indique os formatos/ferramentas disponíveis.`,
     `4. A ferramenta \`export_production\` suporta ESTRITAMENTE: PNG, SVG, Cut-SVG e Manifest JSON. Não existe suporte para PDF no momento.`,
-    `5. NUNCA afirme que uma alteração ocorreu no documento sem que a ferramenta correspondente tenha sido executada com sucesso.`,
-    `6. Se uma ferramenta falhar ou retornar erro, reporte o erro honestamente ao usuário e NUNCA declare sucesso falso.`,
+    `5. RESPOSTA LIMPA DE EXPORTAÇÃO: Ao confirmar exportações ('export_production'), informe EXCLUSIVAMENTE o nome do arquivo, formato exportado, confirmação de download e avisos técnicos relevantes. NUNCA inclua código SVG/XML completo, JSON de manifesto, Data URLs, Blobs ou payloads técnicos na resposta do chat.`,
+    `6. CONTINUIDADE AUTOMÁTICA (RASTER SELECIONADO): Ao receber uma solicitação de faca de corte ('create_cut_contour') para uma imagem raster selecionada que já possua um vetor correspondente no documento (indicado por 'vetor gerado a partir do raster' ou 'vetor correspondente'), execute 'create_cut_contour' imediatamente na mesma solicitação usando o ID desse vetor ou da imagem. NUNCA responda em tempo futuro ('vou gerar', 'vou criar') sem emitir a chamada de ferramenta na mesma resposta.`,
+    `7. NUNCA afirme que uma alteração ocorreu no documento sem que a ferramenta correspondente tenha sido executada com sucesso.`,
+    `8. Se uma ferramenta falhar ou retornar erro, reporte o erro honestamente ao usuário e NUNCA declare sucesso falso.`,
   ].join('\n');
 }
 
@@ -74,6 +76,12 @@ export function buildDocumentContextSummary(
       const vg = node as any;
       if (vg.sourceRasterNodeId) {
         extra = ` | vetor gerado a partir do raster: "${vg.sourceRasterNodeId}"`;
+      }
+    } else if (type === 'raster_image' || (type as any) === 'raster') {
+      const r = node as any;
+      const derivedVector = nodes.find((n) => n.type === 'group' && (n as any).sourceRasterNodeId === r.id);
+      if (derivedVector) {
+        extra = ` | imagem já vetorizada no grupo vetorial: "${derivedVector.id}"`;
       }
     } else if (type === 'technical_guide') {
       const tg = node as any;
