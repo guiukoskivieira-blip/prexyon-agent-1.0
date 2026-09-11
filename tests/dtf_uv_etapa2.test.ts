@@ -295,6 +295,44 @@ describe('Prexyon Agent — DTF UV Etapa 2 (Profile & Alpha/Transparency Preflig
     expect(result.reply).toContain('separações');
   });
 
+  // Test O: RGB artwork accepted in generic DTF UV profile without CMYK blockers or conversion
+  it('O: dtf-uv aceita arte em RGB/sRGB sem blockers de CMYK e sem conversão forçada', () => {
+    const dtfUvProfile = getProductionProfile('dtf-uv');
+    expect(dtfUvProfile.validation.requireCMYK).toBe(false);
+    expect(dtfUvProfile.dtfUvConfig?.colorPolicy?.acceptRgb).toBe(true);
+    expect(dtfUvProfile.dtfUvConfig?.colorPolicy?.autoConvertColor).toBe(false);
+    expect(dtfUvProfile.dtfUvConfig?.colorPolicy?.ripManagedIcc).toBe(true);
+
+    const doc = createDocument({ width_mm: 100, height_mm: 100 });
+    const rgbRaster = createRasterNode({
+      id: 'rgb-1',
+      name: 'Arte_RGB.png',
+      src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      naturalWidth: 800,
+      naturalHeight: 800,
+      physicalWidth_mm: 50,
+      physicalHeight_mm: 50,
+      position_mm: { x: 25, y: 25 },
+    });
+    doc.nodes[rgbRaster.id] = rgbRaster;
+
+    const report = validateProductionDocument(doc, {
+      recommendedDpi: 300,
+      criticalDpi: 150,
+      profileId: 'dtf-uv',
+      requireCutContour: false,
+      checkAlphaTransparency: true,
+    });
+
+    // Não deve conter erros bloqueantes nem avisos espúrios de CMYK
+    expect(report.errorCount).toBe(0);
+    expect(report.issues.some((i) => i.message.toLowerCase().includes('cmyk'))).toBe(false);
+
+    // Garante que o nó no documento PDM não foi mutado
+    expect(doc.nodes[rgbRaster.id].id).toBe('rgb-1');
+    expect((doc.nodes[rgbRaster.id] as any).src).toBe(rgbRaster.src);
+  });
+
   // Performance Benchmarks: 1 MP, 4 MP, 12 MP
   it('Performance: Análise de 1 MP, 4 MP e 12 MP executa em tempo ultrarrápido', () => {
     // 1 MP (1000x1000)

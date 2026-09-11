@@ -51,6 +51,7 @@ export const DTF_UV_PROFILE: ProductionProfile = {
     requirePositiveDimensions: true,
     requireGraphicElements: true,
     requireAlphaTransparency: true,
+    requireCMYK: false,
   },
   vectorPreflight: {
     minimumStrokeWidthMm: 0.35,
@@ -71,6 +72,12 @@ export const DTF_UV_PROFILE: ProductionProfile = {
       supportsPrimer: false,
       supportsSpotChannels: true,
       supportsVariableClear: false,
+    },
+    colorPolicy: {
+      acceptRgb: true,
+      acceptCmyk: true,
+      autoConvertColor: false,
+      ripManagedIcc: true,
     },
     orientationPolicy: 'RIP_CONTROLLED',
     whitePolicy: 'OPTIONAL',

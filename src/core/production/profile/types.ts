@@ -78,6 +78,8 @@ export interface ProductionValidationConfig {
   requireGraphicElements: boolean;
   /** Se deve validar transparência e canal alfa (DTF UV) */
   requireAlphaTransparency?: boolean;
+  /** Se exige espaço de cor CMYK estrito. Para DTF UV genérico: false (aceita RGB/sRGB sem conversão) */
+  requireCMYK?: boolean;
 }
 
 export interface VectorPreflightProfileConfig {
@@ -117,10 +119,22 @@ export interface DtfUvCapabilities {
   supportsVariableClear?: boolean;
 }
 
+export interface DtfUvColorPolicy {
+  /** Se aceita arte em RGB/sRGB sem bloqueio ou conversão forçada */
+  acceptRgb: boolean;
+  /** Se aceita arte em CMYK quando suportado */
+  acceptCmyk: boolean;
+  /** Se executa conversão forçada no client (false: RIP assume gestão de cor) */
+  autoConvertColor: boolean;
+  /** Se delega perfil ICC, linearização e ink limits ao RIP */
+  ripManagedIcc: boolean;
+}
+
 export interface DtfUvProfileConfig {
   family: 'dtf';
   processType: 'uv_transfer';
   capabilities: DtfUvCapabilities;
+  colorPolicy?: DtfUvColorPolicy;
   orientationPolicy: DtfUvOrientationPolicy;
   whitePolicy: DtfUvWhitePolicy;
   clearPolicy: DtfUvClearPolicy;
