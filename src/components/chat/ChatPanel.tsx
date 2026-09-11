@@ -10,6 +10,7 @@ import {
   User,
 } from 'lucide-react';
 import { PrexyonDocument } from '@/core/pdm/types';
+import { materializeAgentExports } from '@/core/agent/clientExportMaterializer';
 
 export interface ChatMessageItem {
   id: string;
@@ -222,7 +223,47 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // 3. Resposta bem-sucedida do agente
+        // 3. Aplica primeiro o PDM retornado na store (com histórico Undo/Redo)
+        const returnedDoc = (data.doc || doc) as PrexyonDocument;
+        if (data.doc && onApplyDoc) {
+          onApplyDoc(data.doc, cleanText);
+        }
+
+        // 4. Exportações validadas no servidor são materializadas pelo motor real do navegador.
+        // A confirmação textual só aparece depois que o download for efetivamente acionado.
+        try {
+          const artifacts = await materializeAgentExports(
+            Array.isArray(data.executedTools) ? data.executedTools : [],
+            returnedDoc
+          );
+          if (artifacts.length > 0 && addToast) {
+            addToast(
+              'success',
+              artifacts.length === 1
+                ? `Download iniciado: ${artifacts[0].fileName}`
+                : `${artifacts.length} downloads de produção iniciados.`
+            );
+          }
+        } catch (exportError: unknown) {
+          const exportMessage =
+            exportError instanceof Error
+              ? exportError.message
+              : 'A exportação não pôde ser concluída no navegador.';
+          const exportErrorId = `export_err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: exportErrorId,
+              role: 'error',
+              text: `A ferramenta preparou a exportação, mas o download falhou: ${exportMessage}`,
+              timestamp: Date.now(),
+            },
+          ]);
+          if (addToast) addToast('error', 'Falha ao iniciar o download solicitado pela IA.');
+          return;
+        }
+
+        // 5. Resposta bem-sucedida do agente
         const agentMsgId = `agent_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         const agentReply = data.reply || 'Ação executada com sucesso.';
 
@@ -236,12 +277,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           },
         ]);
 
-        // 4. Aplica o PDM retornado na store (com histórico Undo/Redo)
-        if (data.doc && onApplyDoc) {
-          onApplyDoc(data.doc, cleanText);
-        }
       } else {
-        // 5. Erro amigável retornado pelo backend
+        // 6. Erro amigável retornado pelo backend
         const errorMsg =
           data?.error?.message ||
           'Não foi possível processar a solicitação no momento. Verifique o comando e tente novamente.';
@@ -258,7 +295,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         ]);
       }
     } catch (err: unknown) {
-      // 6. Falha de rede / erro de comunicação
+      // 7. Falha de rede / erro de comunicação
       const netErrorMsgId = `net_err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       setMessages((prev) => [
         ...prev,
@@ -463,4 +500,3 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     </aside>
   );
 };
-

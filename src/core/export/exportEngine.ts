@@ -33,9 +33,9 @@ export async function exportDocument(
 /**
  * Aciona o download local no navegador a partir de um ExportResult e realiza o cleanup de memória.
  */
-export function downloadExportResult(result: ExportResult): void {
+export function downloadExportResult(result: ExportResult): boolean {
   if (typeof document === 'undefined' || typeof window === 'undefined') {
-    return;
+    return false;
   }
 
   const url = URL.createObjectURL(result.blob);
@@ -52,4 +52,6 @@ export function downloadExportResult(result: ExportResult): void {
   setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 1000);
+
+  return true;
 }

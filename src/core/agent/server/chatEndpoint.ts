@@ -11,6 +11,7 @@ import { GeminiProvider } from '../providers/geminiProvider';
 import { MockAIProvider, createDeterministicTurnsForRequest } from '../providers/mockProvider';
 import { AgentRuntime } from '../runtime';
 import { defaultToolRegistry } from '../../tools';
+import { vtracerNodeBridge } from '../../vectorizer/vtracerNodeBridge';
 
 /**
  * Processa a requisição de chat do agente recebida pelo servidor.
@@ -82,6 +83,9 @@ export async function processAgentChatRequest(
     model: req.options?.model,
     temperature: req.options?.temperature,
     history: req.history,
+    selectedNodeId: req.options?.selectedNodeId,
+    toolExecutionContext: {
+      vtracerBridge: vtracerNodeBridge,
+    },
   });
 }
-

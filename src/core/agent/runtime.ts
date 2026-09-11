@@ -139,6 +139,7 @@ export class AgentRuntime {
 
             // Executa no Tool Registry passando o PDM atual
             const executionResult = await this.registry.executeTool(call.name, call.args, {
+              ...options?.toolExecutionContext,
               doc: currentDoc,
             });
 

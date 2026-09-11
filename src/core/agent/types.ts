@@ -5,7 +5,7 @@
  */
 
 import { PrexyonDocument } from '../pdm/types';
-import { ToolDeclaration, ToolResult } from '../tools/types';
+import { ToolDeclaration, ToolExecutionContext, ToolResult } from '../tools/types';
 
 export type ChatRole = 'user' | 'model' | 'assistant' | 'tool' | 'system';
 
@@ -59,6 +59,7 @@ export interface AgentRunOptions {
   model?: string;
   history?: ChatMessage[];
   selectedNodeId?: string;
+  toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
 }
 
 export interface ExecutedToolRecord {
@@ -90,5 +91,6 @@ export interface AgentChatRequestBody {
     maxIterations?: number;
     model?: string;
     temperature?: number;
+    selectedNodeId?: string;
   };
 }

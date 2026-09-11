@@ -5,7 +5,7 @@
  */
 
 import { ToolDefinition, ToolResult } from '../types';
-import { ExportFormat, ExportDpi, ExportResult } from '../../export/types';
+import { ExportFormat, ExportDpi, ExportOptions, ExportResult } from '../../export/types';
 import { exportDocument } from '../../export/exportEngine';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
 
@@ -17,6 +17,17 @@ export interface ExportProductionArgs {
   includeGuides?: boolean;
   includeCutContour?: boolean;
   ignoreValidationErrors?: boolean;
+}
+
+export function buildExportOptionsFromAgentArgs(args: ExportProductionArgs): ExportOptions {
+  return {
+    format: args.format,
+    rasterDpi: args.dpi || 300,
+    includeBleed: !!args.includeBleed,
+    background: args.transparentBackground === false ? 'white' : 'transparent',
+    includeTechnicalGuides: !!args.includeGuides,
+    includeCutContour: !!args.includeCutContour,
+  };
 }
 
 export const exportProductionTool: ToolDefinition<ExportProductionArgs, ExportResult> = {
@@ -121,14 +132,7 @@ export const exportProductionTool: ToolDefinition<ExportProductionArgs, ExportRe
     try {
       const result = await exportDocument(
         doc,
-        {
-          format: args.format,
-          rasterDpi: args.dpi || 300,
-          includeBleed: !!args.includeBleed,
-          background: args.transparentBackground === false ? 'white' : 'transparent',
-          includeTechnicalGuides: !!args.includeGuides,
-          includeCutContour: !!args.includeCutContour,
-        },
+        buildExportOptionsFromAgentArgs(args),
         validationReport
       );
 
