@@ -59,7 +59,7 @@ export function composePlanResponse(
     } else if (step.toolName === 'create_cut_contour') {
       lines.push(`• Linha técnica de faca de corte gerada com offset de ${step.args.offset_mm || 2} mm.`);
     } else if (step.toolName === 'vectorize_raster') {
-      lines.push(`• Imagem raster convertida para vetor.`);
+      lines.push(`• Imagem raster vetorizada com sucesso.`);
     } else if (step.toolName === 'auto_fix_prepress_issues') {
       lines.push(`• Correções automáticas e seguras de pré-impressão aplicadas.`);
     } else {

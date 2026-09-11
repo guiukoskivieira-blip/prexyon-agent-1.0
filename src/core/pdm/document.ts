@@ -363,19 +363,71 @@ export function findCutContourForSourceNode(
 }
 
 /**
+ * Normaliza um documento PDM na fronteira de entrada.
+ * Converte tipos legados/aliases (ex: 'raster' -> 'raster_image', 'vector_group' -> 'group')
+ * e garante integridade estrutural básica (rootNodeIds, nodes).
+ */
+export function normalizeDocument(doc: PrexyonDocument): PrexyonDocument {
+  if (!doc || typeof doc !== 'object') return doc;
+
+  let hasChanges = false;
+  const nodes = doc.nodes ? { ...doc.nodes } : {};
+
+  for (const [id, rawNode] of Object.entries(nodes)) {
+    if (!rawNode || typeof rawNode !== 'object') continue;
+    const nodeType = (rawNode as { type?: string }).type;
+
+    if (nodeType === 'raster') {
+      hasChanges = true;
+      nodes[id] = {
+        ...rawNode,
+        type: 'raster_image',
+      } as DocumentNode;
+    } else if (nodeType === 'vector_group') {
+      hasChanges = true;
+      nodes[id] = {
+        ...rawNode,
+        type: 'group',
+      } as DocumentNode;
+    }
+  }
+
+  const rootNodeIds = Array.isArray(doc.rootNodeIds)
+    ? doc.rootNodeIds
+    : Object.keys(nodes);
+
+  if (hasChanges || !Array.isArray(doc.rootNodeIds)) {
+    return {
+      ...doc,
+      nodes,
+      rootNodeIds,
+    };
+  }
+
+  return doc;
+}
+
+/**
  * Adiciona um nó ao documento (no topo da ordem z-index).
  */
 export function addNode(
   doc: PrexyonDocument,
   node: DocumentNode
 ): PrexyonDocument {
+  const normalizedNode =
+    (node as { type?: string }).type === 'raster'
+      ? ({ ...node, type: 'raster_image' } as DocumentNode)
+      : (node as { type?: string }).type === 'vector_group'
+      ? ({ ...node, type: 'group' } as DocumentNode)
+      : node;
+
   return {
     ...doc,
     nodes: {
       ...doc.nodes,
-      [node.id]: node,
+      [normalizedNode.id]: normalizedNode,
     },
-    rootNodeIds: [...doc.rootNodeIds.filter((id) => id !== node.id), node.id],
+    rootNodeIds: [...doc.rootNodeIds.filter((id) => id !== normalizedNode.id), normalizedNode.id],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -840,7 +892,7 @@ export function deserializeDocument(json: string): PrexyonDocument {
       },
     };
   }
-  return parsed as PrexyonDocument;
+  return normalizeDocument(parsed as PrexyonDocument);
 }
 
 /**

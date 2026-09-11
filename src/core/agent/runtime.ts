@@ -6,6 +6,7 @@
  */
 
 import { PrexyonDocument } from '../pdm/types';
+import { normalizeDocument } from '../pdm/document';
 import { ToolRegistry } from '../tools/registry';
 import { defaultToolRegistry } from '../tools';
 import {
@@ -142,7 +143,7 @@ export class AgentRuntime {
     const tools = this.registry.getToolDeclarations();
     const executedTools: ExecutedToolRecord[] = [];
 
-    let currentDoc = initialDoc;
+    let currentDoc = normalizeDocument(initialDoc);
     let iteration = 0;
 
     // Inicializa histórico da conversa com histórico anterior (se houver) + mensagem atual
@@ -267,7 +268,9 @@ export class AgentRuntime {
 
             const stepPlan: AgentActionPlan = {
               schemaVersion: '1.0',
-              intent: isDtf ? (call.name.includes('clear') || call.name.includes('white') ? 'GENERATE_SEPARATION' : 'MODIFY') : 'MODIFY',
+              intent: isDtf
+                ? (call.name.includes('clear') || call.name.includes('white') ? 'GENERATE_SEPARATION' : 'MODIFY')
+                : (call.name === 'vectorize_raster' ? 'VECTORIZE' : (call.name === 'create_cut_contour' ? 'GENERATE_CUT' : 'MODIFY')),
               process: isDtf ? 'DTF_UV' : (isGenericSticker ? 'GENERIC_STICKER' : 'UNSPECIFIED'),
               target: { type: 'SELECTED_OBJECT', ...(options?.selectedNodeId ? { nodeId: options.selectedNodeId } : {}) },
               constraints: {

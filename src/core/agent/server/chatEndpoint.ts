@@ -6,6 +6,7 @@
  */
 
 import { PrexyonDocument } from '../../pdm/types';
+import { normalizeDocument } from '../../pdm/document';
 import { AIProvider, AgentChatRequestBody, AgentRunResult } from '../types';
 import { GeminiProvider } from '../providers/geminiProvider';
 import { MockAIProvider, createDeterministicTurnsForRequest } from '../providers/mockProvider';
@@ -68,7 +69,7 @@ export async function processAgentChatRequest(
     };
   }
 
-  const doc = req.doc as PrexyonDocument;
+  const doc = normalizeDocument(req.doc as PrexyonDocument);
 
   // Reconhece contexto DTF UV explícito na mensagem e atualiza o profile do documento
   const lowerMsg = req.message.toLowerCase();

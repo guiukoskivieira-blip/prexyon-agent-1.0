@@ -6,6 +6,7 @@
  */
 
 import { PrexyonDocument } from '../../pdm/types';
+import { normalizeDocument } from '../../pdm/document';
 import { ToolRegistry } from '../../tools/registry';
 import { defaultToolRegistry } from '../../tools';
 import { ToolExecutionContext } from '../../tools/types';
@@ -14,6 +15,7 @@ import { AgentActionPlan, PlanExecutionResult, ActionStepExecutionResult } from 
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
 import { composePlanResponse } from './responseComposer';
 import { verifyMutationEvidence, reconcileAgentResponseWithExecutionEvidence } from './responseReconciler';
+import { resolveTargetReference } from './targetResolver';
 
 export { verifyMutationEvidence };
 
@@ -26,7 +28,7 @@ export async function executeActionPlan(
   }
 ): Promise<PlanExecutionResult> {
   const registry = options?.registry || defaultToolRegistry;
-  let currentDoc = initialDoc;
+  let currentDoc = normalizeDocument(initialDoc);
 
   // Atualiza profile no PDM se explicitamente indicado pelo plano
   if (plan.process === 'DTF_UV' && currentDoc.profileId !== 'dtf-uv') {
@@ -55,29 +57,80 @@ export async function executeActionPlan(
       continue;
     }
 
+    // Resolve argumentos dinamicamente contra o estado atual do PDM (ex: novo VectorGroup produzido no step anterior)
+    let stepArgs = { ...step.arguments };
+    const selectedNodeId = (options?.toolExecutionContext as any)?.selectedNodeId;
+
+    if (step.tool === 'vectorize_raster') {
+      if (!stepArgs.nodeId) {
+        const resolved = resolveTargetReference(plan.target, currentDoc, selectedNodeId);
+        if (resolved.nodeId) {
+          stepArgs.nodeId = resolved.nodeId;
+        }
+      }
+    } else if (step.tool === 'create_cut_contour') {
+      const currentSource = stepArgs.sourceNodeId ? currentDoc.nodes[stepArgs.sourceNodeId as string] : null;
+      if (!currentSource || currentSource.type !== 'group') {
+        const targetRasterId = (stepArgs.sourceNodeId as string) || selectedNodeId;
+        const allNodes = Object.values(currentDoc.nodes);
+        
+        // 1. Procura grupo vetorial derivado do raster alvo
+        const matchingVector = allNodes.find(
+          (n) => n.type === 'group' && (
+            (n as any).sourceRasterNodeId === targetRasterId ||
+            (targetRasterId && currentDoc.nodes[targetRasterId] && n.name === `Vetor: ${currentDoc.nodes[targetRasterId].name}`)
+          )
+        );
+
+        if (matchingVector) {
+          stepArgs.sourceNodeId = matchingVector.id;
+        } else {
+          // 2. Procura qualquer grupo vetorial disponível no documento
+          const anyVector = allNodes.find((n) => n.type === 'group');
+          if (anyVector) {
+            stepArgs.sourceNodeId = anyVector.id;
+          } else {
+            const resolved = resolveTargetReference(plan.target, currentDoc, selectedNodeId);
+            if (resolved.node && resolved.node.type === 'group') {
+              stepArgs.sourceNodeId = resolved.node.id;
+            } else if (resolved.nodeId && !stepArgs.sourceNodeId) {
+              stepArgs.sourceNodeId = resolved.nodeId;
+            }
+          }
+        }
+      }
+    } else if (step.tool === 'resize_node') {
+      if (!stepArgs.nodeId) {
+        const resolved = resolveTargetReference(plan.target, currentDoc, selectedNodeId);
+        if (resolved.nodeId) {
+          stepArgs.nodeId = resolved.nodeId;
+        }
+      }
+    }
+
     try {
-      const execResult = await registry.executeTool(step.tool, step.arguments, {
+      const execResult = await registry.executeTool(step.tool, stepArgs, {
         ...options?.toolExecutionContext,
         doc: currentDoc,
       });
 
       executedTools.push({
         toolName: step.tool,
-        args: step.arguments,
+        args: stepArgs,
         result: execResult,
         timestamp: Date.now(),
       });
 
       if (execResult.success) {
         const nextDoc = execResult.doc || currentDoc;
-        const evidence = verifyMutationEvidence(step.tool, step.arguments, currentDoc, nextDoc, execResult);
+        const evidence = verifyMutationEvidence(step.tool, stepArgs, currentDoc, nextDoc, execResult);
 
         if (evidence.verified) {
           currentDoc = nextDoc;
           stepResults.push({
             stepId,
             toolName: step.tool,
-            args: step.arguments,
+            args: stepArgs,
             status: 'COMPLETED',
             result: execResult,
           });
@@ -86,7 +139,7 @@ export async function executeActionPlan(
           stepResults.push({
             stepId,
             toolName: step.tool,
-            args: step.arguments,
+            args: stepArgs,
             status: 'FAILED',
             result: execResult,
             error: evidence.error || 'A mutação esperada não foi encontrada no documento.',
@@ -97,7 +150,7 @@ export async function executeActionPlan(
         stepResults.push({
           stepId,
           toolName: step.tool,
-          args: step.arguments,
+          args: stepArgs,
           status: 'FAILED',
           result: execResult,
           error: execResult.error?.message || 'Falha na execução da ferramenta.',
@@ -109,7 +162,7 @@ export async function executeActionPlan(
       stepResults.push({
         stepId,
         toolName: step.tool,
-        args: step.arguments,
+        args: stepArgs,
         status: 'FAILED',
         error: msg,
       });

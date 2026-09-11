@@ -132,6 +132,30 @@ export function buildActionPlanFromUserRequest(
     });
   }
 
+  // 5.5. Passo de Vetorização (se solicitado)
+  const wantsVectorize =
+    text.includes('vetoriz') ||
+    text.includes('vectoriz') ||
+    text.includes('converter em vetor') ||
+    text.includes('converter para vetor') ||
+    text.includes('transforme em vetor') ||
+    text.includes('transformar em vetor') ||
+    text.includes('transforme para vetor') ||
+    text.includes('converta em vetor') ||
+    text.includes('gerar vetor') ||
+    text.includes('gere vetor');
+
+  if (wantsVectorize) {
+    steps.push({
+      id: 'step_vectorize',
+      tool: 'vectorize_raster',
+      arguments: { preset: 'logo' },
+      description: 'Vetorizar imagem raster usando VTracer.',
+      dependsOn: steps.length > 0 ? ['step_resize'] : undefined,
+    });
+    intent = 'VECTORIZE';
+  }
+
   // 6. Passo de Base Branca (White Underbase — DTF UV)
   const wantsWhite =
     text.includes('base branca') ||
@@ -200,7 +224,7 @@ export function buildActionPlanFromUserRequest(
 
   // 9. Passo de Faca de Corte para Adesivo Convencional (GENERIC_STICKER)
   const wantsCutContour =
-    (text.includes('faca de') || text.includes('contorno de corte') || (text.includes('adesivo') && text.includes('corte'))) &&
+    (text.includes('faca') || text.includes('contorno de corte') || (text.includes('adesivo') && text.includes('corte'))) &&
     process !== 'DTF_UV' &&
     !constraints.forbidCutContour;
 
@@ -208,13 +232,15 @@ export function buildActionPlanFromUserRequest(
     const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
     const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
 
+    const previousStepIds = steps.map((s) => s.id!).filter(Boolean);
     steps.push({
       id: 'step_cut_contour',
       tool: 'create_cut_contour',
       arguments: { offset_mm, joinStyle: 'round' },
       description: `Gerar contorno técnico de corte com offset de ${offset_mm} mm.`,
+      dependsOn: previousStepIds.length > 0 ? previousStepIds : undefined,
     });
-    intent = 'GENERATE_CUT';
+    intent = wantsVectorize ? 'MODIFY' : 'GENERATE_CUT';
   }
 
   // Se o comando for "prepare essa logo para dtf uv" sem steps adicionais
