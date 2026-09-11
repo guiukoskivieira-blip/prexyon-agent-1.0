@@ -138,7 +138,10 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 1. Comando de Mover Objeto (ex: "Mova este objeto 10 mm para a direita.")
-  if (text.includes('mova') || text.includes('mover') || text.includes('desloque')) {
+  if (
+    (text.includes('mova') || text.includes('mover') || text.includes('desloque')) &&
+    !text.includes('remov')
+  ) {
     const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
     const delta = matchMm ? parseFloat(matchMm[1]) : 10;
 
@@ -221,8 +224,105 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
+  // 2.1. Comando de Limpeza de Vetores Invisíveis (ex: "Remova objetos invisíveis", "Limpe os vetores")
+  if (
+    text.includes('invis') ||
+    text.includes('limpe os vetores') ||
+    text.includes('limpar vetores')
+  ) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_remove_inv_${Date.now()}`,
+              name: 'remove_invisible_vector_objects',
+              args: {},
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Objetos vetoriais invisíveis identificados e removidos com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 2.2. Comando de Ajuste de Espessura Mínima de Linhas (ex: "Engrosse as linhas finas", "Ajuste as linhas para 0.2 mm")
+  if (
+    text.includes('engrosse') ||
+    text.includes('linhas finas') ||
+    text.includes('traço fino') ||
+    text.includes('traco fino') ||
+    text.includes('espessura mínima') ||
+    text.includes('espessura minima') ||
+    (text.includes('linha') && (text.includes('0.2') || text.includes('0,2') || text.includes('mínim') || text.includes('minim')))
+  ) {
+    const matchMm = text.match(/(\d+(?:[.,]\d+)?)\s*mm/);
+    const minStroke = matchMm ? parseFloat(matchMm[1].replace(',', '.')) : 0.20;
+
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_set_stroke_${Date.now()}`,
+              name: 'set_minimum_stroke_width',
+              args: {
+                minStrokeWidth_mm: minStroke,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: `Traçados vetoriais ajustados para a espessura técnica mínima de ${minStroke} mm com sucesso.`,
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 2.3. Comando de Fechar Contorno de Corte (ex: "Feche a faca de corte", "Feche o contorno de corte")
+  if (
+    text.includes('feche a faca') ||
+    text.includes('fechar faca') ||
+    text.includes('fechar contorno') ||
+    text.includes('feche o contorno')
+  ) {
+    const cutContourNode = nodes.find((n) => n.type === 'cut_contour');
+    const cutId = cutContourNode?.id || targetNodeId;
+
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_close_cut_${Date.now()}`,
+              name: 'close_cut_contour',
+              args: {
+                nodeId: cutId,
+                maxGap_mm: 0.5,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Faca de corte fechada com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 3. Comando de Vetorização (ex: "Vetorize essa logo.")
-  if (text.includes('vetoriz') || text.includes('vetor')) {
+  if (text.includes('vetoriz') || (text.includes('vetor') && !text.includes('limp'))) {
     const rasterNode = nodes.find((n) => n.type === 'raster_image' || (n as any).type === 'raster') || targetNode;
     const rId = rasterNode?.id || targetNodeId;
 

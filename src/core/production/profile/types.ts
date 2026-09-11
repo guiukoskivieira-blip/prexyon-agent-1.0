@@ -75,6 +75,13 @@ export interface ProductionValidationConfig {
   requireGraphicElements: boolean;
 }
 
+export interface VectorPreflightProfileConfig {
+  /** Espessura mínima recomendada para traços vetoriais em mm */
+  minimumStrokeWidthMm: number;
+  /** Limite máximo de gap para fechamento automático de contorno de corte em mm */
+  maxAutoCloseGapMm: number;
+}
+
 export interface ProductionProfile {
   /** Identificador único do perfil (ex: 'generic-sticker') */
   id: ProductionProfileId;
@@ -96,6 +103,8 @@ export interface ProductionProfile {
   archiveArtifact: ArchiveArtifactConfig;
   /** Configurações de validação e pré-requisitos */
   validation: ProductionValidationConfig;
+  /** Configurações de pré-voo vetorial (Etapa 6.12) */
+  vectorPreflight?: VectorPreflightProfileConfig;
   /** Metadados adicionais para futura extensibilidade */
   metadata?: Record<string, unknown>;
 }

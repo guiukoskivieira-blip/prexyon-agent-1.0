@@ -14,7 +14,8 @@ export type ValidationCategory =
   | 'safety'
   | 'resolution'
   | 'cut'
-  | 'guides';
+  | 'guides'
+  | 'geometry';
 
 export type ValidationStatus = 'ready' | 'attention' | 'blocked';
 

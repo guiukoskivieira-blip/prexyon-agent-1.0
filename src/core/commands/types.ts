@@ -12,6 +12,7 @@ import {
   VectorGroupNode,
   VectorPathNode,
   CutContourNode,
+  ContourPolygon,
   DocumentNode,
   DocumentDimensions,
   Position_mm,
@@ -852,4 +853,224 @@ export class ApplyAgentDocumentChangeCommand implements DocumentCommand {
     };
   }
 }
+
+export interface RemovedInvisibleNodesState {
+  removedNodes: DocumentNode[];
+  parentGroupUpdates?: { groupId: string; prevChildrenIds: string[]; nextChildrenIds: string[] }[];
+}
+
+/**
+ * Comando de Remoção de Objetos Vetoriais Invisíveis (Etapa 6.12)
+ * Reversível: restaura os nós vetoriais e a estrutura de filhos do grupo original.
+ */
+export class RemoveInvisibleVectorObjectsCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly state: RemovedInvisibleNodesState,
+    description: string = 'Remover Objetos Vetoriais Invisíveis'
+  ) {
+    this.id = `cmd_remove_invisible_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    this.name = description;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const nextNodes = { ...doc.nodes };
+    const removedIds = new Set(this.state.removedNodes.map((n) => n.id));
+
+    for (const node of this.state.removedNodes) {
+      delete nextNodes[node.id];
+    }
+
+    if (this.state.parentGroupUpdates) {
+      for (const update of this.state.parentGroupUpdates) {
+        if (nextNodes[update.groupId] && nextNodes[update.groupId].type === 'group') {
+          nextNodes[update.groupId] = {
+            ...nextNodes[update.groupId],
+            childrenIds: update.nextChildrenIds,
+          } as VectorGroupNode;
+        }
+      }
+    }
+
+    const nextDoc: PrexyonDocument = {
+      ...doc,
+      nodes: nextNodes,
+      rootNodeIds: doc.rootNodeIds.filter((id) => !removedIds.has(id)),
+      updatedAt: new Date().toISOString(),
+    };
+
+    return {
+      doc: nextDoc,
+      selectedNodeId: nextDoc.rootNodeIds[0] ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const restoredNodes = { ...doc.nodes };
+    for (const node of this.state.removedNodes) {
+      restoredNodes[node.id] = node;
+    }
+
+    if (this.state.parentGroupUpdates) {
+      for (const update of this.state.parentGroupUpdates) {
+        if (restoredNodes[update.groupId] && restoredNodes[update.groupId].type === 'group') {
+          restoredNodes[update.groupId] = {
+            ...restoredNodes[update.groupId],
+            childrenIds: update.prevChildrenIds,
+          } as VectorGroupNode;
+        }
+      }
+    }
+
+    const rootAdditions = this.state.removedNodes
+      .filter((n) => n.parentId === null || n.parentId === undefined)
+      .map((n) => n.id);
+
+    const nextDoc: PrexyonDocument = {
+      ...doc,
+      nodes: restoredNodes,
+      rootNodeIds: [...doc.rootNodeIds, ...rootAdditions.filter((id) => !doc.rootNodeIds.includes(id))],
+      updatedAt: new Date().toISOString(),
+    };
+
+    return {
+      doc: nextDoc,
+      selectedNodeId: this.state.removedNodes[0]?.id ?? null,
+    };
+  }
+}
+
+export interface StrokeWidthAdjustment {
+  nodeId: string;
+  prevStrokeWidth_mm: number;
+  nextStrokeWidth_mm: number;
+}
+
+/**
+ * Comando de Ajuste de Espessura Mínima de Traço (Etapa 6.12)
+ * Reversível: restaura as espessuras de traço originais.
+ */
+export class SetMinimumStrokeWidthCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly adjustments: StrokeWidthAdjustment[],
+    minStroke_mm: number = 0.2
+  ) {
+    this.id = `cmd_set_min_stroke_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    this.name = `Ajustar Espessura Mínima de Traço (${minStroke_mm} mm)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const newNodes = { ...doc.nodes };
+    for (const adj of this.adjustments) {
+      const node = newNodes[adj.nodeId] as VectorPathNode | undefined;
+      if (node && node.type === 'vector_path') {
+        newNodes[adj.nodeId] = {
+          ...node,
+          strokeWidth_mm: adj.nextStrokeWidth_mm,
+        };
+      }
+    }
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: newNodes,
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.adjustments[0]?.nodeId ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const newNodes = { ...doc.nodes };
+    for (const adj of this.adjustments) {
+      const node = newNodes[adj.nodeId] as VectorPathNode | undefined;
+      if (node && node.type === 'vector_path') {
+        newNodes[adj.nodeId] = {
+          ...node,
+          strokeWidth_mm: adj.prevStrokeWidth_mm,
+        };
+      }
+    }
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: newNodes,
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.adjustments[0]?.nodeId ?? null,
+    };
+  }
+}
+
+/**
+ * Comando de Fechamento de Contorno de Corte Aberto (Etapa 6.12)
+ * Reversível: restaura os contornos anteriores.
+ */
+export class CloseCutContourCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly nodeId: string,
+    public readonly prevContours: ContourPolygon[],
+    public readonly nextContours: ContourPolygon[]
+  ) {
+    this.id = `cmd_close_cut_${nodeId}_${Date.now()}`;
+    this.name = 'Fechar Contorno de Corte';
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId] as CutContourNode | undefined;
+    if (!node || node.type !== 'cut_contour') return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          contours: this.nextContours,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    const node = doc.nodes[this.nodeId] as CutContourNode | undefined;
+    if (!node || node.type !== 'cut_contour') return { doc };
+    const newDoc: PrexyonDocument = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [this.nodeId]: {
+          ...node,
+          contours: this.prevContours,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeId,
+    };
+  }
+}
+
 

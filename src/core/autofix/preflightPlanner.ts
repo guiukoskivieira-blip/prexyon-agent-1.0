@@ -551,6 +551,14 @@ function getFriendlyStepTitle(
       return 'Criar faca de corte externa automática';
     case 'CUT_CONTOUR_MISALIGNED':
       return 'Centralizar e alinhar faca de corte';
+    case 'CUT_CONTOUR_OPEN':
+      return 'Fechar contorno aberto da faca de corte';
+    case 'INVISIBLE_VECTOR_OBJECT':
+      return 'Remover objeto vetorial invisível';
+    case 'STROKE_TOO_THIN':
+      return 'Ajustar traço fino para espessura mínima';
+    case 'OPEN_VECTOR_PATH':
+      return 'Informativo: traçado vetorial aberto na arte';
     case 'LOW_DPI':
     case 'CRITICAL_LOW_DPI':
       return 'Ajustar escala para adequação de DPI';
@@ -579,6 +587,14 @@ function getFriendlyStepDescription(
       return 'Gera uma faca de corte externa com sangria e offset seguro de 2.0 mm.';
     case 'CUT_CONTOUR_MISALIGNED':
       return 'Realinha a geometria do contorno de corte com o centro do vetor de origem.';
+    case 'CUT_CONTOUR_OPEN':
+      return 'Conecta as extremidades abertas da faca para formar um contorno de corte fechado.';
+    case 'INVISIBLE_VECTOR_OBJECT':
+      return 'Remove do documento elementos sem preenchimento, sem traço ou vazios.';
+    case 'STROKE_TOO_THIN':
+      return 'Ajusta a espessura de traços abaixo de 0.20 mm para garantir impressão e recorte nítidos.';
+    case 'OPEN_VECTOR_PATH':
+      return 'Traçado vetorial com pontos abertos na composição artística.';
     case 'LOW_DPI':
     case 'CRITICAL_LOW_DPI':
       return 'A resolução da imagem está abaixo do recomendável para impressão nítida.';

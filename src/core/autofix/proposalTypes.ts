@@ -48,9 +48,12 @@ export interface ProposalExpectedImpact {
  * Dados geométricos para preview sem mutação do PDM (overlay visual / ghost box).
  */
 export interface ProposalPreviewData {
-  type: 'bounds_overlay' | 'geometry_shift';
-  currentBounds_mm: { x: number; y: number; width_mm: number; height_mm: number };
-  proposedBounds_mm: { x: number; y: number; width_mm: number; height_mm: number };
+  type: 'bounds_overlay' | 'geometry_shift' | 'property_change';
+  currentBounds_mm?: { x: number; y: number; width_mm: number; height_mm: number };
+  proposedBounds_mm?: { x: number; y: number; width_mm: number; height_mm: number };
+  property?: string;
+  valueBefore?: unknown;
+  valueAfter?: unknown;
 }
 
 /**

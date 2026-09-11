@@ -73,7 +73,11 @@ export function buildProductionReview({
       b.position_mm?.y !== a.position_mm?.y ||
       b.physicalWidth_mm !== a.physicalWidth_mm ||
       b.physicalHeight_mm !== a.physicalHeight_mm ||
-      b.offset_mm !== a.offset_mm
+      b.offset_mm !== a.offset_mm ||
+      b.strokeWidth_mm !== a.strokeWidth_mm ||
+      b.visible !== a.visible ||
+      b.opacity !== a.opacity ||
+      JSON.stringify(b.contours) !== JSON.stringify(a.contours)
     );
   });
 

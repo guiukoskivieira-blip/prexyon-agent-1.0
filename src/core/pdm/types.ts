@@ -43,6 +43,8 @@ export interface BaseNode {
   rotation_deg: number;
   /** Opacidade (0.0 a 1.0) */
   opacity: number;
+  /** ID do nó pai (grupo) ao qual este nó pertence, ou null se estiver na raiz */
+  parentId?: string | null;
 }
 
 export interface RasterNode extends BaseNode {

@@ -48,6 +48,10 @@ export const GENERIC_STICKER_PROFILE: ProductionProfile = {
     requirePositiveDimensions: true,
     requireGraphicElements: true,
   },
+  vectorPreflight: {
+    minimumStrokeWidthMm: 0.2,
+    maxAutoCloseGapMm: 0.5,
+  },
   metadata: {
     vendor: 'generic',
     compatibility: ['Standard Print & Cut RIPs', 'Flatbed / Roll Cutters'],

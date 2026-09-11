@@ -195,6 +195,98 @@ export function generateProposedFixes(
         });
       }
     }
+
+    // CASO 3: ESPESSURA DE TRAÇO ABAIXO DO MÍNIMO TÉCNICO (STROKE_TOO_THIN) -> PROPOSTA DE AJUSTE DE ESPESSURA
+    if (issue.code === 'STROKE_TOO_THIN' && node.type === 'vector_path') {
+      const pathNode = node as import('../pdm/types').VectorPathNode;
+      const parentGroup = pathNode.parentId && doc.nodes[pathNode.parentId]?.type === 'group'
+        ? (doc.nodes[pathNode.parentId] as import('../pdm/types').VectorGroupNode)
+        : undefined;
+
+      const groupScale = parentGroup && parentGroup.sourceViewBox?.width && parentGroup.physicalWidth_mm
+        ? (parentGroup.physicalWidth_mm / parentGroup.sourceViewBox.width)
+        : 1.0;
+
+      const currentEffectiveStroke = (pathNode.strokeWidth_mm ?? 0) * groupScale;
+      const targetMinStroke = (issue.suggestedParams?.minStrokeWidth_mm as number) || 0.20;
+
+      if (currentEffectiveStroke < targetMinStroke) {
+        proposals.push({
+          id: `prop_stroke_${pathNode.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          issueId: issue.id,
+          issueCode: issue.code,
+          targetNodeId: pathNode.id,
+          targetNodeName: pathNode.name,
+          title: `Ajustar Espessura do Traço para ${targetMinStroke.toFixed(2)} mm`,
+          description: `Aumenta a espessura do traço do vetor "${pathNode.name}" de ${currentEffectiveStroke.toFixed(2)} mm para ${targetMinStroke.toFixed(2)} mm.`,
+          reason: `Linhas com espessura abaixo de ${targetMinStroke.toFixed(2)} mm podem falhar na impressão ou quebrar no recorte em vinil.`,
+          toolName: 'set_minimum_stroke_width',
+          proposedParams: {
+            nodeId: pathNode.id,
+            minStrokeWidth_mm: targetMinStroke,
+          },
+          expectedImpact: {
+            affectedObjectsCount: 1,
+            visualArtChanges: true,
+            technicalGeometryChanges: false,
+            summary: `Aumento da espessura do traço de ${currentEffectiveStroke.toFixed(2)} mm para ${targetMinStroke.toFixed(2)} mm.`,
+          },
+          previewData: {
+            type: 'property_change',
+            property: 'strokeWidth_mm',
+            valueBefore: currentEffectiveStroke,
+            valueAfter: targetMinStroke,
+          },
+          risks: ['O traço ficará visualmente mais espesso na arte final.'],
+          reversible: true,
+          requiresConfirmation: true,
+          status: 'PENDING',
+          docVersionFingerprint: fingerprint,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
+    // CASO 4: FACA DE CORTE COM GAP ELEVADO (CUT_CONTOUR_OPEN) -> PROPOSTA DE FECHAMENTO ASSISTIDO
+    if (
+      issue.code === 'CUT_CONTOUR_OPEN' &&
+      node.type === 'cut_contour' &&
+      issue.fixClassification === 'REQUIRES_CONFIRMATION'
+    ) {
+      const cutNode = node as import('../pdm/types').CutContourNode;
+      const gap_mm = (issue.evidence?.gap_mm as number) || 0.5;
+
+      proposals.push({
+        id: `prop_close_cut_${cutNode.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        issueId: issue.id,
+        issueCode: issue.code,
+        targetNodeId: cutNode.id,
+        targetNodeName: cutNode.name,
+        title: `Fechar Contorno de Corte (${gap_mm.toFixed(2)} mm)`,
+        description: `Fecha o anel poligonal aberto da faca de corte unindo as extremidades em linha reta.`,
+        reason: `A faca de corte possui abertura de ${gap_mm.toFixed(2)} mm (> 0.50 mm). O fechamento em linha reta garante um circuito fechado para a plotter.`,
+        toolName: 'close_cut_contour',
+        proposedParams: {
+          nodeId: cutNode.id,
+          maxGap_mm: gap_mm + 0.1,
+        },
+        expectedImpact: {
+          affectedObjectsCount: 1,
+          visualArtChanges: false,
+          technicalGeometryChanges: true,
+          summary: `Fechamento do contorno de corte conectando abertura de ${gap_mm.toFixed(2)} mm.`,
+        },
+        previewData: {
+          type: 'geometry_shift',
+        },
+        risks: ['Uma linha reta de corte será traçada entre as extremidades abertas.'],
+        reversible: true,
+        requiresConfirmation: true,
+        status: 'PENDING',
+        docVersionFingerprint: fingerprint,
+        createdAt: Date.now(),
+      });
+    }
   }
 
   return proposals;

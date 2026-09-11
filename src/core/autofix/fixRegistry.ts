@@ -139,9 +139,58 @@ export const misalignedCutContourFix: FixDefinition = {
 };
 
 /**
+ * Fix 3: Objetos Vetoriais Invisíveis (INVISIBLE_VECTOR_OBJECT -> remove_invisible_vector_objects)
+ */
+export const removeInvisibleVectorObjectsFix: FixDefinition = {
+  issueCode: 'INVISIBLE_VECTOR_OBJECT',
+  toolName: 'remove_invisible_vector_objects',
+  classification: 'AUTO_FIXABLE',
+  title: 'Remover Objetos Vetoriais Invisíveis',
+  description: 'Remove do documento elementos e traçados vetoriais tecnicamente invisíveis (sem cor, sem traço ou vazios).',
+  canApply(issue, doc) {
+    if (issue.affectedNodeId) {
+      return !!doc.nodes[issue.affectedNodeId];
+    }
+    return Object.values(doc.nodes || {}).some((n) => n.type === 'vector_path');
+  },
+  resolveParameters(issue) {
+    return {
+      targetNodeId: issue.affectedNodeId,
+      removeEmptyGroups: true,
+    };
+  },
+};
+
+/**
+ * Fix 4: Faca de Corte Aberta (CUT_CONTOUR_OPEN -> close_cut_contour)
+ */
+export const closeCutContourFix: FixDefinition = {
+  issueCode: 'CUT_CONTOUR_OPEN',
+  toolName: 'close_cut_contour',
+  classification: 'AUTO_FIXABLE',
+  title: 'Fechar Faca de Corte Aberta',
+  description: 'Fecha o contorno da faca de corte conectando as extremidades abertas.',
+  canApply(issue, doc) {
+    if (!issue.affectedNodeId) return false;
+    const node = doc.nodes[issue.affectedNodeId];
+    return !!node && node.type === 'cut_contour';
+  },
+  resolveParameters(issue) {
+    const maxGap = (issue.suggestedParams?.maxGap_mm as number) || 0.5;
+    return {
+      nodeId: issue.affectedNodeId,
+      maxGap_mm: maxGap,
+    };
+  },
+};
+
+/**
  * Instância padrão global do FixRegistry com todos os fixes homologados.
  */
 export const defaultFixRegistry = new FixRegistry([
   missingCutContourFix,
   misalignedCutContourFix,
+  removeInvisibleVectorObjectsFix,
+  closeCutContourFix,
 ]);
+
