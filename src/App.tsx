@@ -94,6 +94,7 @@ export const App: React.FC = () => {
             selectedNodeId={selectedNodeId}
             onApplyDoc={actions.applyAgentDocumentChange}
             addToast={actions.addToast}
+            onHighlightNode={actions.setSelectedNodeId}
           />
         }
         canvasViewport={

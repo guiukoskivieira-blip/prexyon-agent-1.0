@@ -11,12 +11,16 @@ import {
 } from 'lucide-react';
 import { PrexyonDocument } from '@/core/pdm/types';
 import { materializeAgentExports } from '@/core/agent/clientExportMaterializer';
+import { ProductionReviewModel } from '@/core/production/review/types';
+import { buildProductionReview } from '@/core/production/review/reviewBuilder';
+import { ProductionReviewPanel } from '@/components/review/ProductionReviewPanel';
 
 export interface ChatMessageItem {
   id: string;
   role: 'user' | 'agent' | 'error';
   text: string;
   timestamp: number;
+  review?: ProductionReviewModel;
 }
 
 export interface ChatPanelProps {
@@ -25,6 +29,9 @@ export interface ChatPanelProps {
   selectedNodeId?: string | null;
   addToast?: (type: 'success' | 'error' | 'info', text: string) => void;
   isProd?: boolean;
+  isCutContourVisible?: boolean;
+  onToggleCutContourVisibility?: () => void;
+  onHighlightNode?: (nodeId: string) => void;
 }
 
 /**
@@ -162,6 +169,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   selectedNodeId,
   addToast,
   isProd = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD),
+  isCutContourVisible = true,
+  onToggleCutContourVisibility,
+  onHighlightNode,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -263,7 +273,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           return;
         }
 
-        // 5. Resposta bem-sucedida do agente
+        // 5. Constrói a revisão técnica de produção com base na execução real das tools
+        let reviewModel: ProductionReviewModel | undefined;
+        if (Array.isArray(data.executedTools) && data.executedTools.length > 0) {
+          reviewModel = buildProductionReview({
+            executedTools: data.executedTools,
+            beforeDoc: doc || returnedDoc,
+            afterDoc: returnedDoc,
+          });
+        }
+
+        // 6. Resposta bem-sucedida do agente
         const agentMsgId = `agent_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         const agentReply = data.reply || 'Ação executada com sucesso.';
 
@@ -274,6 +294,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             role: 'agent',
             text: agentReply,
             timestamp: Date.now(),
+            review: reviewModel,
           },
         ]);
 
@@ -406,7 +427,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               {msg.role === 'user' ? (
                 <p className="whitespace-pre-wrap break-words">{msg.text}</p>
               ) : (
-                <FormattedChatMessage text={msg.text} />
+                <div className="space-y-2.5">
+                  <FormattedChatMessage text={msg.text} />
+                  {msg.review && (
+                    <div className="mt-2.5 pt-1">
+                      <ProductionReviewPanel
+                        review={msg.review}
+                        isCutContourVisible={isCutContourVisible}
+                        onToggleCutContourVisibility={onToggleCutContourVisibility}
+                        onHighlightNode={onHighlightNode}
+                      />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
