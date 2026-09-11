@@ -92,6 +92,8 @@ export function createProductionServer(options?: CreateServerOptions): http.Serv
         service: 'prexyon-agent',
         version: '0.1.0',
         node: process.version,
+        pid: process.pid,
+        uptime: process.uptime(),
         timestamp: new Date().toISOString(),
       }));
       return;
