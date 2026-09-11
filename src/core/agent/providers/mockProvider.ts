@@ -5,6 +5,7 @@
 import { AIProvider, AIProviderResponse, ChatMessage, AIProviderOptions } from '../types';
 import { ToolDeclaration } from '../../tools/types';
 import { defaultProposalManager } from '../../autofix';
+import { buildActionPlanFromUserRequest, parseDimensionsFromNaturalText } from '../planner';
 
 export interface ScriptedTurn {
   response: AIProviderResponse;
@@ -71,86 +72,13 @@ export function parseResizeCommand(text: string): { width_mm?: number; height_mm
     return null;
   }
 
-  // 1. Duas dimensões explícitas: "5cm x 3cm", "50mm x 30mm", "50 x 30 mm", "5 x 3 cm", "50mm por 30mm"
-  const twoDimMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(cm|mm)?\s*(?:x|×|por|\*)\s*(\d+(?:[.,]\d+)?)\s*(cm|mm)/i);
-  if (twoDimMatch) {
-    const val1 = parseFloat(twoDimMatch[1].replace(',', '.'));
-    const unit1 = twoDimMatch[2]?.toLowerCase() || (twoDimMatch[4] ? twoDimMatch[4].toLowerCase() : 'mm');
-    const w = unit1 === 'cm' ? val1 * 10 : val1;
-
-    const val2 = parseFloat(twoDimMatch[3].replace(',', '.'));
-    const unit2 = twoDimMatch[4]?.toLowerCase() || 'mm';
-    const h = unit2 === 'cm' ? val2 * 10 : val2;
-
-    if (w > 0 && h > 0) {
-      return { width_mm: w, height_mm: h, keepAspectRatio: false };
-    }
-  }
-
-  // 2. Dimensão única com unidade (cm ou mm) + intenção de redimensionamento ou adesivo proporcional
-  // Exemplos: "5cm x proporcional", "5cm", "50mm", "5 cm", "50 mm", "5.5cm", "5,5 cm"
-  const singleDimMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(cm|mm)\b/i);
-
-  const isResizeIntent =
-    text.includes('redimension') ||
-    text.includes('tamanho') ||
-    text.includes('largura') ||
-    text.includes('altura') ||
-    text.includes('dimens') ||
-    text.includes('escala') ||
-    text.includes('deixe') ||
-    text.includes('ajuste') ||
-    text.includes('mude') ||
-    text.includes('altere') ||
-    text.includes('coloque') ||
-    text.includes('proporcional') ||
-    text.includes('proporcao') ||
-    text.includes('proporção') ||
-    text.includes('mantendo') ||
-    text.includes('aspect') ||
-    text.includes('ratio') ||
-    (text.includes('adesivo') && singleDimMatch !== null) ||
-    (text.includes('dtf') && singleDimMatch !== null);
-
-  if (singleDimMatch && isResizeIntent) {
-    const val = parseFloat(singleDimMatch[1].replace(',', '.'));
-    const unit = singleDimMatch[2].toLowerCase();
-    const dim = unit === 'cm' ? val * 10 : val;
-
-    if (dim > 0) {
-      const isHeightOnly =
-        (text.includes('altura') || text.includes('height') || text.includes('alto')) &&
-        !text.includes('largura');
-
-      const isProportional =
-        text.includes('proporcional') ||
-        text.includes('proporcao') ||
-        text.includes('proporção') ||
-        text.includes('mantendo') ||
-        text.includes('aspect') ||
-        text.includes('ratio') ||
-        !text.includes('altura'); // Padrão de pré-impressão: 1 dimensão informada mantém proporção original
-
-      if (isHeightOnly) {
-        return { height_mm: dim, keepAspectRatio: isProportional };
-      } else {
-        return { width_mm: dim, keepAspectRatio: isProportional };
-      }
-    }
-  }
-
-  // 3. Fallback para "largura de 50" / "altura de 50" sem unidade explícita (assume mm)
-  if (text.includes('largura') || text.includes('altura') || text.includes('redimensione') || text.includes('tamanho')) {
-    const matchNum = text.match(/(\d+(?:[.,]\d+)?)/);
-    const dim = matchNum ? parseFloat(matchNum[1].replace(',', '.')) : 50;
-    const isHeightOnly =
-      (text.includes('altura') || text.includes('height') || text.includes('alto')) &&
-      !text.includes('largura');
-
-    if (isHeightOnly) {
-      return { height_mm: dim, keepAspectRatio: true };
-    }
-    return { width_mm: dim, keepAspectRatio: true };
+  const parsed = parseDimensionsFromNaturalText(text);
+  if (parsed && !parsed.isAmbiguous) {
+    return {
+      ...(parsed.width_mm !== undefined ? { width_mm: parsed.width_mm } : {}),
+      ...(parsed.height_mm !== undefined ? { height_mm: parsed.height_mm } : {}),
+      keepAspectRatio: parsed.keepAspectRatio ?? true,
+    };
   }
 
   return null;
@@ -165,6 +93,19 @@ export function createDeterministicTurnsForRequest(
   selectedNodeId?: string
 ): ScriptedTurn[] {
   const text = message.toLowerCase().trim();
+
+  // 0. Ambiguidade explícita resolvida pelo Planner
+  const plan = buildActionPlanFromUserRequest(message, doc, selectedNodeId);
+  if (plan.intent === 'ASK_USER') {
+    return [
+      {
+        response: {
+          text: plan.ambiguityQuestion || 'Você quer aplicar essa medida na largura ou na altura da imagem?',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
 
   // Encontra o nó alvo prioritário no documento (Nó selecionado, Vetor, Raster ou o primeiro disponível)
   const nodes = Object.values(doc.nodes || {});

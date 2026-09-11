@@ -75,8 +75,9 @@ export async function processAgentChatRequest(
     doc.profileId = 'dtf-uv';
   }
 
-  // Seleção de Provedor: customProvider > Gemini (se chave presente) > Mock Determinístico (Etapa 6.3)
-  const isGeminiAvailable = !customProvider && typeof process !== 'undefined' && Boolean(process.env?.GEMINI_API_KEY);
+  // Seleção de Provedor: customProvider > Gemini (se chave presente e fora de ambiente de teste) > Mock Determinístico (Etapa 6.3)
+  const isTestEnv = typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST));
+  const isGeminiAvailable = !customProvider && !isTestEnv && typeof process !== 'undefined' && Boolean(process.env?.GEMINI_API_KEY);
   const provider =
     customProvider ||
     (isGeminiAvailable
