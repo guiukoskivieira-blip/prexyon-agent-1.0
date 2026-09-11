@@ -454,6 +454,42 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
+  // 3.4b. Comando de Geração de Verniz / Clear (DTF UV Etapa 4)
+  if (
+    text.includes('verniz') ||
+    text.includes('camada clear') ||
+    text.includes('separação clear') ||
+    text.includes('separacao clear') ||
+    text.includes('varnish') ||
+    (text.includes('clear') && (text.includes('ger') || text.includes('cri') || text.includes('aplic')))
+  ) {
+    const isFull = text.includes('toda a área') || text.includes('toda a prancheta') || text.includes('total');
+    const mode = isFull ? 'FULL' : 'ARTWORK';
+
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_clear_${Date.now()}`,
+              name: 'generate_clear_separation',
+              args: {
+                mode,
+                dpi: 300,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: `Máscara de Verniz (Clear / Varnish) gerada com sucesso no modo ${mode} para produção DTF UV.`,
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 3.5. Comando DTF UV Pré-Análise (ex: "Prepare esta arte para DTF UV", "analise dtf uv", "transparência dtf")
   if (text.includes('dtf') || text.includes('dtf uv') || (text.includes('uv') && text.includes('prepar'))) {
     return [

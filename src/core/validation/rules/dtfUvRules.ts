@@ -13,6 +13,7 @@ import { PrexyonDocument, RasterNode } from '../../pdm/types';
 import { ValidationIssue, ValidationPolicy, DEFAULT_VALIDATION_POLICY } from '../types';
 import { analyzeRasterNodeAlpha } from '../../dtf/alphaAnalyzer';
 import { validateWhiteSeparationAlignment } from '../../dtf/whiteUnderbaseEngine';
+import { validateClearSeparationAlignment } from '../../dtf/clearSeparationEngine';
 
 export function validateDtfUvTransparency(
   doc: PrexyonDocument,
@@ -140,6 +141,51 @@ export function validateDtfUvTransparency(
         message: alignment.reason || 'As dimensões ou parâmetros da Base Branca divergem do documento atual.',
         fixable: true,
         suggestedAction: 'Recrie a separação de base branca para corresponder exatamente às dimensões da prancheta.',
+      });
+    }
+  }
+
+  // 5. VALIDAÇÃO DE SEPARAÇÃO TÉCNICA DE VERNIZ (CLEAR / VARNISH)
+  const clearPolicy = policy.customConfig?.dtfUv?.clearPolicy || 'OPTIONAL';
+  const clearSeparation = doc.separations?.['CLEAR'];
+
+  if (clearPolicy === 'REQUIRED' && !clearSeparation) {
+    issues.push({
+      id: 'DTF_UV:doc:clear_required_not_generated',
+      ruleId: 'CLEAR_REQUIRED_NOT_GENERATED',
+      severity: 'error',
+      category: 'document',
+      title: 'Verniz (Clear) Obrigatório Não Gerado',
+      message: 'O perfil de produção exige a preparação da camada de Verniz (Clear) antes da liberação.',
+      fixable: true,
+      suggestedAction: 'Gere a separação de verniz executando "generate_clear_separation" ou solicite ao assistente.',
+    });
+  }
+
+  if (clearSeparation) {
+    const alignment = validateClearSeparationAlignment(doc, clearSeparation);
+
+    if (alignment.status === 'STALE') {
+      issues.push({
+        id: `DTF_UV:${clearSeparation.id}:clear_stale`,
+        ruleId: 'CLEAR_SEPARATION_STALE',
+        severity: 'error',
+        category: 'document',
+        title: 'Verniz (Clear) Desatualizado (STALE)',
+        message: alignment.reason || 'A arte sofreu alterações após a criação da camada de Verniz (Clear).',
+        fixable: true,
+        suggestedAction: 'Regenere o verniz técnico para sincronizar com as posições e dimensões atuais da arte.',
+      });
+    } else if (alignment.status === 'INVALID') {
+      issues.push({
+        id: `DTF_UV:${clearSeparation.id}:clear_invalid`,
+        ruleId: 'CLEAR_SEPARATION_INVALID',
+        severity: 'error',
+        category: 'document',
+        title: 'Verniz (Clear) Inválido (INVALID)',
+        message: alignment.reason || 'As dimensões ou parâmetros do Verniz divergem do documento atual.',
+        fixable: true,
+        suggestedAction: 'Recrie a separação de verniz para corresponder exatamente às dimensões da prancheta.',
       });
     }
   }

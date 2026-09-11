@@ -35,6 +35,8 @@ export type ProductionSeparationRole = 'COLOR' | 'WHITE' | 'CLEAR' | 'PRIMER';
 
 export type SeparationStatus = 'GENERATED' | 'STALE' | 'INVALID';
 
+export type ClearSeparationMode = 'ARTWORK' | 'FULL' | 'CUSTOM';
+
 export interface ProductionSeparation {
   /** Identificador único da separação (ex: 'sep_white_123') */
   id: string;

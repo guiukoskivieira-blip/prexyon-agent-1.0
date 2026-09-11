@@ -147,6 +147,27 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
                 : 'OK'}
             </span>
           </div>
+
+          {/* Item 6: Verniz / Clear (DTF UV) */}
+          <div className="flex items-center justify-between p-2 rounded-lg bg-surface-base border border-surface-border">
+            <div className="flex items-center gap-2">
+              {issues.some((i) => i.ruleId.startsWith('CLEAR_SEPARATION_') || i.ruleId === 'CLEAR_REQUIRED_NOT_GENERATED') ? (
+                <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span className="text-slate-200">Verniz / Clear</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">
+              {issues.some((i) => i.ruleId === 'CLEAR_SEPARATION_STALE')
+                ? 'DESATUALIZADO'
+                : issues.some((i) => i.ruleId === 'CLEAR_SEPARATION_INVALID')
+                ? 'INVÁLIDO'
+                : issues.some((i) => i.ruleId === 'CLEAR_REQUIRED_NOT_GENERATED')
+                ? 'NÃO GERADO'
+                : 'OK'}
+            </span>
+          </div>
         </div>
       </div>
 
