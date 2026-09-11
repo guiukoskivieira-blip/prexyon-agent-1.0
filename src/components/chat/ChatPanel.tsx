@@ -9,6 +9,7 @@ import {
   User,
 } from 'lucide-react';
 import { PrexyonDocument } from '@/core/pdm/types';
+import { sanitizeDocumentForAgentTransport, mergeAgentResultDocument } from '@/core/pdm/document';
 import { materializeAgentExports } from '@/core/agent/clientExportMaterializer';
 import { ProductionReviewModel } from '@/core/production/review/types';
 import { buildProductionReview } from '@/core/production/review/reviewBuilder';
@@ -214,7 +215,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setIsProcessing(true);
 
     try {
-      // 2. Envia para o endpoint backend POST /api/agent/chat
+      // 2. Envia para o endpoint backend POST /api/agent/chat com documento sanitizado (sem base64)
+      const transportDoc = sanitizeDocumentForAgentTransport(doc);
       const response = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: {
@@ -222,7 +224,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         },
         body: JSON.stringify({
           message: cleanText,
-          doc,
+          doc: transportDoc,
           options: {
             selectedNodeId: selectedNodeId || undefined,
           },
@@ -232,10 +234,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // 3. Aplica primeiro o PDM retornado na store (com histórico Undo/Redo)
-        const returnedDoc = (data.doc || doc) as PrexyonDocument;
-        if (data.doc && onApplyDoc) {
-          onApplyDoc(data.doc, cleanText);
+        // 3. Aplica o PDM retornado com merge seguro que preserva os buffers locais (com histórico Undo/Redo)
+        const returnedDoc = mergeAgentResultDocument(doc, data.doc);
+        if (onApplyDoc) {
+          onApplyDoc(returnedDoc, cleanText);
         }
 
         // 4. Exportações validadas no servidor são materializadas pelo motor real do navegador.

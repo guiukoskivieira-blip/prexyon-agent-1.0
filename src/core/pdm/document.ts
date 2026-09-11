@@ -1216,3 +1216,87 @@ export function centerCutContourOnSource(
 export function cloneDocument(doc: PrexyonDocument): PrexyonDocument {
   return JSON.parse(JSON.stringify(doc));
 }
+
+/**
+ * Cria uma cópia leve do documento PDM para transporte de rede (ex.: POST /api/agent/chat),
+ * removendo strings base64 pesadas e preservando todos os metadados técnicos necessários.
+ *
+ * @param doc Documento PDM original (não é mutado)
+ */
+export function sanitizeDocumentForAgentTransport(doc: PrexyonDocument): PrexyonDocument {
+  if (!doc || typeof doc !== 'object') return doc;
+
+  const nodes = doc.nodes ? { ...doc.nodes } : {};
+
+  for (const [id, rawNode] of Object.entries(nodes)) {
+    if (!rawNode || typeof rawNode !== 'object') continue;
+    const nodeType = (rawNode as { type?: string }).type;
+
+    if (nodeType === 'raster_image' || nodeType === 'raster') {
+      const raster = rawNode as RasterNode;
+      const hadSource = Boolean(raster.src && raster.src.length > 0) || (raster as any).hasRasterSource === true;
+
+      nodes[id] = {
+        ...raster,
+        type: 'raster_image',
+        src: '', // Remove string base64 / Data URL pesada
+        hasRasterSource: hadSource,
+      } as DocumentNode;
+    }
+  }
+
+  return {
+    ...doc,
+    nodes,
+  };
+}
+
+/**
+ * Realiza o merge seguro entre o documento original do cliente (que detém o `src` local em memória)
+ * e o documento retornado pelo servidor/agente (que contém mutações lógicas, novos nós, separações e perfis),
+ * garantindo que nenhum nó raster perca seu conteúdo gráfico local.
+ *
+ * @param originalDoc Documento local com dados binários íntegros
+ * @param serverDoc Documento retornado pelo backend (ou undefined)
+ */
+export function mergeAgentResultDocument(
+  originalDoc: PrexyonDocument,
+  serverDoc?: PrexyonDocument | null
+): PrexyonDocument {
+  if (!serverDoc || typeof serverDoc !== 'object') return originalDoc;
+  if (!originalDoc || typeof originalDoc !== 'object') return serverDoc;
+
+  const mergedNodes: Record<string, DocumentNode> = { ...serverDoc.nodes };
+
+  for (const [id, originalNode] of Object.entries(originalDoc.nodes || {})) {
+    if (!originalNode) continue;
+    const isRaster = originalNode.type === 'raster_image' || (originalNode as any).type === 'raster';
+
+    if (isRaster) {
+      const serverNode = mergedNodes[id];
+      if (serverNode && (serverNode.type === 'raster_image' || (serverNode as any).type === 'raster')) {
+        const serverRaster = serverNode as RasterNode;
+        // Se o servidor retornou o nó com src vazio ou ausente, preserva o src local original
+        if (!serverRaster.src || serverRaster.src === '') {
+          const origRaster = originalNode as RasterNode;
+          const restored: RasterNode = {
+            ...serverRaster,
+            src: origRaster.src,
+          };
+          if (origRaster.hasRasterSource !== undefined) {
+            restored.hasRasterSource = origRaster.hasRasterSource;
+          } else {
+            delete restored.hasRasterSource;
+          }
+          mergedNodes[id] = restored as DocumentNode;
+        }
+      }
+    }
+  }
+
+  return {
+    ...serverDoc,
+    nodes: mergedNodes,
+  };
+}
+

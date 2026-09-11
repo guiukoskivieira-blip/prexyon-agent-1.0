@@ -7,6 +7,7 @@ import {
   createDocument,
   createRasterNode,
   addVectorGroup,
+  mergeAgentResultDocument,
 } from '../src/core/pdm/document';
 import { buildVectorGroupFromSvg } from '../src/core/vectorizer/svgParser';
 import { HistoryManager } from '../src/core/history/historyManager';
@@ -128,7 +129,8 @@ describe('Prexyon Agent — Chat Integration V1 (Etapa 6.3)', () => {
       expect(result.success).toBe(true);
       expect(result.executedTools.length).toBe(0);
       expect(result.reply).toContain('assistente');
-      expect(result.doc).toEqual(initialDoc);
+      const mergedDoc = mergeAgentResultDocument(initialDoc, result.doc);
+      expect(mergedDoc).toEqual(initialDoc);
     });
   });
 

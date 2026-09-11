@@ -51,6 +51,8 @@ export interface RasterNode extends BaseNode {
   type: 'raster_image';
   /** Conteúdo da imagem codificado de forma segura (Data URL / base64) */
   src: string;
+  /** Indicador leve de presença de arquivo fonte original no cliente */
+  hasRasterSource?: boolean;
   /** Resolução natural em pixels (largura) */
   naturalWidth: number;
   /** Resolução natural em pixels (altura) */

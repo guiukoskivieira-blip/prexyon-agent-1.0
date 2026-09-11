@@ -6,7 +6,7 @@
  */
 
 import { PrexyonDocument } from '../../pdm/types';
-import { normalizeDocument } from '../../pdm/document';
+import { normalizeDocument, sanitizeDocumentForAgentTransport } from '../../pdm/document';
 import { AIProvider, AgentChatRequestBody, AgentRunResult } from '../types';
 import { GeminiProvider } from '../providers/geminiProvider';
 import { MockAIProvider, createDeterministicTurnsForRequest } from '../providers/mockProvider';
@@ -134,6 +134,6 @@ export async function processAgentChatRequest(
   return {
     ...result,
     reply: reconciled.reply,
-    doc: finalDoc,
+    doc: sanitizeDocumentForAgentTransport(finalDoc),
   };
 }
