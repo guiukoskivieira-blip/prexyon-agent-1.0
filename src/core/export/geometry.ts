@@ -38,12 +38,8 @@ export function getArtworkBounds(
   let maxY = -Infinity;
   let hasGraphicNodes = false;
 
-  const nodeIds = doc.rootNodeIds && doc.rootNodeIds.length > 0
-    ? doc.rootNodeIds
-    : Object.keys(doc.nodes || {});
-
-  for (const id of nodeIds) {
-    const node = doc.nodes[id];
+  const allNodes = Object.values(doc.nodes || {});
+  for (const node of allNodes) {
     if (!node || !node.visible) continue;
     if (node.type === 'cut_contour' || node.type === 'technical_guide') continue;
 
@@ -97,7 +93,7 @@ export function calculateExportDimensions(
   const artworkBounds = getArtworkBounds(doc, options?.selectedNodeId);
   const effectiveArea: ExportArea = options?.exportArea
     ? options.exportArea
-    : (doc.profileId === 'dtf-uv' && artworkBounds)
+    : doc.profileId === 'dtf-uv'
     ? 'ARTWORK_BOUNDS'
     : 'ARTBOARD_BOUNDS';
 

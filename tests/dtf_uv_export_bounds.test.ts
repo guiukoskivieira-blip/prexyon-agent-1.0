@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createDocument, createRasterNode } from '@/core/pdm/document';
-import { calculateExportDimensions, getArtworkBounds } from '@/core/export/geometry';
+import { calculateExportDimensions, getArtworkBounds, generateExportFileName } from '@/core/export/geometry';
 import { exportDocumentToSvg } from '@/core/export/svgExporter';
 import { exportDocumentToPng } from '@/core/export/pngExporter';
 import { generateWhiteUnderbaseMask } from '@/core/dtf/whiteUnderbaseEngine';
 import { generateClearSeparationMask } from '@/core/dtf/clearSeparationEngine';
 import { buildDtfUvProductionPackage } from '@/core/dtf/dtfUvPackageEngine';
+import { exportDocument } from '@/core/export/exportEngine';
 
 describe('Prexyon Agent — P1 Export Bounds DTF UV (Artwork Bounds vs Artboard Bounds)', () => {
   const mockPngBase64 =
@@ -14,7 +15,7 @@ describe('Prexyon Agent — P1 Export Bounds DTF UV (Artwork Bounds vs Artboard 
   function createTestDoc() {
     const doc = createDocument({ width_mm: 100, height_mm: 100 });
     doc.profileId = 'dtf-uv';
-    doc.name = 'Logo_DTF_UV';
+    doc.name = 'logo-dtf-uv';
 
     const raster = createRasterNode({
       id: 'r_logo',
@@ -183,7 +184,7 @@ describe('Prexyon Agent — P1 Export Bounds DTF UV (Artwork Bounds vs Artboard 
     expect(clearArt?.height_mm).toBe(100);
   });
 
-  it('8. Generic Sticker sem profile dtf-uv assume ARTBOARD_BOUNDS por padrão', () => {
+  it('8. Generic Sticker com exportArea ARTWORK_BOUNDS calcula 50x50mm', () => {
     const doc = createDocument({ width_mm: 100, height_mm: 100 });
     doc.profileId = 'generic-sticker';
     const raster = createRasterNode({
@@ -195,9 +196,64 @@ describe('Prexyon Agent — P1 Export Bounds DTF UV (Artwork Bounds vs Artboard 
     });
     doc.nodes[raster.id] = raster;
 
-    const summary = calculateExportDimensions(doc, false, 300);
-    expect(summary.exportArea).toBe('ARTBOARD_BOUNDS');
-    expect(summary.width_mm).toBe(100);
-    expect(summary.height_mm).toBe(100);
+    const summary = calculateExportDimensions(doc, false, 300, { exportArea: 'ARTWORK_BOUNDS' });
+    expect(summary.exportArea).toBe('ARTWORK_BOUNDS');
+    expect(summary.width_mm).toBe(50);
+    expect(summary.height_mm).toBe(50);
+  });
+
+  it('9. Fluxo completo do botão Exportar com ARTWORK_BOUNDS gera PNG 50x50mm (591x591 px) e nome correto', async () => {
+    const doc = createTestDoc();
+    const exportOptions = {
+      format: 'png' as const,
+      includeBleed: false,
+      includeTechnicalGuides: false,
+      includeCutContour: false,
+      includeRasterInSvg: true,
+      background: 'transparent' as const,
+      rasterDpi: 300,
+      cutContourTarget: 'all' as const,
+      selectedNodeId: null,
+      exportArea: 'ARTWORK_BOUNDS' as const,
+    };
+
+    const fileName = generateExportFileName(doc, exportOptions);
+    expect(fileName).toBe('logo-dtf-uv-50x50mm-300dpi.png');
+
+    const result = await exportDocument(doc, exportOptions);
+    expect(result.fileName).toBe('logo-dtf-uv-50x50mm-300dpi.png');
+    expect(result.width_mm).toBe(50);
+    expect(result.height_mm).toBe(50);
+    expect(result.width_px).toBe(591);
+    expect(result.height_px).toBe(591);
+    expect(result.blob).toBeDefined();
+  });
+
+  it('10. Fluxo completo do botão Exportar com ARTBOARD_BOUNDS gera PNG 100x100mm (1181x1181 px) e nome correto', async () => {
+    const doc = createTestDoc();
+    const exportOptions = {
+      format: 'png' as const,
+      includeBleed: false,
+      includeTechnicalGuides: false,
+      includeCutContour: false,
+      includeRasterInSvg: true,
+      background: 'transparent' as const,
+      rasterDpi: 300,
+      cutContourTarget: 'all' as const,
+      selectedNodeId: null,
+      exportArea: 'ARTBOARD_BOUNDS' as const,
+    };
+
+    const fileName = generateExportFileName(doc, exportOptions);
+    expect(fileName).toBe('logo-dtf-uv-100x100mm-300dpi.png');
+
+    const result = await exportDocument(doc, exportOptions);
+    expect(result.fileName).toBe('logo-dtf-uv-100x100mm-300dpi.png');
+    expect(result.width_mm).toBe(100);
+    expect(result.height_mm).toBe(100);
+    expect(result.width_px).toBe(1181);
+    expect(result.height_px).toBe(1181);
+    expect(result.blob).toBeDefined();
   });
 });
+

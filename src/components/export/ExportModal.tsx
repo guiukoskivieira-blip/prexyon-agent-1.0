@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
   Download, 
@@ -63,9 +63,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [includeRasterInSvg, setIncludeRasterInSvg] = useState<boolean>(true);
   const [cutContourTarget, setCutContourTarget] = useState<ExportCutTarget>('all');
   const [exportArea, setExportArea] = useState<ExportArea>(
-    doc.profileId === 'dtf-uv' || Boolean(artworkBounds) ? 'ARTWORK_BOUNDS' : 'ARTBOARD_BOUNDS'
+    artworkBounds ? 'ARTWORK_BOUNDS' : 'ARTBOARD_BOUNDS'
   );
   const [isExporting, setIsExporting] = useState<boolean>(false);
+
+  // Sincroniza a área padrão sempre que o modal abre ou a arte muda
+  useEffect(() => {
+    if (isOpen) {
+      if (artworkBounds) {
+        setExportArea('ARTWORK_BOUNDS');
+      } else {
+        setExportArea('ARTBOARD_BOUNDS');
+      }
+    }
+  }, [isOpen, Boolean(artworkBounds)]);
 
   // Verifica se o nó selecionado é uma CutContourNode
   const isSelectedCutContour = Boolean(

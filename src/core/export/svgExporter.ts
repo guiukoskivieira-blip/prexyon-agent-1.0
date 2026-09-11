@@ -29,12 +29,16 @@ export function exportDocumentToSvg(
     svgContent += `  <rect width="${width_mm}" height="${height_mm}" fill="#FFFFFF" />\n`;
   }
 
-  // Elementos do PDM em ordem Z (rootNodeIds)
-  for (const nodeId of doc.rootNodeIds) {
+  // Elementos do PDM em ordem Z (rootNodeIds ou catálogo completo)
+  const nodeIds = doc.rootNodeIds && doc.rootNodeIds.length > 0
+    ? doc.rootNodeIds
+    : Object.keys(doc.nodes || {});
+
+  for (const nodeId of nodeIds) {
     const node = doc.nodes[nodeId];
     if (!node || !node.visible) continue;
 
-    if (node.type === 'raster_image') {
+    if (node.type === 'raster_image' || (node as any).type === 'raster') {
       if (options.includeRasterInSvg !== false) {
         const raster = node as RasterNode;
         const posX = roundPrecision(raster.position_mm.x + offsetX_mm, 2);
