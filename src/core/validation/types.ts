@@ -83,11 +83,7 @@ export interface ValidationPolicy {
 
   /** Configurações customizadas opcionais do perfil */
   customConfig?: {
-    vectorPreflight?: {
-      maxCollinearToleranceMm?: number;
-      maxComplexityThresholdPoints?: number;
-      minStrokeWidth_mm?: number;
-    };
+    vectorPreflight?: import('../production/profile/types').VectorPreflightProfileConfig;
     [key: string]: any;
   };
 }

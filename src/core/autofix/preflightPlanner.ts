@@ -589,6 +589,14 @@ function getFriendlyStepTitle(
       return 'Centralizar e alinhar faca de corte';
     case 'CUT_CONTOUR_OPEN':
       return 'Fechar contorno aberto da faca de corte';
+    case 'CUT_CONTOUR_SELF_INTERSECTION':
+      return 'Correção manual: faca com auto-interseção';
+    case 'INVALID_CUT_CONTOUR':
+      return 'Correção manual: faca com geometria inválida';
+    case 'OVERLAPPING_CUT_SEGMENT':
+      return 'Correção manual: segmentos de corte sobrepostos';
+    case 'SELF_INTERSECTING_PATH':
+      return 'Aviso: vetor com auto-interseção';
     case 'INVISIBLE_VECTOR_OBJECT':
       return 'Remover objeto vetorial invisível';
     case 'DUPLICATE_VECTOR_POINT':
@@ -633,6 +641,14 @@ function getFriendlyStepDescription(
       return 'Realinha a geometria do contorno de corte com o centro do vetor de origem.';
     case 'CUT_CONTOUR_OPEN':
       return 'Conecta as extremidades abertas da faca para formar um contorno de corte fechado.';
+    case 'CUT_CONTOUR_SELF_INTERSECTION':
+      return 'A faca de corte possui linhas que se cruzam, bloqueando a liberação do pacote de produção.';
+    case 'INVALID_CUT_CONTOUR':
+      return 'A faca possui menos de 3 vértices ou área praticamente nula.';
+    case 'OVERLAPPING_CUT_SEGMENT':
+      return 'Segmentos de corte sobrepostos causariam duplo corte na lâmina.';
+    case 'SELF_INTERSECTING_PATH':
+      return 'Vetor artístico possui auto-cruzamento de caminhos.';
     case 'INVISIBLE_VECTOR_OBJECT':
       return 'Remove do documento elementos sem preenchimento, sem traço ou vazios.';
     case 'DUPLICATE_VECTOR_POINT':

@@ -84,6 +84,14 @@ export interface VectorPreflightProfileConfig {
   maxCollinearToleranceMm?: number;
   /** Limite de pontos para alerta de complexidade excessiva */
   maxComplexityThresholdPoints?: number;
+  /** Tolerância para detecção de auto-interseção de contornos em mm */
+  intersectionToleranceMm?: number;
+  /** Tolerância para detecção de segmentos sobrepostos em mm */
+  overlapToleranceMm?: number;
+  /** Área mínima para contornos fechados válidos em mm² */
+  minimumClosedPathAreaMm2?: number;
+  /** Tolerância máxima de erro para aproximação de curvas para análise de integridade em mm */
+  curveFlatteningToleranceMm?: number;
 }
 
 export interface ProductionProfile {

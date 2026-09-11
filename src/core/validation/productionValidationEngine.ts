@@ -47,7 +47,7 @@ export function validateProductionDocument(
     ...validateBleed(doc),
     ...validateSafetyMargin(doc),
     ...validateRasterResolution(doc, policy),
-    ...validateCutContours(doc),
+    ...validateCutContours(doc, policy),
     ...validateTechnicalGuides(doc),
   ];
 

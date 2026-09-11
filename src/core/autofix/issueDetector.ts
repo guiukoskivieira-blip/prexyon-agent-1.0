@@ -13,6 +13,7 @@ import { isVectorPathInvisible } from '../tools/definitions/removeInvisibleVecto
 import { calculateEffectiveStrokeWidth } from '../tools/definitions/setMinimumStrokeWidthTool';
 import { checkContourOpenGap } from '../tools/definitions/closeCutContourTool';
 import { analyzeSvgPath } from '../geometry/vectorPathCleaner';
+import { validateCutContourIntegrity, validateVectorPathIntegrity } from '../geometry/vectorPathIntegrity';
 import { PrepressIssue, FixClassification, PrepressIssueCode } from './types';
 
 /**
@@ -167,6 +168,67 @@ export function detectPrepressIssues(
             : 'Revisar a geometria do contorno ou confirmar o fechamento da faca com linha reta.',
         });
       }
+    }
+
+    // Checagem de Integridade da Faca de Corte (Etapa 6.14)
+    const cutIntegrity = validateCutContourIntegrity(cut.contours, policy.customConfig?.vectorPreflight);
+    if (cutIntegrity.isSelfIntersecting) {
+      issues.push({
+        id: `ISSUE:CUT_CONTOUR_SELF_INTERSECTION:${cut.id}`,
+        code: 'CUT_CONTOUR_SELF_INTERSECTION',
+        category: 'cut',
+        severity: 'error',
+        message: `A faca de corte "${cut.name}" possui ${cutIntegrity.intersectionsCount} ponto(s) de auto-interseção (linhas cruzadas).`,
+        affectedNodeId: cut.id,
+        affectedNodeName: cut.name,
+        evidence: {
+          intersectionsCount: cutIntegrity.intersectionsCount,
+          intersections: cutIntegrity.intersections,
+          failureReasons: cutIntegrity.failureReasons,
+        },
+        fixClassification: 'MANUAL',
+        impact: 'A plotter de recorte cortará o material de forma cruzada, danificando o acabamento físico.',
+        recommendation: 'Corrigir manualmente o contorno do vetor de origem para remover auto-interseções antes de gerar o pacote de produção.',
+      });
+    }
+
+    if (cutIntegrity.hasOverlappingSegments) {
+      issues.push({
+        id: `ISSUE:OVERLAPPING_CUT_SEGMENT:${cut.id}`,
+        code: 'OVERLAPPING_CUT_SEGMENT',
+        category: 'cut',
+        severity: 'error',
+        message: `A faca de corte "${cut.name}" contém ${cutIntegrity.overlappingSegments.length} segmento(s) de corte sobreposto(s).`,
+        affectedNodeId: cut.id,
+        affectedNodeName: cut.name,
+        evidence: {
+          overlappingSegmentsCount: cutIntegrity.overlappingSegments.length,
+          overlappingSegments: cutIntegrity.overlappingSegments,
+        },
+        fixClassification: 'MANUAL',
+        impact: 'A lâmina passará duas vezes exatamente sobre o mesmo traçado, arriscando rasgar o liner de silicone.',
+        recommendation: 'Remover segmentos sobrepostos do vetor antes de gerar a faca.',
+      });
+    }
+
+    if (cutIntegrity.isDegenerate) {
+      issues.push({
+        id: `ISSUE:INVALID_CUT_CONTOUR:${cut.id}`,
+        code: 'INVALID_CUT_CONTOUR',
+        category: 'cut',
+        severity: 'error',
+        message: `A faca de corte "${cut.name}" possui geometria degenerada ou área nula (${cutIntegrity.failureReasons.join(' ')}).`,
+        affectedNodeId: cut.id,
+        affectedNodeName: cut.name,
+        evidence: {
+          area_mm2: cutIntegrity.area_mm2,
+          totalVertices: cutIntegrity.totalVertices,
+          failureReasons: cutIntegrity.failureReasons,
+        },
+        fixClassification: 'MANUAL',
+        impact: 'Geometria inadequada para recorte físico.',
+        recommendation: 'Recriar a faca de corte a partir de um vetor fechado válido.',
+      });
     }
   }
 
@@ -359,6 +421,27 @@ export function detectPrepressIssues(
           recommendation: 'Simplificar a curva com tolerância de 0.05 mm após confirmação do operador.',
         });
       }
+
+      // E. Integridade e Auto-interseção de Vetores Comuns (Etapa 6.14)
+      const pathIntegrity = validateVectorPathIntegrity(d, policy.customConfig?.vectorPreflight);
+      if (pathIntegrity.isSelfIntersecting) {
+        issues.push({
+          id: `ISSUE:SELF_INTERSECTING_PATH:${path.id}`,
+          code: 'SELF_INTERSECTING_PATH',
+          category: 'geometry',
+          severity: 'warning',
+          message: `O vetor "${path.name}" possui auto-interseções em sua geometria (${pathIntegrity.intersectionsCount} cruzamento(s)).`,
+          affectedNodeId: path.id,
+          affectedNodeName: path.name,
+          evidence: {
+            intersectionsCount: pathIntegrity.intersectionsCount,
+            intersections: pathIntegrity.intersections,
+          },
+          fixClassification: 'MANUAL',
+          impact: 'Pode gerar artefatos em facas de corte derivadas ou renderizadores RIP sensíveis à regra de preenchimento.',
+          recommendation: 'Revisar manualmente os nós do traçado caso interfira na produção.',
+        });
+      }
     }
   }
 
@@ -493,6 +576,40 @@ export function detectPrepressIssues(
           fixClassification: 'MANUAL',
           impact: 'Documento não possui medidas geométricas físicas calculáveis para impressão.',
           recommendation: 'Definir dimensões físicas válidas (largura e altura maiores que zero).',
+        });
+        break;
+      }
+
+      case 'V014_CUT_CONTOUR_SELF_INTERSECTION': {
+        issues.push({
+          id: `ISSUE:CUT_CONTOUR_SELF_INTERSECTION:${vIssue.nodeId ?? 'cut'}`,
+          code: 'CUT_CONTOUR_SELF_INTERSECTION',
+          category: 'cut',
+          severity: 'error',
+          message: vIssue.message,
+          affectedNodeId: vIssue.nodeId,
+          affectedNodeName: nodeName,
+          evidence: vIssue.data,
+          fixClassification: 'MANUAL',
+          impact: 'A faca de corte se cruza sobre si mesma e cortará o adesivo de forma defeituosa.',
+          recommendation: 'Corrigir manualmente o contorno para remover auto-interseções antes de liberar para produção.',
+        });
+        break;
+      }
+
+      case 'V015_CUT_CONTOUR_OVERLAPPING_SEGMENT': {
+        issues.push({
+          id: `ISSUE:OVERLAPPING_CUT_SEGMENT:${vIssue.nodeId ?? 'cut'}`,
+          code: 'OVERLAPPING_CUT_SEGMENT',
+          category: 'cut',
+          severity: 'error',
+          message: vIssue.message,
+          affectedNodeId: vIssue.nodeId,
+          affectedNodeName: nodeName,
+          evidence: vIssue.data,
+          fixClassification: 'MANUAL',
+          impact: 'A faca contém segmentos duplicados ou sobrepostos que passarão duas vezes sobre a mesma linha.',
+          recommendation: 'Remover segmentos de corte sobrepostos.',
         });
         break;
       }

@@ -53,6 +53,10 @@ export const GENERIC_STICKER_PROFILE: ProductionProfile = {
     maxAutoCloseGapMm: 0.5,
     maxCollinearToleranceMm: 0.005,
     maxComplexityThresholdPoints: 500,
+    intersectionToleranceMm: 0.001,
+    overlapToleranceMm: 0.005,
+    minimumClosedPathAreaMm2: 0.01,
+    curveFlatteningToleranceMm: 0.05,
   },
   metadata: {
     vendor: 'generic',
