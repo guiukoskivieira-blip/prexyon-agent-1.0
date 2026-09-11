@@ -22,6 +22,7 @@ export interface ProductionWorkspaceProps {
 }
 
 export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
+  doc,
   validationReport,
   proposedFixes = [],
   packageResult,
@@ -48,6 +49,21 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
     currentStatus = 'WAITING_CONFIRMATION';
   } else if (warningsCount > 0) {
     currentStatus = 'ATTENTION';
+  } else if (doc?.profileId === 'dtf-uv') {
+    // DTF UV: se o pacote de produção ainda não foi consolidado, está em preparação técnica (ATTENTION)
+    if (packageResult?.status === 'READY') {
+      currentStatus = 'READY_FOR_PRODUCTION';
+    } else {
+      currentStatus = 'ATTENTION';
+    }
+  } else {
+    // Adesivo convencional: se não há faca de corte e há nós no documento, produção bloqueada
+    const hasCutContour = Object.values(doc?.nodes || {}).some((n) => n.type === 'cut_contour');
+    if (!hasCutContour && Object.keys(doc?.nodes || {}).length > 0) {
+      currentStatus = 'BLOCKED';
+    } else {
+      currentStatus = 'READY_FOR_PRODUCTION';
+    }
   }
 
   const issuesTotalCount = issues.length + pendingProposalsCount;

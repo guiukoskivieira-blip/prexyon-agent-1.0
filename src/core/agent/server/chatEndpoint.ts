@@ -69,16 +69,23 @@ export async function processAgentChatRequest(
 
   const doc = req.doc as PrexyonDocument;
 
+  // Reconhece contexto DTF UV explícito na mensagem e atualiza o profile do documento
+  const lowerMsg = req.message.toLowerCase();
+  if ((lowerMsg.includes('dtf') || lowerMsg.includes('dtf uv') || lowerMsg.includes('dtf-uv')) && doc.profileId !== 'dtf-uv') {
+    doc.profileId = 'dtf-uv';
+  }
+
   // Seleção de Provedor: customProvider > Gemini (se chave presente) > Mock Determinístico (Etapa 6.3)
+  const isGeminiAvailable = !customProvider && typeof process !== 'undefined' && Boolean(process.env?.GEMINI_API_KEY);
   const provider =
     customProvider ||
-    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY
+    (isGeminiAvailable
       ? new GeminiProvider(req.options?.model)
       : new MockAIProvider(createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId)));
 
   const runtime = new AgentRuntime(provider, defaultToolRegistry);
 
-  return runtime.run(req.message, doc, {
+  let result = await runtime.run(req.message, doc, {
     maxIterations: req.options?.maxIterations,
     model: req.options?.model,
     temperature: req.options?.temperature,
@@ -88,4 +95,25 @@ export async function processAgentChatRequest(
       vtracerBridge: vtracerNodeBridge,
     },
   });
+
+  // Fallback determinístico resiliente: se o provedor remoto falhar, executar via MockAIProvider determinístico
+  if (!result.success && isGeminiAvailable) {
+    const fallbackTurns = createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId);
+    if (fallbackTurns.length > 0) {
+      const fallbackProvider = new MockAIProvider(fallbackTurns);
+      const fallbackRuntime = new AgentRuntime(fallbackProvider, defaultToolRegistry);
+      const fallbackResult = await fallbackRuntime.run(req.message, doc, {
+        selectedNodeId: req.options?.selectedNodeId,
+        toolExecutionContext: {
+          vtracerBridge: vtracerNodeBridge,
+        },
+      });
+
+      if (fallbackResult.success) {
+        result = fallbackResult;
+      }
+    }
+  }
+
+  return result;
 }

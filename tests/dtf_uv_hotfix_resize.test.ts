@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { parseResizeCommand, createDeterministicTurnsForRequest } from '../src/core/agent/providers/mockProvider';
 import { createDocument, createRasterNode } from '../src/core/pdm/document';
 import { VectorGroupNode } from '../src/core/pdm/types';
@@ -288,5 +288,59 @@ describe('DTF UV Hotfix — Comando de Redimensionamento Proporcional', () => {
     });
     const hasCutIssue = issues.some((i) => i.code === 'MISSING_CUT_CONTOUR');
     expect(hasCutIssue).toBe(false);
+  });
+
+  // Teste 13: Fluxo de Integração Real ChatPanel -> Backend -> Runtime -> PDM -> UI
+  it('13. Fluxo de Integração Real: comando do ChatPanel atualiza PDM para 50x34.17mm e ativa profile dtf-uv', async () => {
+    // 1. Criar documento
+    const doc = createDocument({ width_mm: 100, height_mm: 100 });
+    // 2. Inserir RasterNode 60 x 41 mm
+    const raster = createRasterNode({
+      name: 'Logo Arte DTF UV',
+      src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      naturalWidth: 600,
+      naturalHeight: 410,
+      physicalWidth_mm: 60,
+      physicalHeight_mm: 41,
+      position_mm: { x: 20, y: 29.5 },
+      mimeType: 'image/png',
+      fileSize_bytes: 1024,
+      fileName: 'arte_dtf.png',
+    });
+    doc.nodes[raster.id] = raster;
+    doc.rootNodeIds.push(raster.id);
+
+    // 3. Selecionar RasterNode e 4. Enviar pelo fluxo do chat
+    const res = await processAgentChatRequest({
+      message: 'crie um adesivo dtf uv com 5cm x proporcional',
+      doc,
+      options: {
+        selectedNodeId: raster.id,
+      },
+    });
+
+    // 5. Verificar resposta e ausência de erro genérico
+    expect(res.success).toBe(true);
+    expect(res.status).toBe('completed');
+    expect(res.error).toBeUndefined();
+
+    // 6. Verificar execução real de resize_node
+    expect(res.executedTools.length).toBeGreaterThan(0);
+    const resizeTool = res.executedTools.find((t) => t.toolName === 'resize_node');
+    expect(resizeTool).toBeDefined();
+    expect(resizeTool?.result.success).toBe(true);
+    expect(resizeTool?.args.width_mm).toBe(50);
+    expect(resizeTool?.args.keepAspectRatio).toBe(true);
+
+    // 7. Verificar PDM atualizado para 50 x 34.17 mm
+    expect(res.doc?.nodes[raster.id].physicalWidth_mm).toBe(50);
+    expect(res.doc?.nodes[raster.id].physicalHeight_mm).toBe(34.17);
+
+    // 8. Verificar reconhecimento do profile dtf-uv
+    expect(res.doc?.profileId).toBe('dtf-uv');
+
+    // 9. Verificar ausência de separações fictícias
+    expect(res.doc?.separations?.WHITE).toBeUndefined();
+    expect(res.doc?.separations?.CLEAR).toBeUndefined();
   });
 });
