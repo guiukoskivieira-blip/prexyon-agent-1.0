@@ -26,6 +26,9 @@ const defaultDependencies: AgentExportMaterializerDependencies = {
  * Materializa no navegador as exportações que o AgentRuntime validou no servidor.
  * A resposta textual de sucesso só deve ser exibida depois que esta função concluir.
  */
+import { buildProductionPackage } from '../production/package/packageBuilder';
+import { PackageBuildOptions } from '../production/package/types';
+
 export async function materializeAgentExports(
   executedTools: ExecutedToolRecord[],
   doc: PrexyonDocument,
@@ -35,7 +38,13 @@ export async function materializeAgentExports(
     (record) => record.toolName === 'export_production' && record.result.success
   );
 
+  const packageCalls = executedTools.filter(
+    (record) => record.toolName === 'create_production_package' && record.result.success
+  );
+
   const artifacts: MaterializedAgentExport[] = [];
+
+  // 1. Exportações individuais via export_production
   for (const record of exportCalls) {
     const args = record.args as unknown as ExportProductionArgs;
     const validationReport = validateProductionDocument(doc);
@@ -51,6 +60,48 @@ export async function materializeAgentExports(
     }
 
     artifacts.push({ fileName: result.fileName, mimeType: result.mimeType });
+  }
+
+  // 2. Pacotes consolidados via create_production_package
+  for (const record of packageCalls) {
+    const args = (record.args || {}) as unknown as PackageBuildOptions;
+    const pkg = await buildProductionPackage(doc, args);
+
+    // Se houver arquivo ZIP, prioriza o download do ZIP agrupado
+    if (pkg.zipArtifact && pkg.zipArtifact.blob) {
+      const downloadTriggered = dependencies.downloadExportResult({
+        fileName: pkg.zipArtifact.fileName,
+        mimeType: pkg.zipArtifact.mimeType,
+        blob: pkg.zipArtifact.blob,
+        width_mm: doc.dimensions.width_mm,
+        height_mm: doc.dimensions.height_mm,
+      });
+
+      if (!downloadTriggered) {
+        throw new Error(`O download de "${pkg.zipArtifact.fileName}" não pôde ser iniciado no navegador.`);
+      }
+
+      artifacts.push({ fileName: pkg.zipArtifact.fileName, mimeType: pkg.zipArtifact.mimeType });
+    } else {
+      // Caso ZIP não esteja ativo, baixa os artefatos individuais
+      for (const art of pkg.artifacts) {
+        if (art.blob) {
+          const downloadTriggered = dependencies.downloadExportResult({
+            fileName: art.fileName,
+            mimeType: art.mimeType,
+            blob: art.blob,
+            width_mm: art.width_mm || doc.dimensions.width_mm,
+            height_mm: art.height_mm || doc.dimensions.height_mm,
+          });
+
+          if (!downloadTriggered) {
+            throw new Error(`O download de "${art.fileName}" não pôde ser iniciado no navegador.`);
+          }
+
+          artifacts.push({ fileName: art.fileName, mimeType: art.mimeType });
+        }
+      }
+    }
   }
 
   return artifacts;

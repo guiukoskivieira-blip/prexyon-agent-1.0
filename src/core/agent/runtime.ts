@@ -38,6 +38,25 @@ export function sanitizeToolResultForLLM(result: any): any {
     delete cleanData.dataUrl;
     delete cleanData.blob;
     delete cleanData.svgString;
+
+    if (Array.isArray(cleanData.artifacts)) {
+      cleanData.artifacts = cleanData.artifacts.map((a: any) => {
+        const cleanArt = { ...a };
+        delete cleanArt.blob;
+        delete cleanArt.dataString;
+        delete cleanArt.dataUrl;
+        return cleanArt;
+      });
+    }
+
+    if (cleanData.zipArtifact && typeof cleanData.zipArtifact === 'object') {
+      const cleanZip = { ...cleanData.zipArtifact };
+      delete cleanZip.blob;
+      delete cleanZip.dataString;
+      delete cleanZip.dataUrl;
+      cleanData.zipArtifact = cleanZip;
+    }
+
     sanitized.data = cleanData;
   }
 
@@ -58,7 +77,7 @@ export function sanitizeAgentReply(reply: string): string {
   cleaned = cleaned.replace(/<svg[\s\S]*?<\/svg>/gi, '');
 
   // 2. Remove blocos de manifesto JSON brutos
-  cleaned = cleaned.replace(/```json\s*\{[\s\S]*?"generator":\s*"Prexyon Agent"[\s\S]*?\}\s*```/gi, '');
+  cleaned = cleaned.replace(/```json\s*\{[\s\S]*?(?:"generator"|"manifestVersion"|"profile"):\s*[\s\S]*?\}\s*```/gi, '');
 
   // 3. Remove Data URLs brutas
   cleaned = cleaned.replace(/data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g, '');

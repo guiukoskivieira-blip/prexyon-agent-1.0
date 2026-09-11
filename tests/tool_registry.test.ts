@@ -76,9 +76,9 @@ describe('Prexyon Agent — Tool Registry V1 (Etapa 6.1)', () => {
   }
 
   describe('1. Infraestrutura do Tool Registry', () => {
-    it('deve conter as 8 ferramentas essenciais registradas na instância padrão', () => {
+    it('deve conter as 9 ferramentas essenciais registradas na instância padrão', () => {
       const allTools = defaultToolRegistry.getAllTools();
-      expect(allTools.length).toBe(8);
+      expect(allTools.length).toBe(9);
 
       const toolNames = allTools.map((t) => t.name);
       expect(toolNames).toContain('resize_node');
@@ -89,11 +89,12 @@ describe('Prexyon Agent — Tool Registry V1 (Etapa 6.1)', () => {
       expect(toolNames).toContain('center_cut_contour');
       expect(toolNames).toContain('validate_production');
       expect(toolNames).toContain('export_production');
+      expect(toolNames).toContain('create_production_package');
     });
 
     it('deve exportar declarações de ferramentas (schemas) compatíveis com LLM function calling', () => {
       const declarations = defaultToolRegistry.getToolDeclarations();
-      expect(declarations.length).toBe(8);
+      expect(declarations.length).toBe(9);
 
       const resizeDecl = declarations.find((d) => d.name === 'resize_node');
       expect(resizeDecl).toBeDefined();

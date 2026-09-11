@@ -181,7 +181,92 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 4. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.")
+  // 4. Comando de Pacote Final de Produção / Preparação de Adesivo (ex: "Prepare esse adesivo para produção com faca de 2 mm.", "Gere o pacote de produção.")
+  if (
+    text.includes('pacote') ||
+    (text.includes('adesivo') && (text.includes('prepar') || text.includes('produç') || text.includes('produc')))
+  ) {
+    const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
+    const offset = matchMm ? parseFloat(matchMm[1]) : 2;
+
+    const hasCutContour = nodes.some((n) => n.type === 'cut_contour');
+
+    if (!hasCutContour) {
+      let vectorTargetId = targetNodeId;
+      if (targetNode?.type === 'raster_image' || (targetNode as any)?.type === 'raster') {
+        const derivedVector = nodes.find(
+          (n) =>
+            (n.type === 'group' || (n as any).type === 'vector_group') &&
+            ((n as any).sourceRasterNodeId === targetNode.id || n.name === `Vetor: ${targetNode.name}`)
+        );
+        if (derivedVector) {
+          vectorTargetId = derivedVector.id;
+        }
+      }
+
+      return [
+        {
+          response: {
+            functionCalls: [
+              {
+                id: `call_cut_${Date.now()}`,
+                name: 'create_cut_contour',
+                args: {
+                  sourceNodeId: vectorTargetId,
+                  offset_mm: offset,
+                },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            functionCalls: [
+              {
+                id: `call_pkg_${Date.now()}`,
+                name: 'create_production_package',
+                args: {
+                  profileId: 'generic-sticker',
+                  cutOffset_mm: offset,
+                },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: 'Pacote de produção preparado. Arte para impressão, faca de corte e manifesto técnico estão disponíveis para download.',
+            finishReason: 'STOP',
+          },
+        },
+      ];
+    } else {
+      return [
+        {
+          response: {
+            functionCalls: [
+              {
+                id: `call_pkg_${Date.now()}`,
+                name: 'create_production_package',
+                args: {
+                  profileId: 'generic-sticker',
+                  cutOffset_mm: offset,
+                },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: 'Pacote de produção preparado. Arte para impressão, faca de corte e manifesto técnico estão disponíveis para download.',
+            finishReason: 'STOP',
+          },
+        },
+      ];
+    }
+  }
+
+  // 5. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.")
   if (text.includes('faca') || text.includes('corte') || text.includes('sangria')) {
     const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
     const offset = matchMm ? parseFloat(matchMm[1]) : 2;

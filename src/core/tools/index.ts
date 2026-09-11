@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — Tool Registry Module (v1.0)
  *
  * Ponto de entrada da infraestrutura de ferramentas determinísticas para agentes de IA.
@@ -13,6 +13,7 @@ import { updateCutContourTool } from './definitions/updateCutContourTool';
 import { centerCutContourTool } from './definitions/centerCutContourTool';
 import { validateProductionTool } from './definitions/validateProductionTool';
 import { exportProductionTool } from './definitions/exportProductionTool';
+import { createProductionPackageTool } from './definitions/createProductionPackageTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -25,6 +26,7 @@ export * from './definitions/updateCutContourTool';
 export * from './definitions/centerCutContourTool';
 export * from './definitions/validateProductionTool';
 export * from './definitions/exportProductionTool';
+export * from './definitions/createProductionPackageTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -38,6 +40,7 @@ export const defaultToolRegistry = new ToolRegistry([
   centerCutContourTool,
   validateProductionTool,
   exportProductionTool,
+  createProductionPackageTool,
 ]);
 
 /**

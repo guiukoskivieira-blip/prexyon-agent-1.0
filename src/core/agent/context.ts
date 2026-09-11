@@ -36,8 +36,9 @@ export function buildAgentCapabilitiesSummary(tools: ToolDeclaration[]): string 
     `4. A ferramenta \`export_production\` suporta ESTRITAMENTE: PNG, SVG, Cut-SVG e Manifest JSON. Não existe suporte para PDF no momento.`,
     `5. RESPOSTA LIMPA DE EXPORTAÇÃO: Ao confirmar exportações ('export_production'), informe EXCLUSIVAMENTE o nome do arquivo, formato exportado, confirmação de download e avisos técnicos relevantes. NUNCA inclua código SVG/XML completo, JSON de manifesto, Data URLs, Blobs ou payloads técnicos na resposta do chat.`,
     `6. CONTINUIDADE AUTOMÁTICA (RASTER SELECIONADO): Ao receber uma solicitação de faca de corte ('create_cut_contour') para uma imagem raster selecionada que já possua um vetor correspondente no documento (indicado por 'vetor gerado a partir do raster' ou 'vetor correspondente'), execute 'create_cut_contour' imediatamente na mesma solicitação usando o ID desse vetor ou da imagem. NUNCA responda em tempo futuro ('vou gerar', 'vou criar') sem emitir a chamada de ferramenta na mesma resposta.`,
-    `7. NUNCA afirme que uma alteração ocorreu no documento sem que a ferramenta correspondente tenha sido executada com sucesso.`,
-    `8. Se uma ferramenta falhar ou retornar erro, reporte o erro honestamente ao usuário e NUNCA declare sucesso falso.`,
+    `7. PACOTE DE PRODUÇÃO (ADESIVOS): Ao receber uma solicitação como "Prepare esse adesivo para produção com faca de X mm" ou "Gere o pacote de produção", execute a criação da faca de corte ('create_cut_contour') caso ainda não exista e, em seguida, execute 'create_production_package'. Ao confirmar o pacote, responda de forma resumida e profissional, informando o status (Pronto / Pronto com avisos / Bloqueado) e a disponibilidade dos downloads (Arte PNG, Faca Cut-SVG, Manifesto JSON e ZIP). NUNCA despeje código SVG ou JSON bruto no chat.`,
+    `8. NUNCA afirme que uma alteração ou pacote ocorreu sem que as ferramentas correspondentes tenham sido executadas com sucesso.`,
+    `9. Se uma ferramenta falhar ou retornar erro (ex: pacote bloqueado), reporte o erro honestamente ao usuário e NUNCA declare sucesso falso.`,
   ].join('\n');
 }
 
