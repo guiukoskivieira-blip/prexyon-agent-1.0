@@ -23,7 +23,7 @@ import {
 import { buildToolExecutionReceipt } from './receiptBuilder';
 import { validateDocumentForPackage } from '../package/packageValidator';
 import { GENERIC_STICKER_PROFILE } from '../profile/genericStickerProfile';
-import { generateProposedFixes, defaultProposalManager } from '../../autofix';
+import { generateProposedFixes, defaultProposalManager, buildPreflightPlan } from '../../autofix';
 
 export interface BuildReviewParams {
   executedTools: ExecutedToolRecord[];
@@ -247,9 +247,10 @@ export function buildProductionReview({
     };
   }
 
-  // 9. Geração e Registro de Propostas Assistidas (REQUIRES_CONFIRMATION)
+  // 9. Geração e Registro de Propostas Assistidas e Plano de Preflight (Etapas 6.10 e 6.11)
   const proposedFixes = generateProposedFixes(afterDoc);
   defaultProposalManager.registerProposals(proposedFixes);
+  const preflightPlan = buildPreflightPlan(afterDoc, undefined, defaultProposalManager);
 
   // 10. Cálculo Consolidado de Status
   let status: ReviewStatus = 'READY';
@@ -299,6 +300,7 @@ export function buildProductionReview({
     packageEvidence,
     autoFixSummary,
     proposedFixes,
+    preflightPlan,
     validation: {
       status: validationReport.status,
       blockers,

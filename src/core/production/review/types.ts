@@ -7,6 +7,7 @@
 
 import { PackageStatus } from '../package/types';
 import { ProposedFix } from '../../autofix/proposalTypes';
+import { PreflightPlan } from '../../autofix/preflightPlanTypes';
 
 export type ReviewStatus = 'READY' | 'READY_WITH_WARNINGS' | 'BLOCKED' | 'INFO';
 
@@ -154,6 +155,8 @@ export interface ProductionReviewModel {
   autoFixSummary?: AutoFixSummaryReview;
   /** Propostas de correções assistidas que exigem confirmação (REQUIRES_CONFIRMATION) */
   proposedFixes?: ProposedFix[];
+  /** Plano determinístico de preparação para produção (PreflightPlan) */
+  preflightPlan?: PreflightPlan;
   /** Auditoria de validação */
   validation: {
     status: PackageStatus;

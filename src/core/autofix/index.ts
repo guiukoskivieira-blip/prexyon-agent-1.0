@@ -12,3 +12,5 @@ export * from './fixRegistry';
 export * from './autoFixEngine';
 export * from './proposalGenerator';
 export * from './proposalManager';
+export * from './preflightPlanTypes';
+export * from './preflightPlanner';

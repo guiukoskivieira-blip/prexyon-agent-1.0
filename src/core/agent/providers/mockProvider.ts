@@ -105,6 +105,38 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
+  // 0.1. Análise e Planejamento de Preparação para Produção (ex: "Prepare esse arquivo para produção", "Analise essa arte e me diga o que falta para produção", "O que ainda falta nesse arquivo?", "Corrija tudo que for seguro e me mostre o restante")
+  if (
+    !text.includes('adesivo') &&
+    (text.includes('o que falta') ||
+      text.includes('o que ainda falta') ||
+      text.includes('analise essa arte') ||
+      (text.includes('prepare') && (text.includes('arquivo') || text.includes('produção') || text.includes('producao'))) ||
+      text.includes('corrija tudo que for seguro'))
+  ) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_autofix_${Date.now()}`,
+              name: 'auto_fix_prepress_issues',
+              args: {
+                mode: 'all_safe',
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Plano de preparação executado. As etapas automáticas e seguras foram concluídas, as sugestões assistidas foram geradas para aprovação e as orientações manuais estão disponíveis no painel de revisão.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 1. Comando de Mover Objeto (ex: "Mova este objeto 10 mm para a direita.")
   if (text.includes('mova') || text.includes('mover') || text.includes('desloque')) {
     const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);

@@ -24,6 +24,7 @@ import {
   ChevronUp,
   Sliders,
   Check,
+  ListTodo,
 } from 'lucide-react';
 import { ProductionReviewModel } from '@/core/production/review/types';
 import { downloadExportResult } from '@/core/export/exportEngine';
@@ -49,7 +50,7 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
   onRejectProposal,
   isUndone = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'steps' | 'diff' | 'validation'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'plan' | 'steps' | 'diff' | 'validation'>('overview');
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
   if (!review) return null;
@@ -196,6 +197,19 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
             >
               Visão Geral
             </button>
+            {review.preflightPlan && (
+              <button
+                onClick={() => setActiveTab('plan')}
+                className={`py-2 text-[11px] font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'plan'
+                    ? 'border-indigo-500 text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ListTodo className="w-3.5 h-3.5" />
+                Plano de Preparação ({review.preflightPlan.steps.length})
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('steps')}
               className={`py-2 text-[11px] font-medium border-b-2 transition-colors ${
@@ -400,6 +414,125 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'plan' && review.preflightPlan && (
+              <div className="space-y-3">
+                {/* Header do Plano */}
+                <div className="p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ListTodo className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <div>
+                      <h4 className="font-semibold text-slate-100 text-xs">Plano de Preparação para Produção</h4>
+                      <p className="text-[11px] text-slate-400">{review.preflightPlan.progress.summaryText}</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">
+                    {review.preflightPlan.currentState}
+                  </span>
+                </div>
+
+                {/* Lista de Passos */}
+                <div className="space-y-2">
+                  {review.preflightPlan.steps.map((step) => {
+                    const isCompleted = step.status === 'COMPLETED';
+                    const isWaiting = step.status === 'WAITING_CONFIRMATION';
+                    const isBlocked = step.status === 'BLOCKED';
+                    const isFailed = step.status === 'FAILED';
+
+                    return (
+                      <div
+                        key={step.id}
+                        className={`p-3 rounded-lg border text-[11px] space-y-2 transition-all ${
+                          isCompleted
+                            ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
+                            : isWaiting
+                            ? 'bg-indigo-500/5 border-indigo-500/30 text-indigo-200'
+                            : isBlocked
+                            ? 'bg-surface-elevated/40 border-surface-border text-slate-400'
+                            : isFailed
+                            ? 'bg-rose-500/5 border-rose-500/20 text-rose-300'
+                            : 'bg-surface-elevated/60 border-surface-border text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 font-semibold">
+                            <span className="w-5 h-5 rounded-full bg-surface-base flex items-center justify-center text-[10px] text-slate-300 font-mono border border-surface-border shrink-0">
+                              {step.order}
+                            </span>
+                            <span>{step.title}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-surface-base border border-surface-border font-medium text-slate-300">
+                              {step.classification === 'AUTO_FIXABLE'
+                                ? 'Automático'
+                                : step.classification === 'REQUIRES_CONFIRMATION'
+                                ? 'Confirmação'
+                                : step.classification === 'MANUAL'
+                                ? 'Manual'
+                                : 'Info'}
+                            </span>
+                            <span
+                              className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-bold ${
+                                isCompleted
+                                  ? 'bg-emerald-500/20 text-emerald-400'
+                                  : isWaiting
+                                  ? 'bg-amber-500/20 text-amber-300'
+                                  : isBlocked
+                                  ? 'bg-slate-700 text-slate-400'
+                                  : isFailed
+                                  ? 'bg-rose-500/20 text-rose-400'
+                                  : 'bg-indigo-500/20 text-indigo-400'
+                              }`}
+                            >
+                              {step.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-slate-300 pl-7">{step.description}</p>
+
+                        {step.dependencyExplanation && isBlocked && (
+                          <div className="pl-7 text-[10px] text-amber-300/90 flex items-center gap-1 italic">
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>{step.dependencyExplanation}</span>
+                          </div>
+                        )}
+
+                        {step.recommendation && step.classification === 'MANUAL' && (
+                          <div className="pl-7 text-[10px] text-slate-400 italic">
+                            Orientação: {step.recommendation}
+                          </div>
+                        )}
+
+                        {/* Botões de Ação para Proposta Pendente */}
+                        {isWaiting && step.proposedFix && (
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-indigo-500/20">
+                            {onRejectProposal && (
+                              <button
+                                onClick={() => onRejectProposal(step.proposedFix!.id)}
+                                className="px-2.5 py-1 rounded bg-surface-elevated hover:bg-surface-base text-slate-300 text-[11px] border border-surface-border transition-colors"
+                              >
+                                Manter como está
+                              </button>
+                            )}
+                            {onApplyProposal && (
+                              <button
+                                onClick={() => onApplyProposal(step.proposedFix!.id)}
+                                className="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] flex items-center gap-1 shadow-sm transition-colors"
+                              >
+                                <Check className="w-3 h-3" />
+                                Aplicar correção
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
