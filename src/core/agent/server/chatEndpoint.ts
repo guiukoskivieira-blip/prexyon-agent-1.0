@@ -12,6 +12,7 @@ import { MockAIProvider, createDeterministicTurnsForRequest } from '../providers
 import { AgentRuntime } from '../runtime';
 import { defaultToolRegistry } from '../../tools';
 import { vtracerNodeBridge } from '../../vectorizer/vtracerNodeBridge';
+import { reconcileAgentResponseWithExecutionEvidence } from '../planner';
 
 /**
  * Processa a requisição de chat do agente recebida pelo servidor.
@@ -97,8 +98,12 @@ export async function processAgentChatRequest(
     },
   });
 
-  // Fallback determinístico resiliente: se o provedor remoto falhar, executar via MockAIProvider determinístico
-  if (!result.success && isGeminiAvailable) {
+  // Fallback determinístico resiliente: SOMENTE se o provedor remoto tiver erro de infraestrutura/rede/provedor
+  const isProviderInfrastructureError =
+    result.error?.code === 'PROVIDER_ERROR' ||
+    result.error?.code === 'PLANNER_ERROR';
+
+  if (!result.success && isGeminiAvailable && isProviderInfrastructureError) {
     const fallbackTurns = createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId);
     if (fallbackTurns.length > 0) {
       const fallbackProvider = new MockAIProvider(fallbackTurns);
@@ -116,5 +121,18 @@ export async function processAgentChatRequest(
     }
   }
 
-  return result;
+  // Reconciliação final e inviolável de integridade da resposta
+  const finalDoc = result.doc || doc;
+  const reconciled = reconcileAgentResponseWithExecutionEvidence({
+    rawReply: result.reply,
+    executedTools: result.executedTools,
+    initialDoc: doc,
+    finalDoc,
+  });
+
+  return {
+    ...result,
+    reply: reconciled.reply,
+    doc: finalDoc,
+  };
 }

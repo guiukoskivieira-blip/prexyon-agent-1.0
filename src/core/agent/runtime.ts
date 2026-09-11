@@ -17,7 +17,7 @@ import {
 } from './types';
 import { buildDocumentContextSummary, buildAgentCapabilitiesSummary } from './context';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './providers/base';
-import { validateActionPlan, executeActionPlan, AgentActionPlan } from './planner';
+import { validateActionPlan, executeActionPlan, AgentActionPlan, reconcileAgentResponseWithExecutionEvidence } from './planner';
 
 export const DEFAULT_MAX_ITERATIONS = 5;
 
@@ -348,9 +348,17 @@ export class AgentRuntime {
         }
 
         // 5. Se o provedor retornou resposta textual final
+        const rawReply = sanitizeAgentReply(providerResponse.text || '');
+        const reconciled = reconcileAgentResponseWithExecutionEvidence({
+          rawReply,
+          executedTools,
+          initialDoc,
+          finalDoc: currentDoc,
+        });
+
         return {
           success: true,
-          reply: sanitizeAgentReply(providerResponse.text || ''),
+          reply: reconciled.reply,
           executedTools,
           doc: currentDoc,
           iterations: iteration,
