@@ -403,6 +403,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
         <span>Prancheta: {doc.dimensions.width_mm} × {doc.dimensions.height_mm} mm</span>
       </div>
 
+      {/* Empty State Banner quando prancheta estiver vazia */}
+      {Object.keys(doc.nodes || {}).length === 0 && !isDragOver && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-surface-base/90 backdrop-blur-md border border-surface-border px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs text-slate-300 pointer-events-none select-none z-10 animate-in fade-in">
+          <Upload className="w-5 h-5 text-indigo-400 shrink-0" />
+          <div>
+            <p className="font-semibold text-slate-200">Comece adicionando sua arte</p>
+            <p className="text-[11px] text-slate-400">Arraste uma imagem PNG/JPG ou use o botão Importar no topo.</p>
+          </div>
+        </div>
+      )}
+
       {/* Drag & Drop Visual Overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-indigo-950/70 backdrop-blur-sm border-2 border-dashed border-indigo-400 flex flex-col items-center justify-center text-white pointer-events-none z-30 animate-in fade-in">

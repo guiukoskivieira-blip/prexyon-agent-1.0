@@ -1,24 +1,23 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Header } from '@/components/layout/Header';
 import { StatusBar } from '@/components/layout/StatusBar';
-import { ChatPanel } from '@/components/chat/ChatPanel';
-import { PropertiesPanel } from '@/components/properties/PropertiesPanel';
+import { DocumentLayersPanel } from '@/components/document/DocumentLayersPanel';
 import { CanvasViewport } from '@/components/canvas/CanvasViewport';
+import { ProductionWorkspace } from '@/components/production/ProductionWorkspace';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ToastContainer } from '@/components/ui/ToastContainer';
 import { ExportModal } from '@/components/export/ExportModal';
 import { useEditorStore } from '@/store/editorStore';
 import { NodeTransformPayload } from '@/core/renderer/fabricAdapter';
+import { generateProposedFixes } from '@/core/autofix/proposalGenerator';
+import { executeAutoFix } from '@/core/autofix/autoFixEngine';
 
 export const App: React.FC = () => {
   const {
     doc,
     selectedNodeId,
-    selectedNode,
     previewNode,
-    keepAspectRatio,
-    isVectorizing,
-    vectorizePreset,
     comparisonMode,
     overlayOpacity,
     canUndo,
@@ -32,6 +31,7 @@ export const App: React.FC = () => {
   const [zoom, setZoom] = useState<number>(1.0);
   const [cursorMm, setCursorMm] = useState<{ x: number; y: number } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [rejectedProposalIds, setRejectedProposalIds] = useState<string[]>([]);
 
   // Ações de Zoom do Header
   const handleZoomIn = useCallback(() => {
@@ -59,6 +59,65 @@ export const App: React.FC = () => {
     },
     [actions]
   );
+
+  // Propostas de Correção Assistida Ativas
+  const activeProposals = useMemo(() => {
+    const proposals = generateProposedFixes(doc);
+    return proposals.filter((p) => !rejectedProposalIds.includes(p.id));
+  }, [doc, rejectedProposalIds]);
+
+  // Aplicar proposta de correção assistida
+  const handleApplyProposal = useCallback(
+    async (proposalId: string) => {
+      const proposal = activeProposals.find((p) => p.id === proposalId);
+      if (!proposal) return;
+
+      try {
+        if (proposal.toolName && actions.executeAgentTool) {
+          await actions.executeAgentTool(proposal.toolName, proposal.proposedParams || {});
+          actions.addToast('success', `Correção "${proposal.title}" aplicada com sucesso.`);
+        } else {
+          actions.addToast('info', 'Ajuste aplicado.');
+        }
+      } catch (err: unknown) {
+        actions.addToast('error', 'Não foi possível aplicar a correção sugerida.');
+      }
+    },
+    [activeProposals, actions]
+  );
+
+  // Rejeitar proposta de correção (manter como está)
+  const handleRejectProposal = useCallback(
+    (proposalId: string) => {
+      setRejectedProposalIds((prev) => [...prev, proposalId]);
+      actions.addToast('info', 'Configuração mantida conforme arte original.');
+    },
+    [actions]
+  );
+
+  // Executar Safe Auto-Fix para todos os problemas automáticos
+  const handleRunAutoFix = useCallback(async () => {
+    try {
+      const context = {
+        doc,
+        setDoc: (newDoc: typeof doc) => {
+          actions.applyAgentDocumentChange(newDoc, 'Safe Auto-Fix de pré-impressão');
+        },
+      };
+
+      const result = await executeAutoFix(doc, context);
+      if (result.appliedFixes.length > 0) {
+        actions.addToast(
+          'success',
+          `${result.appliedFixes.length} correções automáticas aplicadas com sucesso.`
+        );
+      } else {
+        actions.addToast('info', 'Nenhuma correção automática pendente.');
+      }
+    } catch (err: unknown) {
+      actions.addToast('error', 'Falha ao executar correções automáticas.');
+    }
+  }, [doc, actions]);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -88,13 +147,14 @@ export const App: React.FC = () => {
             onOpenExport={() => setIsExportModalOpen(true)}
           />
         }
-        chatPanel={
-          <ChatPanel
+        documentPanel={
+          <DocumentLayersPanel
             doc={doc}
             selectedNodeId={selectedNodeId}
-            onApplyDoc={actions.applyAgentDocumentChange}
-            addToast={actions.addToast}
-            onHighlightNode={actions.setSelectedNodeId}
+            onSelectNode={actions.setSelectedNodeId}
+            onToggleVisibility={actions.toggleNodeVisibility}
+            onToggleLock={actions.toggleNodeLock}
+            onDeleteNode={actions.deleteNode}
           />
         }
         canvasViewport={
@@ -112,53 +172,25 @@ export const App: React.FC = () => {
             onImportFile={actions.importRasterFile}
           />
         }
-        propertiesPanel={
-          <PropertiesPanel
+        productionWorkspace={
+          <ProductionWorkspace
             doc={doc}
-            selectedNodeId={selectedNodeId}
-            selectedNode={selectedNode}
-            previewNode={previewNode}
-            keepAspectRatio={keepAspectRatio}
-            isVectorizing={isVectorizing}
-            vectorizePreset={vectorizePreset}
-            comparisonMode={comparisonMode}
-            overlayOpacity={overlayOpacity}
-            onSelectPreset={actions.setVectorizePreset}
-            onSetComparisonMode={actions.setComparisonMode}
-            onSetOverlayOpacity={actions.setOverlayOpacity}
-            onSelectNode={actions.setSelectedNodeId}
-            onVectorizeNode={actions.vectorizeRasterNode}
-            onCreateCutContour={actions.createCutContour}
-            onUpdateCutContour={actions.updateCutContour}
-            onUpdateCutContourStrokeWidth={actions.updateCutContourStrokeWidth}
-            onDeleteCutContour={actions.deleteCutContour}
-            onSetPreviewNode={actions.setPreviewNode}
-            onApplyCutContourChanges={actions.applyCutContourChanges}
-            onCenterCutContour={actions.centerCutContour}
-            onUpdateWidth={actions.setNodeWidth}
-            onUpdateHeight={actions.setNodeHeight}
-            onUpdatePosition={actions.setNodePosition}
-            onCommitDimensions={actions.commitNodeDimensions}
-            onCommitPosition={actions.commitNodePosition}
-            onSetArtboardDimensions={actions.setArtboardDimensions}
-            onCommitArtboardDimensions={actions.commitArtboardDimensions}
-            onUpdateBleedSettings={actions.setBleedSettings}
-            onCommitBleedSettings={actions.commitBleedSettings}
-            onUpdateSafetyMarginSettings={actions.setSafetyMarginSettings}
-            onCommitSafetyMarginSettings={actions.commitSafetyMarginSettings}
-            onCreateTechnicalGuide={actions.createTechnicalGuide}
-            onUpdateTechnicalGuide={actions.updateTechnicalGuide}
-            onCommitTechnicalGuide={actions.commitTechnicalGuide}
-            onDuplicateTechnicalGuide={actions.duplicateTechnicalGuide}
-            onChangeTechnicalGuideOrientation={actions.changeTechnicalGuideOrientation}
-            onUpdateName={actions.setNodeName}
-            onResetAspectRatio={actions.resetNodeAspectRatio}
-            onToggleVisibility={actions.toggleNodeVisibility}
-            onToggleLock={actions.toggleNodeLock}
-            onDeleteNode={actions.deleteNode}
-            onToggleKeepAspectRatio={() => actions.setKeepAspectRatio(!keepAspectRatio)}
             validationReport={validationReport}
-            onRunValidation={actions.runProductionValidation}
+            proposedFixes={activeProposals}
+            chatElement={
+              <ChatPanel
+                doc={doc}
+                selectedNodeId={selectedNodeId}
+                onApplyDoc={actions.applyAgentDocumentChange}
+                addToast={actions.addToast}
+                onHighlightNode={actions.setSelectedNodeId}
+              />
+            }
+            onApplyProposal={handleApplyProposal}
+            onRejectProposal={handleRejectProposal}
+            onRunAutoFix={handleRunAutoFix}
+            onSelectNode={actions.setSelectedNodeId}
+            onOpenExportModal={() => setIsExportModalOpen(true)}
           />
         }
         statusBar={

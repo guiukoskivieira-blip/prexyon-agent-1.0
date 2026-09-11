@@ -3,7 +3,6 @@ import {
   Bot,
   Send,
   Sparkles,
-  Terminal,
   AlertCircle,
   Loader2,
   CheckCircle2,
@@ -469,18 +468,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </span>
             <div className="mt-2 space-y-1.5">
               {[
-                'Mova este objeto 10 mm para a direita.',
-                'Deixe a logo com 50 mm de largura.',
-                'Crie uma faca 2 mm para fora.',
-                'Valide o documento.',
+                'Prepare este adesivo para produção',
+                'Crie uma faca de 2 mm para fora',
+                'Corrija o que puder automaticamente',
+                'Gere o pacote de produção',
               ].map((cmd, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => handlePromptClick(cmd)}
-                  className="w-full text-left text-[11px] font-mono px-2.5 py-1.5 rounded bg-surface-subtle border border-surface-border/50 text-slate-400 hover:text-slate-200 hover:border-indigo-500/40 hover:bg-surface-subtle/80 flex items-center gap-2 transition-colors cursor-pointer"
+                  className="w-full text-left text-[11px] font-sans px-2.5 py-1.5 rounded-lg bg-surface-subtle border border-surface-border/50 text-slate-300 hover:text-slate-100 hover:border-indigo-500/40 hover:bg-surface-elevated flex items-center gap-2 transition-all cursor-pointer"
                 >
-                  <Terminal className="w-3 h-3 text-indigo-400/70 shrink-0" />
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                   <span className="truncate">{cmd}</span>
                 </button>
               ))}
