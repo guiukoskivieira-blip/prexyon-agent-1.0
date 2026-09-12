@@ -225,7 +225,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         textLower.includes('sangria') ||
         textLower.includes('contorno') ||
         textLower.includes('vetor') ||
-        textLower.includes('vector');
+        textLower.includes('vector') ||
+        textLower.includes('adesivo') ||
+        (textLower.includes('prepare') && textLower.includes('produção')) ||
+        (textLower.includes('prepare') && textLower.includes('producao'));
 
       // Se a intenção demandar geometria vetorial (faca/vetorização) e houver imagem raster sem vetor:
       if (wantsCutOrVectorize && doc.nodes) {

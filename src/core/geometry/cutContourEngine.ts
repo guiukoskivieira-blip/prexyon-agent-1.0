@@ -19,6 +19,35 @@ import { Polygon2D, flattenSvgPathToPolygons } from './svgPathFlatten';
 import { mmToGeometryUnits, geometryUnitsToMm, GEOMETRY_SCALE } from './units';
 import { VectorGroupNode, VectorPathNode, CutContourNode, PrexyonDocument } from '../pdm/types';
 import { roundPrecision } from '../pdm/units';
+import { validateCutContourIntegrity } from './vectorPathIntegrity';
+export { validateCutContourIntegrity };
+
+export function cleanPolygonRing(pts: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+  if (!pts || pts.length < 3) return [];
+  const cleaned: Array<{ x: number; y: number }> = [];
+
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (cleaned.length === 0) {
+      cleaned.push(p);
+      continue;
+    }
+    const prev = cleaned[cleaned.length - 1];
+    if (Math.hypot(p.x - prev.x, p.y - prev.y) > 0.002) {
+      cleaned.push(p);
+    }
+  }
+
+  if (cleaned.length > 2) {
+    const first = cleaned[0];
+    const last = cleaned[cleaned.length - 1];
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 0.002) {
+      cleaned.pop();
+    }
+  }
+
+  return cleaned.length >= 3 ? cleaned : [];
+}
 
 export type CutJoinStyle = 'round' | 'miter' | 'square' | 'bevel';
 
@@ -196,6 +225,7 @@ export function generateCutContour(
     throw new Error('Falha ao calcular o contorno de corte com o offset especificado.');
   }
 
+
   // 5. Converte o resultado de volta para milímetros e classifica contornos/furos
   const contours: ContourPolygonResult[] = [];
 
@@ -209,14 +239,24 @@ export function generateCutContour(
       continue;
     }
 
+    const rawPts = path64ToPolygonMm(path);
+    const cleanedPts = cleanPolygonRing(rawPts);
+    if (cleanedPts.length < 3) continue;
+
     contours.push({
-      points_mm: path64ToPolygonMm(path),
+      points_mm: cleanedPts,
       isHole,
     });
   }
 
   if (contours.length === 0) {
     throw new Error('Não foi possível gerar um contorno fechado válido para esta geometria.');
+  }
+
+  // Validação estrita de integridade pré-persistência
+  const integrity = validateCutContourIntegrity(contours);
+  if (!integrity.isValid) {
+    throw new Error(`A geometria da faca de corte gerada contém irregularidades: ${integrity.failureReasons.join('; ')}`);
   }
 
   const boundingBox_mm = calculateBoundingBox(contours);

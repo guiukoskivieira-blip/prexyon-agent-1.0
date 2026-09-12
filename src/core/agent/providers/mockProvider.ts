@@ -316,6 +316,23 @@ export function createDeterministicTurnsForRequest(
   }
 
   if (resizeParams) {
+    const wantsExportWithResize =
+      text.includes('export') ||
+      text.includes('baix') ||
+      text.includes('salv') ||
+      text.includes('png') ||
+      text.includes('svg');
+
+    let fmt: 'png' | 'svg' | 'cut-svg' | 'manifest-json' = 'png';
+    let deliverable: 'PRINT_PNG' | 'ARTWORK_SVG' | 'CUT_SVG' = 'PRINT_PNG';
+    if (text.includes('cut-svg') || text.includes('faca svg') || text.includes('faca isolada')) {
+      fmt = 'cut-svg';
+      deliverable = 'CUT_SVG';
+    } else if (text.includes('svg')) {
+      fmt = 'svg';
+      deliverable = 'ARTWORK_SVG';
+    }
+
     const dimSummary = resizeParams.width_mm && resizeParams.height_mm
       ? `${resizeParams.width_mm} × ${resizeParams.height_mm} mm`
       : resizeParams.width_mm
@@ -323,6 +340,49 @@ export function createDeterministicTurnsForRequest(
       : `${resizeParams.height_mm} mm de altura`;
 
     const propText = resizeParams.keepAspectRatio ? ' mantendo a proporção' : '';
+
+    if (wantsExportWithResize) {
+      return [
+        {
+          response: {
+            functionCalls: [
+              {
+                id: `call_resize_${Date.now()}`,
+                name: 'resize_node',
+                args: {
+                  nodeId: targetNodeId,
+                  node_id: targetNodeId,
+                  ...(resizeParams.width_mm !== undefined ? { width_mm: resizeParams.width_mm } : {}),
+                  ...(resizeParams.height_mm !== undefined ? { height_mm: resizeParams.height_mm } : {}),
+                  keepAspectRatio: resizeParams.keepAspectRatio,
+                },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            functionCalls: [
+              {
+                id: `call_export_${Date.now()}`,
+                name: 'export_production',
+                args: {
+                  format: fmt,
+                  deliverable,
+                  dpi: 300,
+                },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: `Objeto redimensionado para ${dimSummary}${propText} e arquivo ${fmt.toUpperCase()} exportado com sucesso.`,
+            finishReason: 'STOP',
+          },
+        },
+      ];
+    }
 
     return [
       {

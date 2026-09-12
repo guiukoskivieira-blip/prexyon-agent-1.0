@@ -7,7 +7,7 @@
 import { ToolDefinition, ToolResult } from '../types';
 import { ExportFormat, ExportDpi, ExportOptions, ExportResult } from '../../export/types';
 import { exportDocument } from '../../export/exportEngine';
-import { validateProductionDocument } from '../../validation/productionValidationEngine';
+import { validateProductionDeliverable } from '../../validation/productionValidationEngine';
 
 export interface ExportProductionArgs {
   format: ExportFormat;
@@ -109,20 +109,26 @@ export const exportProductionTool: ToolDefinition<ExportProductionArgs, ExportRe
       };
     }
 
-    // Executa validação de produção
-    const validationReport = validateProductionDocument(doc);
+    // Executa validação de produção específica para o entregável solicitado
+    const deliverableMap: Record<ExportFormat, import('../../validation').ProductionDeliverableType> = {
+      png: 'PRINT_PNG',
+      svg: 'ARTWORK_SVG',
+      'cut-svg': 'CUT_SVG',
+      'manifest-json': 'PRINT_PNG',
+    };
+    const deliverable = deliverableMap[args.format] || 'PRINT_PNG';
+    const validationReport = validateProductionDeliverable(doc, deliverable);
 
-    // Se estiver bloqueado e o chamador não autorizou override
-    if (validationReport.status === 'blocked' && !args.ignoreValidationErrors) {
+    // Se o entregável estiver bloqueado e o chamador não autorizou override
+    if (!validationReport.isEligible && !args.ignoreValidationErrors) {
       const errorIssues = validationReport.issues.filter((i) => i.severity === 'error');
       return {
         success: false,
         error: {
           code: 'PRODUCTION_VALIDATION_BLOCKED',
-          message: `A exportação foi bloqueada devido a ${validationReport.errorCount} erro(s) crítico(s) de produção gráfica. Passe "ignoreValidationErrors: true" para forçar a saída.`,
+          message: `A exportação de ${args.format.toUpperCase()} foi bloqueada devido a pendência(s) específica(s) deste formato: ${validationReport.blockingReasons.join('; ')}`,
           details: {
-            status: validationReport.status,
-            errorCount: validationReport.errorCount,
+            errorCount: validationReport.errorCount || errorIssues.length,
             errors: errorIssues.map((i) => ({ id: i.id, ruleId: i.ruleId, message: i.message })),
           },
         },

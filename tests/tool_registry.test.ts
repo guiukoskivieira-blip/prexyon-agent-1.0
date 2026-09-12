@@ -461,7 +461,7 @@ describe('Prexyon Agent — Tool Registry V1 (Etapa 6.1)', () => {
 
       const result = await executeTool(
         'export_production',
-        { format: 'png', ignoreValidationErrors: false },
+        { format: 'cut-svg', ignoreValidationErrors: false },
         { doc }
       );
 

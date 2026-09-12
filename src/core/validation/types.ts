@@ -106,3 +106,17 @@ export const DEFAULT_VALIDATION_POLICY: ValidationPolicy = {
   requireCutContour: true,
   checkAlphaTransparency: false,
 };
+
+export type ProductionDeliverableType =
+  | 'PRINT_PNG'
+  | 'ARTWORK_SVG'
+  | 'CUT_SVG'
+  | 'STICKER_PACKAGE'
+  | 'DTF_UV_PACKAGE';
+
+export interface DeliverableValidationReport extends ValidationReport {
+  deliverable: ProductionDeliverableType;
+  isEligible: boolean;
+  blockingReasons: string[];
+}
+

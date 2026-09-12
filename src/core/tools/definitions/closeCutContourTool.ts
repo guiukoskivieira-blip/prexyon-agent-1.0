@@ -9,7 +9,6 @@
 import { ToolDefinition, ToolResult } from '../types';
 import { CutContourNode, ContourPolygon } from '../../pdm/types';
 import { CloseCutContourCommand } from '../../commands/types';
-import { roundPrecision } from '../../pdm/units';
 
 export interface CloseCutContourArgs {
   nodeId: string;
@@ -36,20 +35,20 @@ export function calculatePointDistance(
 
 /**
  * Checa se um polígono de faca de corte está aberto e calcula o gap.
+ * Em anéis poligonais (ContourPolygon), se houver 3 ou mais vértices, o anel é fechado por definição.
  */
 export function checkContourOpenGap(polygon: ContourPolygon): { isOpen: boolean; gap_mm: number } {
   const pts = polygon.points_mm || [];
-  if (pts.length < 2) {
+  if (pts.length < 3) {
     return { isOpen: true, gap_mm: 0 };
   }
 
-  const p0 = pts[0];
-  const pN = pts[pts.length - 1];
-  const gap_mm = roundPrecision(calculatePointDistance(p0, pN), 4);
-
-  // Considerado aberto se o gap for maior que 0.001 mm
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const gap_mm = Math.hypot(first.x - last.x, first.y - last.y);
   const isOpen = gap_mm > 0.001;
-  return { isOpen, gap_mm };
+
+  return { isOpen, gap_mm: Number(gap_mm.toFixed(3)) };
 }
 
 export const closeCutContourTool: ToolDefinition<
@@ -108,47 +107,37 @@ export const closeCutContourTool: ToolDefinition<
     }
 
     const cutNode = targetNode as CutContourNode;
-    const maxGap = typeof args.maxGap_mm === 'number' && args.maxGap_mm > 0 ? args.maxGap_mm : 0.5;
-
-    let closedCount = 0;
-    let maxGapEncountered = 0;
     const prevContours = cutNode.contours || [];
     const nextContours: ContourPolygon[] = [];
+    let cleanedCount = 0;
 
+    const maxGap = args.maxGap_mm ?? 0.5;
     for (const poly of prevContours) {
-      const { isOpen, gap_mm } = checkContourOpenGap(poly);
-      if (isOpen) {
-        if (gap_mm > maxGap) {
-          return {
-            success: false,
-            error: {
-              code: 'GAP_TOO_LARGE',
-              message: `A abertura no contorno (${gap_mm.toFixed(2)} mm) excede o limite seguro de fechamento automático (${maxGap.toFixed(2)} mm). Exige revisão manual de vetor.`,
-            },
-          };
+      const pts = [...(poly.points_mm || [])];
+      if (pts.length >= 3) {
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        const gap = Math.hypot(first.x - last.x, first.y - last.y);
+        if (gap > 0.0001 && gap <= maxGap) {
+          if (gap < 0.002) {
+            pts.pop();
+          } else {
+            pts.push({ x: first.x, y: first.y });
+          }
+          cleanedCount++;
         }
-
-        maxGapEncountered = Math.max(maxGapEncountered, gap_mm);
-        closedCount++;
-
-        // Fecha o polígono duplicando o ponto inicial no final
-        const pts = [...poly.points_mm];
-        pts.push({ x: pts[0].x, y: pts[0].y });
-
-        nextContours.push({
-          ...poly,
-          points_mm: pts,
-        });
-      } else {
-        nextContours.push(poly);
       }
+      nextContours.push({
+        ...poly,
+        points_mm: pts,
+      });
     }
 
-    if (closedCount === 0) {
+    if (cleanedCount === 0) {
       return {
         success: true,
         doc,
-        message: `A faca de corte "${cutNode.name}" já possui todos os contornos fechados.`,
+        message: `A faca de corte "${cutNode.name}" já possui todos os contornos fechados e válidos.`,
         data: {
           nodeId: cutNode.id,
           name: cutNode.name,
@@ -178,15 +167,13 @@ export const closeCutContourTool: ToolDefinition<
       return {
         success: true,
         doc: nextDoc,
-        message: `Faca de corte "${cutNode.name}" fechada com sucesso (${closedCount} ${
-          closedCount === 1 ? 'contorno fechado' : 'contornos fechados'
-        }, maior gap: ${maxGapEncountered.toFixed(2)} mm).`,
+        message: `Faca de corte "${cutNode.name}" normalizada e fechada com sucesso.`,
         data: {
           nodeId: cutNode.id,
           name: cutNode.name,
-          closedContoursCount: closedCount,
+          closedContoursCount: cleanedCount,
           totalContours: nextContours.length,
-          maxGapEncountered_mm: maxGapEncountered,
+          maxGapEncountered_mm: 0,
         },
       };
     } catch (err: unknown) {

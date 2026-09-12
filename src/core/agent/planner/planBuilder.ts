@@ -328,6 +328,65 @@ export function buildActionPlanFromUserRequest(
     intent = steps.length > 1 ? 'MODIFY' : 'GENERATE_CUT';
   }
 
+  // 10. Passo de Exportação Direta (PNG, SVG, Cut-SVG)
+  const exportKeywordRegex = /\b(baixa|baixar|exporta|exportar|exporte|export|salva|salvar|salve|download|gerar png|gere png|gerar svg|gere svg)\b/i;
+  const wantsExport = exportKeywordRegex.test(text) && !wantsPackage;
+
+  if (wantsExport) {
+    let fmt: 'png' | 'svg' | 'cut-svg' | 'manifest-json' = 'png';
+    let deliverable: 'PRINT_PNG' | 'ARTWORK_SVG' | 'CUT_SVG' = 'PRINT_PNG';
+    if (text.includes('cut-svg') || text.includes('faca svg') || text.includes('faca isolada')) {
+      fmt = 'cut-svg';
+      deliverable = 'CUT_SVG';
+    } else if (text.includes('svg')) {
+      fmt = 'svg';
+      deliverable = 'ARTWORK_SVG';
+    }
+
+    const prevStepIds = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_export',
+      tool: 'export_production',
+      arguments: {
+        format: fmt,
+        deliverable,
+        dpi: 300,
+      },
+      description: `Exportar arquivo de produção (${fmt.toUpperCase()}).`,
+      dependsOn: prevStepIds.length > 0 ? prevStepIds : undefined,
+    });
+    intent = steps.length > 1 ? 'MODIFY' : 'EXPORT';
+  }
+
+  // 11. Pedido ambíguo de "arquivo para produção" sem formato/processo definido
+  const isAmbiguousProductionRequest =
+    (text === 'gera o arquivo para produção' ||
+      text === 'gere o arquivo para produção' ||
+      text === 'arquivo para produção' ||
+      text === 'prepare o arquivo para produção' ||
+      text === 'gerar arquivo para produção' ||
+      text === 'gerar arquivo de produção' ||
+      text === 'gere o arquivo de produção') &&
+    !wantsWhite &&
+    !wantsClear &&
+    !wantsCutContour &&
+    !wantsVectorize &&
+    !parsedDims &&
+    !wantsExport &&
+    !wantsPackage;
+
+  if (isAmbiguousProductionRequest) {
+    return {
+      schemaVersion: '1.0',
+      intent: 'ASK_USER',
+      process,
+      target: { type: 'DOCUMENT' },
+      constraints,
+      steps: [],
+      ambiguityQuestion: 'Você quer o PNG de impressão, a faca SVG ou o pacote completo do adesivo?',
+    };
+  }
+
   // Se o comando for "prepare essa logo para dtf uv" sem steps adicionais
   let explanation = `Plano estruturado para ${process === 'DTF_UV' ? 'processamento DTF UV' : 'manipulação técnica'}.`;
   if (process === 'DTF_UV' && steps.length === 0) {

@@ -51,6 +51,7 @@ export function generateAutoFixPlan(
   const issues = customIssues || detectPrepressIssues(doc);
 
   const items: AutoFixPlanItem[] = [];
+  const seenKeys = new Set<string>();
   let autoFixableCount = 0;
   let requiresConfirmationCount = 0;
   let manualCount = 0;
@@ -61,7 +62,11 @@ export function generateAutoFixPlan(
       autoFixableCount++;
       const planItem = registry.createPlanItem(issue, doc);
       if (planItem) {
-        items.push(planItem);
+        const dedupeKey = `${planItem.toolName}:${planItem.targetNodeId || 'doc'}:${planItem.issue.code}`;
+        if (!seenKeys.has(dedupeKey)) {
+          seenKeys.add(dedupeKey);
+          items.push(planItem);
+        }
       }
     } else if (issue.fixClassification === 'REQUIRES_CONFIRMATION') {
       requiresConfirmationCount++;
@@ -98,10 +103,9 @@ export async function executeAutoFix(
   const issuesBefore = detectPrepressIssues(doc, initialValidation);
   const statusBefore = initialValidation.status;
 
-  // 2. GERAÇÃO DO PLANO DETERMINÍSTICO
+  // 2. GERAÇÃO DO PLANO DETERMINÍSTICO COM DEDUPLICAÇÃO
   let plan = generateAutoFixPlan(doc, issuesBefore, fixRegistry);
 
-  // Filtragem opcional se targetNodeId fornecido
   if (options.targetNodeId) {
     plan = {
       ...plan,
@@ -116,8 +120,6 @@ export async function executeAutoFix(
 
   let currentDoc = doc;
 
-  // 3. EXECUÇÃO DETERMINÍSTICA DAS FERRAMENTAS DO PLANO
-  // Contexto dinâmico de execução para manter sincronismo com HistoryManager
   const dynamicContext: ToolExecutionContext = {
     ...context,
     doc: currentDoc,
@@ -165,16 +167,6 @@ export async function executeAutoFix(
       error: toolResult?.error?.message,
       parameters: item.parameters,
     });
-
-    if (!toolResult?.success) {
-      failedFixes.push({
-        fixId: item.fixId,
-        toolName: item.toolName,
-        issueCode: item.issue.code,
-        targetNodeId: item.targetNodeId,
-        reason: toolResult?.error?.message || 'A ferramenta retornou falha na execução.',
-      });
-    }
   }
 
   // 4. REVALIDAÇÃO OBRIGATÓRIA NO DOCUMENTO RESULTANTE
@@ -183,9 +175,17 @@ export async function executeAutoFix(
   const statusAfter = postValidation.status;
 
   // 5. AUDITORIA ESTREITA DE RESOLUÇÃO (ANTI-ALUCINAÇÃO & ANTI-LOOP)
-  // Só declara um fix como aplicado se a issue correspondente NÃO constar mais no issuesAfter
   for (const attempted of attemptedFixes) {
-    if (!attempted.success) continue;
+    if (!attempted.success) {
+      failedFixes.push({
+        fixId: attempted.fixId,
+        toolName: attempted.toolName,
+        issueCode: attempted.issueCode,
+        targetNodeId: attempted.targetNodeId,
+        reason: attempted.error || 'A ferramenta retornou falha na execução.',
+      });
+      continue;
+    }
 
     const issueStillExists = issuesAfter.some(
       (iss) =>
@@ -275,13 +275,13 @@ function buildHumanSummaryMessage(params: {
       `✓ **${params.appliedCount} ${params.appliedCount === 1 ? 'problema corrigido' : 'problemas corrigidos'} automaticamente:**\n` +
         params.appliedFixes.map((f) => `- ${f.summary}`).join('\n')
     );
-  } else {
-    parts.push('Nenhuma correção automática foi necessária ou aplicada.');
+  } else if (params.failedCount === 0) {
+    parts.push('Nenhuma correção automática foi necessária.');
   }
 
   if (params.failedCount > 0) {
     parts.push(
-      `⚠ **${params.failedCount} ${params.failedCount === 1 ? 'correção falhou' : 'correções falharam'}.**`
+      `Não consegui corrigir automaticamente ${params.failedCount} irregularidade(s) técnica(s). O arquivo continua bloqueado para corte.`
     );
   }
 
@@ -294,9 +294,6 @@ function buildHumanSummaryMessage(params: {
     );
   }
 
-  parts.push(
-    `\n**Status final do documento:** \`${params.statusAfter.toUpperCase()}\``
-  );
-
   return parts.join('\n\n');
 }
+

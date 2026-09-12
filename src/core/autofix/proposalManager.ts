@@ -112,17 +112,16 @@ export class ProposalManager {
       };
     }
 
-    proposal.status = 'ACCEPTED';
+    // Execução transacional com snapshot temporário e preflight
+    const initialReport = validateProductionDocument(doc);
+    let tempDoc = { ...doc };
+    let tempDocUpdated = tempDoc;
 
-    let currentDoc = doc;
-    const dynamicContext: ToolExecutionContext = {
+    const testContext: ToolExecutionContext = {
       ...context,
-      doc: currentDoc,
+      doc: tempDoc,
       setDoc: (newDoc: PrexyonDocument) => {
-        currentDoc = newDoc;
-        if (context.setDoc) {
-          context.setDoc(newDoc);
-        }
+        tempDocUpdated = newDoc;
       },
     };
 
@@ -131,7 +130,7 @@ export class ProposalManager {
       toolResult = await toolRegistry.executeTool(
         proposal.toolName,
         proposal.proposedParams,
-        dynamicContext
+        testContext
       );
     } catch (err: any) {
       proposal.status = 'FAILED';
@@ -160,10 +159,31 @@ export class ProposalManager {
       };
     }
 
-    // Revalidação obrigatória pós-execução
-    validateProductionDocument(currentDoc);
+    const postDoc = toolResult.doc || tempDocUpdated;
+    const postReport = validateProductionDocument(postDoc);
 
-    // Se o problema de origem foi eliminado ou reduzido
+    // Se a proposta criou novos erros críticos ou aumentou a contagem de erros, descarta o snapshot
+    const initialErrors = new Set(initialReport.issues.filter((i) => i.severity === 'error').map((i) => i.ruleId));
+    const newErrors = postReport.issues.filter((i) => i.severity === 'error' && !initialErrors.has(i.ruleId));
+
+    if (newErrors.length > 0 || postReport.errorCount > initialReport.errorCount) {
+      proposal.status = 'FAILED';
+      return {
+        success: false,
+        proposal,
+        error: {
+          code: 'PROPOSAL_INTRODUCED_ERRORS',
+          message: `A correção foi revertida pois introduziu novos problemas: ${newErrors.map((e) => e.message).join('; ')}`,
+        },
+        summaryMessage: 'A proposta foi cancelada pois geraria novos problemas na geometria do arquivo.',
+      };
+    }
+
+    // Proposta segura e validada: atualiza o documento real
+    if (context.setDoc) {
+      context.setDoc(postDoc);
+    }
+
     proposal.status = 'EXECUTED';
     proposal.executedAt = Date.now();
 
@@ -172,7 +192,7 @@ export class ProposalManager {
     return {
       success: true,
       proposal,
-      updatedDoc: currentDoc,
+      updatedDoc: postDoc,
       toolResult,
       summaryMessage,
     };

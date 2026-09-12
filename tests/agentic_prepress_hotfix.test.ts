@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { processAgentChatRequest } from '../src/core/agent/server/chatEndpoint';
 import { MockAIProvider } from '../src/core/agent/providers/mockProvider';
 import { materializeAgentExports } from '../src/core/agent/clientExportMaterializer';
-import { createDocument, createRasterNode, addVectorGroup } from '../src/core/pdm/document';
+import { createDocument, createRasterNode, addVectorGroup, createCutContourNode } from '../src/core/pdm/document';
 import { buildVectorGroupFromSvg } from '../src/core/vectorizer/svgParser';
 import { PrexyonDocument } from '../src/core/pdm/types';
 import { ExecutedToolRecord } from '../src/core/agent/types';
@@ -226,7 +226,23 @@ describe('Prexyon Agent — Etapa 6.5 — Hotfix do fluxo agentic', () => {
     });
 
     it('não exibe XML/SVG completo na resposta de exportação cut-SVG', async () => {
-      const { doc } = createVectorizedDocument();
+      const { doc: baseDoc, vectorGroupId } = createVectorizedDocument();
+      const cut = createCutContourNode({
+        id: 'cut_1',
+        name: 'Faca',
+        sourceNodeId: vectorGroupId,
+        contours: [{ points_mm: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 0 }] }],
+        offset_mm: 2,
+        joinStyle: 'round',
+        physicalWidth_mm: 10,
+        physicalHeight_mm: 10,
+        position_mm: { x: 0, y: 0 },
+      });
+      const doc = {
+        ...baseDoc,
+        nodes: { ...baseDoc.nodes, [cut.id]: cut },
+        rootNodeIds: [...baseDoc.rootNodeIds, cut.id],
+      };
 
       const result = await processAgentChatRequest({
         message: 'Exporte o arquivo em cut-svg.',

@@ -1,7 +1,7 @@
 import { PrexyonDocument } from '../pdm/types';
 import { ExecutedToolRecord } from './types';
 import { exportDocument, downloadExportResult } from '../export/exportEngine';
-import { validateProductionDocument } from '../validation/productionValidationEngine';
+import { validateProductionDeliverable } from '../validation/productionValidationEngine';
 import {
   buildExportOptionsFromAgentArgs,
   ExportProductionArgs,
@@ -47,7 +47,14 @@ export async function materializeAgentExports(
   // 1. Exportações individuais via export_production
   for (const record of exportCalls) {
     const args = record.args as unknown as ExportProductionArgs;
-    const validationReport = validateProductionDocument(doc);
+    const deliverableMap: Record<string, import('../validation').ProductionDeliverableType> = {
+      png: 'PRINT_PNG',
+      svg: 'ARTWORK_SVG',
+      'cut-svg': 'CUT_SVG',
+      'manifest-json': 'PRINT_PNG',
+    };
+    const deliverable = deliverableMap[args.format] || 'PRINT_PNG';
+    const validationReport = validateProductionDeliverable(doc, deliverable);
     const result = await dependencies.exportDocument(
       doc,
       buildExportOptionsFromAgentArgs(args),

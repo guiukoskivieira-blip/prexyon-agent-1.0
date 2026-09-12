@@ -176,14 +176,14 @@ describe('Prexyon Agent — DTF UV Etapa 4 (Clear / Varnish — Separação Opci
     doc.nodes[raster.id] = raster;
 
     // 1. Gera White primeiro
-    const whiteRes = generateWhiteUnderbaseMask(doc);
+    const whiteRes = generateWhiteUnderbaseMask(doc, { dpi: 72 });
     doc.separations = { WHITE: whiteRes.separation };
 
     const whiteBefore = JSON.stringify(whiteRes.separation);
     const docBefore = JSON.stringify(doc.nodes[raster.id]);
 
     // 2. Gera Clear
-    const clearRes = generateClearSeparationMask(doc, { mode: 'ARTWORK' });
+    const clearRes = generateClearSeparationMask(doc, { mode: 'ARTWORK', dpi: 72 });
     doc.separations['CLEAR'] = clearRes.separation;
 
     // Comprova que COLOR e WHITE não foram alterados

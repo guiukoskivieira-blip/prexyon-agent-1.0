@@ -67,7 +67,7 @@ export function sanitizeToolResultForLLM(result: any): any {
 
 /**
  * Higieniza a resposta textual final do agente para evitar despejo de código XML/SVG,
- * Data URLs ou manifesto JSON bruto no chat.
+ * Data URLs, manifesto JSON bruto, UUIDs internos ou jargões técnicos de ferramentas.
  */
 export function sanitizeAgentReply(reply: string): string {
   if (!reply || typeof reply !== 'string') return '';
@@ -84,7 +84,18 @@ export function sanitizeAgentReply(reply: string): string {
   // 3. Remove Data URLs brutas
   cleaned = cleaned.replace(/data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g, '');
 
-  // 4. Limpa quebras de linha excessivas
+  // 4. Substitui UUIDs internos e referências cruas a nós técnicos
+  cleaned = cleaned.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, 'elemento');
+  cleaned = cleaned.replace(/\bnode_[a-zA-Z0-9_-]+\b/g, 'elemento');
+  cleaned = cleaned.replace(/\b(raster_image|raster)\b/g, 'imagem');
+  cleaned = cleaned.replace(/\b(vector_group|vector_path)\b/g, 'vetor');
+  cleaned = cleaned.replace(/\b(cut_contour)\b/g, 'faca de corte');
+
+  // 5. Remove parâmetros e flags internas do agente
+  cleaned = cleaned.replace(/ignoreValidationErrors\s*[:=]\s*(?:true|false)/gi, '');
+  cleaned = cleaned.replace(/preserveAspectRatio\s*[:=]\s*(?:true|false)/gi, '');
+
+  // 6. Limpa quebras de linha e espaços excessivos
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
 
   return cleaned;

@@ -15,7 +15,7 @@
  */
 
 import { Point2D, parseSvgPath } from './vectorPathCleaner';
-import { ContourPolygon } from '../pdm/types';
+import { ContourPolygon, CutContourNode } from '../pdm/types';
 
 export interface Segment2D {
   p1: Point2D;
@@ -489,10 +489,14 @@ export function normalizeContourPolygons(contours: (ContourPolygon | Point2D[])[
  * Valida a integridade topológica e geométrica completa de uma faca de corte (CutContourNode ou Contornos).
  */
 export function validateCutContourIntegrity(
-  rawContours: (ContourPolygon | Point2D[])[],
+  rawContours: (ContourPolygon | Point2D[])[] | CutContourNode,
   config?: ContourIntegrityConfig
 ): ContourIntegrityResult {
-  const contours = normalizeContourPolygons(rawContours);
+  const inputList =
+    rawContours && !Array.isArray(rawContours) && 'contours' in rawContours
+      ? (rawContours as CutContourNode).contours
+      : (rawContours as (ContourPolygon | Point2D[])[]);
+  const contours = normalizeContourPolygons(inputList);
   const minArea = config?.minimumClosedPathAreaMm2 ?? DEFAULT_INTEGRITY_CONFIG.minimumClosedPathAreaMm2;
   const failureReasons: string[] = [];
 
