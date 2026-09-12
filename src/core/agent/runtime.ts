@@ -365,11 +365,35 @@ export class AgentRuntime {
         const basePrompt = options?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT;
         const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
 
-        const plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
+        let plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
           systemPrompt,
           temperature: options?.temperature,
           model: options?.model,
         });
+
+        const { buildActionPlanFromUserRequest } = await import('./planner/planBuilder');
+        const deterministicPlan = buildActionPlanFromUserRequest(userMessage, currentDoc, options?.selectedNodeId);
+
+        if (deterministicPlan && deterministicPlan.steps && deterministicPlan.steps.length > 0 && deterministicPlan.intent !== 'ASK_USER') {
+          if (!plan || !plan.steps || plan.steps.length === 0) {
+            plan = deterministicPlan;
+          } else {
+            if (deterministicPlan.process && deterministicPlan.process !== 'UNSPECIFIED') {
+              plan.process = deterministicPlan.process;
+            }
+            for (const detStep of deterministicPlan.steps) {
+              const matchStep = plan.steps.find((s: any) => s.tool === detStep.tool);
+              if (matchStep) {
+                matchStep.arguments = { ...detStep.arguments, ...matchStep.arguments };
+                if (detStep.arguments.includeInnerContours !== undefined) {
+                  matchStep.arguments.includeInnerContours = detStep.arguments.includeInnerContours;
+                }
+              } else {
+                plan.steps.push(detStep);
+              }
+            }
+          }
+        }
 
         if (plan && plan.schemaVersion === '1.0') {
           const validation = validateActionPlan(plan, currentDoc, options?.selectedNodeId, this.registry);

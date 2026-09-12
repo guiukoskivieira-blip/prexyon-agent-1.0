@@ -167,6 +167,11 @@ export const AGENT_ACTION_PLAN_GEMINI_SCHEMA = {
           arguments: {
             type: 'OBJECT',
             properties: {
+              includeInnerContours: { type: 'BOOLEAN', description: 'Se falso, remove cortes internos (vazados) da faca de corte' },
+              joinStyle: { type: 'STRING', enum: ['round', 'miter', 'bevel'], description: 'Estilo de junção/cantos do contorno de corte' },
+              strokeWidth_mm: { type: 'NUMBER', description: 'Espessura de traço visual em mm' },
+              preset: { type: 'STRING', description: 'Preset de vetorização' },
+              margin_mm: { type: 'NUMBER', description: 'Margem em mm ao redor da arte ao ajustar a prancheta' },
               nodeId: { type: 'STRING' },
               width_mm: { type: 'NUMBER', description: 'Largura em milímetros (ex: 5cm -> 50)' },
               height_mm: { type: 'NUMBER', description: 'Altura em milímetros' },
