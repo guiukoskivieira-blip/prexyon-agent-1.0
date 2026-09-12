@@ -105,6 +105,8 @@ export const dtfUvProductionSkill: SkillDefinition<DtfUvProductionSkillParams> =
     const profileConfig = getProductionProfile(doc.profileId || 'dtf-uv');
     const effectiveWhitePolicy =
       p.whitePolicy ||
+      doc.productionSettings?.dtfUv?.whiteUnderbasePolicy ||
+      (doc as any).productionSettings?.whiteUnderbasePolicy ||
       (doc as any).productionPolicy?.whiteUnderbasePolicy ||
       (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
       (doc as any).activeProfile?.dtfUvConfig?.whitePolicy ||

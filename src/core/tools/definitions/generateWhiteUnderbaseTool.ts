@@ -115,6 +115,9 @@ export const generateWhiteUnderbaseTool: ToolDefinition<
 
     // 1. Validação de Capability & Policy
     const effectiveWhitePolicy =
+      doc.productionSettings?.dtfUv?.whiteUnderbasePolicy ||
+      (doc as any).productionSettings?.whiteUnderbasePolicy ||
+      (doc as any).productionPolicy?.whiteUnderbasePolicy ||
       (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
       profile.dtfUvConfig?.whitePolicy ||
       'OPTIONAL';

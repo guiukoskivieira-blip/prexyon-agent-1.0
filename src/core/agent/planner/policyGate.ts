@@ -67,6 +67,9 @@ export function evaluatePolicyGate(
     const profile = getProductionProfile(doc.profileId || 'dtf-uv');
     if (profile.dtfUvConfig) {
       const effectiveWhitePolicy =
+        doc.productionSettings?.dtfUv?.whiteUnderbasePolicy ||
+        (doc as any).productionSettings?.whiteUnderbasePolicy ||
+        (doc as any).productionPolicy?.whiteUnderbasePolicy ||
         (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
         profile.dtfUvConfig.whitePolicy ||
         'OPTIONAL';
