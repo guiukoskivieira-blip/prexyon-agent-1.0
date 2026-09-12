@@ -105,14 +105,16 @@ export const dtfUvProductionSkill: SkillDefinition<DtfUvProductionSkillParams> =
     const profileConfig = getProductionProfile(doc.profileId || 'dtf-uv');
     const effectiveWhitePolicy =
       p.whitePolicy ||
+      (doc as any).productionPolicy?.whiteUnderbasePolicy ||
       (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
       (doc as any).activeProfile?.dtfUvConfig?.whitePolicy ||
       profileConfig?.dtfUvConfig?.whitePolicy ||
       'OPTIONAL';
 
     const generateWhite =
-      p.generateWhite ??
-      (!hasWhiteSeparation && effectiveWhitePolicy !== 'DISABLED' && effectiveWhitePolicy !== 'RIP_CONTROLLED');
+      effectiveWhitePolicy === 'RIP_CONTROLLED' || effectiveWhitePolicy === 'DISABLED'
+        ? false
+        : (p.generateWhite ?? !hasWhiteSeparation);
     const generateClear = p.generateClear ?? hasClearSeparation;
     const clearMode = p.clearMode || 'ARTWORK';
     const createPackage = p.createPackage ?? true;
