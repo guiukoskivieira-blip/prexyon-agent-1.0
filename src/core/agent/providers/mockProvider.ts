@@ -985,19 +985,59 @@ export function createDeterministicTurnsForRequest(
     }
   }
 
+  // 4.9. Remoção de Cortes Internos / Ajuste de Faca Existente
+  const wantsInnerContourRemoval =
+    text.includes('sem os cortes de dentro') ||
+    text.includes('sem cortes de dentro') ||
+    text.includes('remove os cortes internos') ||
+    text.includes('remover os cortes internos') ||
+    text.includes('sem recortes internos') ||
+    text.includes('sem recorte interno') ||
+    text.includes('não corta por dentro') ||
+    text.includes('nao corta por dentro') ||
+    text.includes('deixa só o corte externo') ||
+    text.includes('deixa apenas o corte externo') ||
+    text.includes('só o corte externo') ||
+    text.includes('so o corte externo') ||
+    text.includes('apenas o corte externo') ||
+    text.includes('sem corte interno') ||
+    text.includes('sem cortes internos') ||
+    text.includes('sem corte de dentro') ||
+    text.includes('sem vazado') ||
+    text.includes('sem vazados');
+
+  const existingCutNode = nodes.find((n) => n.type === 'cut_contour');
+
+  if (wantsInnerContourRemoval && existingCutNode) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_update_cut_${Date.now()}`,
+              name: 'update_cut_contour',
+              args: {
+                nodeId: existingCutNode.id,
+                includeInnerContours: false,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Contorno de corte atualizado (sem cortes internos).',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 5. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.", "crie uma faca de 1 mm sem corte dentro")
   if (text.includes('faca') || text.includes('corte') || text.includes('sangria')) {
     const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
     const offset = matchMm ? parseFloat(matchMm[1]) : 2;
-    const includeInnerContours = !(
-      text.includes('sem corte dentro') ||
-      text.includes('sem vazado') ||
-      text.includes('sem vazados') ||
-      text.includes('sem corte interno') ||
-      text.includes('sem cortes internos') ||
-      text.includes('somente externo') ||
-      text.includes('somente contorno externo')
-    );
+    const includeInnerContours = !wantsInnerContourRemoval;
 
     const calls: any[] = [];
     let vectorTargetId = targetNodeId;
@@ -1022,15 +1062,27 @@ export function createDeterministicTurnsForRequest(
       }
     }
 
-    calls.push({
-      id: `call_cut_${Date.now()}`,
-      name: 'create_cut_contour',
-      args: {
-        sourceNodeId: vectorTargetId,
-        offset_mm: offset,
-        includeInnerContours,
-      },
-    });
+    if (existingCutNode) {
+      calls.push({
+        id: `call_update_cut_${Date.now()}`,
+        name: 'update_cut_contour',
+        args: {
+          nodeId: existingCutNode.id,
+          offset_mm: offset,
+          includeInnerContours,
+        },
+      });
+    } else {
+      calls.push({
+        id: `call_cut_${Date.now()}`,
+        name: 'create_cut_contour',
+        args: {
+          sourceNodeId: vectorTargetId,
+          offset_mm: offset,
+          includeInnerContours,
+        },
+      });
+    }
 
     const turns: ScriptedTurn[] = calls.map((c) => ({
       response: { functionCalls: [c] },
@@ -1038,7 +1090,9 @@ export function createDeterministicTurnsForRequest(
 
     turns.push({
       response: {
-        text: `Faca de corte criada com sucesso (${offset} mm de offset)${!includeInnerContours ? ' sem corte interno' : ''}.`,
+        text: existingCutNode
+          ? `Contorno de corte atualizado (offset: ${offset} mm${!includeInnerContours ? ', sem cortes internos' : ''}).`
+          : `Faca de corte criada com sucesso (${offset} mm de offset)${!includeInnerContours ? ' sem corte interno' : ''}.`,
         finishReason: 'STOP',
       },
     });
@@ -1046,13 +1100,15 @@ export function createDeterministicTurnsForRequest(
     return turns;
   }
 
-  // 5. Comando de Auto-Fix / Correção Automática (ex: "Corrija os problemas que puder automaticamente", "Ajuste tudo que for seguro")
+  // 5.5. Comando de Auto-Fix / Correção Automática (ex: "Corrija os problemas que puder automaticamente", "Ajuste tudo que for seguro", "arruma isso")
   if (
     text.includes('corrij') ||
     text.includes('corrija') ||
     text.includes('corrigir') ||
     text.includes('ajuste tudo') ||
     text.includes('ajustar tudo') ||
+    text.includes('arruma') ||
+    text.includes('arrumar') ||
     text.includes('auto-fix') ||
     text.includes('autofix') ||
     (text.includes('ajust') && text.includes('seguro'))
