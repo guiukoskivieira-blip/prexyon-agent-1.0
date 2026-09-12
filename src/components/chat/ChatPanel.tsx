@@ -252,6 +252,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         textLower.includes('clear artwork') ||
         textLower.includes('verniz somente onde');
 
+      const clientReceipts: import('@/core/agent/types').ClientExecutionReceipt[] = [];
+
       // Se a intenção demandar remoção de fundo e houver raster com pixels no cliente:
       if (wantsRemoveBg && activeDoc.nodes) {
         const nodes = Object.values(activeDoc.nodes) as DocumentNode[];
@@ -268,6 +270,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             );
             if (bgRes.success && bgRes.doc) {
               activeDoc = bgRes.doc;
+              clientReceipts.push({
+                action: 'remove_background',
+                status: 'success',
+                sourceNodeId: targetRaster.id,
+                timestamp: Date.now(),
+              });
             }
           } catch (bgErr) {
             console.warn('Remoção de fundo local no navegador falhou:', bgErr);
@@ -288,6 +296,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 white: whiteRes.separation,
               },
             };
+            clientReceipts.push({
+              action: 'generate_white_underbase',
+              status: 'success',
+              separationId: whiteRes.separation.id,
+              timestamp: Date.now(),
+            });
           }
         } catch (wErr) {
           console.warn('Geração local da base branca falhou:', wErr);
@@ -307,6 +321,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 clear: clearRes.separation,
               },
             };
+            clientReceipts.push({
+              action: 'generate_clear_separation',
+              status: 'success',
+              separationId: clearRes.separation.id,
+              timestamp: Date.now(),
+            });
           }
         } catch (cErr) {
           console.warn('Geração local do verniz ARTWORK falhou:', cErr);
@@ -321,14 +341,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
 
         if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {
-          const hasDerivedVector = nodes.some(
+          const existingGroup = nodes.find(
             (n) =>
               n &&
               (n.type === 'group' || (n as any).type === 'vector_group') &&
               ((n as any).sourceRasterNodeId === targetRaster.id || n.name === `Vetor: ${targetRaster.name}`)
           );
 
-          if (!hasDerivedVector) {
+          if (existingGroup) {
+            clientReceipts.push({
+              action: 'vectorize_raster',
+              status: 'success',
+              sourceNodeId: targetRaster.id,
+              resultNodeId: existingGroup.id,
+              timestamp: Date.now(),
+            });
+          } else {
             try {
               const options = getVTracerOptionsForPreset('logo');
               const vResult = await vtracerBridge.vectorizeRasterNode(targetRaster, options);
@@ -342,6 +370,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 nodes: updatedNodes,
                 rootNodeIds: [...activeDoc.rootNodeIds, vResult.groupNode.id],
               };
+              clientReceipts.push({
+                action: 'vectorize_raster',
+                status: 'success',
+                sourceNodeId: targetRaster.id,
+                resultNodeId: vResult.groupNode.id,
+                timestamp: Date.now(),
+              });
             } catch (vErr) {
               console.warn('Vetorização local no navegador não pôde ser executada:', vErr);
             }
@@ -359,6 +394,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         body: JSON.stringify({
           message: cleanText,
           doc: transportDoc,
+          clientExecutionReceipts: clientReceipts.length > 0 ? clientReceipts : undefined,
           options: {
             selectedNodeId: selectedNodeId || undefined,
           },

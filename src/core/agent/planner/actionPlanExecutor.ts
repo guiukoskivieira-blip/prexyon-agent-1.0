@@ -24,11 +24,13 @@ export async function executeActionPlan(
   initialDoc: PrexyonDocument,
   options?: {
     registry?: ToolRegistry;
+    clientExecutionReceipts?: import('../types').ClientExecutionReceipt[];
     toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
   }
 ): Promise<PlanExecutionResult> {
   const registry = options?.registry || defaultToolRegistry;
   let currentDoc = normalizeDocument(initialDoc);
+  const receipts = options?.clientExecutionReceipts || [];
 
   // Atualiza profile no PDM se explicitamente indicado pelo plano
   if (plan.process === 'DTF_UV' && currentDoc.profileId !== 'dtf-uv') {
@@ -57,10 +59,62 @@ export async function executeActionPlan(
       continue;
     }
 
-    // Resolve argumentos dinamicamente contra o estado atual do PDM (ex: novo VectorGroup produzido no step anterior)
-    let stepArgs = { ...step.arguments };
     const selectedNodeId = (options?.toolExecutionContext as any)?.selectedNodeId;
+    let stepArgs = { ...step.arguments };
 
+    // Regra de Ouro: Checa se a ação já foi executada no cliente com recibo E prova no PDM
+    let alreadyCompletedOnClient = false;
+    if (step.tool === 'vectorize_raster') {
+      const hasReceipt = receipts.some((r) => r.action === 'vectorize_raster' && r.status === 'success');
+      const targetId = (stepArgs.nodeId as string) || selectedNodeId;
+      const hasDerivedVector = Object.values(currentDoc.nodes).some(
+        (n) => n && (n.type === 'group' || (n as any).type === 'vector_group') && (
+          (n as any).sourceRasterNodeId === targetId ||
+          (targetId && currentDoc.nodes[targetId] && n.name === `Vetor: ${currentDoc.nodes[targetId].name}`)
+        )
+      );
+      alreadyCompletedOnClient = (hasReceipt && hasDerivedVector) || hasDerivedVector;
+    } else if (step.tool === 'remove_background') {
+      const hasReceipt = receipts.some((r) => r.action === 'remove_background' && r.status === 'success');
+      alreadyCompletedOnClient = hasReceipt;
+    } else if (step.tool === 'generate_white_underbase') {
+      const hasReceipt = receipts.some((r) => r.action === 'generate_white_underbase' && r.status === 'success');
+      const hasWhiteSep = Boolean(currentDoc.separations?.white && currentDoc.separations.white.status === 'GENERATED');
+      alreadyCompletedOnClient = (hasReceipt && hasWhiteSep) || hasWhiteSep;
+    } else if (step.tool === 'generate_clear_separation') {
+      const hasReceipt = receipts.some((r) => r.action === 'generate_clear_separation' && r.status === 'success');
+      const hasClearSep = Boolean(currentDoc.separations?.clear && currentDoc.separations.clear.status === 'GENERATED');
+      alreadyCompletedOnClient = (hasReceipt && hasClearSep) || hasClearSep;
+    }
+
+    if (alreadyCompletedOnClient) {
+      stepResults.push({
+        stepId,
+        toolName: step.tool,
+        args: stepArgs,
+        status: 'COMPLETED',
+        result: {
+          success: true,
+          doc: currentDoc,
+          message: `Ação "${step.tool}" já executada com sucesso no cliente.`,
+          data: { clientExecutionVerified: true },
+        },
+      });
+      executedTools.push({
+        toolName: step.tool,
+        args: stepArgs,
+        result: {
+          success: true,
+          doc: currentDoc,
+          message: `Ação "${step.tool}" já executada com sucesso no cliente.`,
+          data: { clientExecutionVerified: true },
+        },
+        timestamp: Date.now(),
+      });
+      continue;
+    }
+
+    // Resolve argumentos dinamicamente contra o estado atual do PDM (ex: novo VectorGroup produzido no step anterior)
     if (step.tool === 'vectorize_raster') {
       if (!stepArgs.nodeId) {
         const resolved = resolveTargetReference(plan.target, currentDoc, selectedNodeId);

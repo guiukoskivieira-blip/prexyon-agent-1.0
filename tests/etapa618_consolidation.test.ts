@@ -187,4 +187,104 @@ describe('PRYX — ETAPA 6.18 — Consolidação MVP Adesivo + DTF UV', () => {
     expect(Boolean(defaultToolRegistry.getTool('flip_node_horizontal'))).toBe(true);
   });
 
+  it('11. PlanFilter não reexecuta ferramentas com clientExecutionReceipts válidos e prova no PDM', async () => {
+    const doc = createSampleDoc('dtf-uv');
+    // Simula separação WHITE pré-gerada no cliente
+    doc.separations = {
+      white: {
+        id: 'sep_white_client_1',
+        role: 'WHITE',
+        sourceNodeIds: ['node_raster_1'],
+        sourceFingerprint: 'fp_test',
+        widthPx: 100,
+        heightPx: 100,
+        widthMm: 100,
+        heightMm: 100,
+        dpi: 300,
+        status: 'GENERATED',
+        generationMethod: 'CLIENT_RASTER_BRIDGE',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    };
+
+    const result = await processAgentChatRequest({
+      message: 'coloca branco por baixo',
+      doc,
+      clientExecutionReceipts: [
+        {
+          action: 'generate_white_underbase',
+          status: 'success',
+          separationId: 'sep_white_client_1',
+          timestamp: Date.now(),
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.doc?.separations?.white?.status).toBe('GENERATED');
+    // Verifica que a separação do cliente NÃO foi sobrescrita nem reinicializada pelo servidor
+    expect(result.doc?.separations?.white?.id).toBe('sep_white_client_1');
+  });
+
+  it('12. TargetResolver seleciona o VectorGroupNode gerado no cliente para create_cut_contour', async () => {
+    let doc = createSampleDoc('generic-sticker');
+    // Simula vetorização já concluída no cliente
+    const groupNode = {
+      id: 'vector_group_client_1',
+      type: 'group' as const,
+      name: 'Vetor: test_art.png',
+      visible: true,
+      locked: false,
+      position_mm: { x: 10, y: 10 },
+      rotation_deg: 0,
+      opacity: 1,
+      childrenIds: ['path_1'],
+      physicalWidth_mm: 50,
+      physicalHeight_mm: 50,
+      aspectRatio: 1,
+      sourceViewBox: { width: 100, height: 100 },
+      sourceRasterNodeId: 'node_raster_1',
+    };
+    const pathNode = {
+      id: 'path_1',
+      type: 'vector_path' as const,
+      name: 'Caminho 1',
+      visible: true,
+      locked: false,
+      position_mm: { x: 10, y: 10 },
+      rotation_deg: 0,
+      opacity: 1,
+      d: 'M 0 0 L 50 0 L 50 50 L 0 50 Z',
+      fill: '#000000',
+      stroke: null,
+      strokeWidth_mm: 0,
+      physicalWidth_mm: 50,
+      physicalHeight_mm: 50,
+      sourceRasterNodeId: 'node_raster_1',
+    };
+    doc.nodes[groupNode.id] = groupNode as any;
+    doc.nodes[pathNode.id] = pathNode as any;
+    doc.rootNodeIds.push(groupNode.id);
+
+    const result = await processAgentChatRequest({
+      message: 'cria uma faca de 2 mm só por fora',
+      doc,
+      clientExecutionReceipts: [
+        {
+          action: 'vectorize_raster',
+          status: 'success',
+          sourceNodeId: 'node_raster_1',
+          resultNodeId: groupNode.id,
+          timestamp: Date.now(),
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    const cutNode = Object.values(result.doc!.nodes).find((n) => n.type === 'cut_contour') as any;
+    expect(cutNode).toBeDefined();
+    expect(cutNode.sourceNodeId).toBe('vector_group_client_1');
+  });
+
 });

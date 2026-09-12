@@ -59,6 +59,7 @@ export interface AgentRunOptions {
   model?: string;
   history?: ChatMessage[];
   selectedNodeId?: string;
+  clientExecutionReceipts?: ClientExecutionReceipt[];
   toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
 }
 
@@ -83,10 +84,20 @@ export interface AgentRunResult {
   };
 }
 
+export interface ClientExecutionReceipt {
+  action: 'vectorize_raster' | 'remove_background' | 'generate_white_underbase' | 'generate_clear_separation' | string;
+  status: 'success' | 'failed';
+  sourceNodeId?: string;
+  resultNodeId?: string;
+  separationId?: string;
+  timestamp?: number;
+}
+
 export interface AgentChatRequestBody {
   message: string;
   doc: PrexyonDocument;
   history?: ChatMessage[];
+  clientExecutionReceipts?: ClientExecutionReceipt[];
   options?: {
     maxIterations?: number;
     model?: string;

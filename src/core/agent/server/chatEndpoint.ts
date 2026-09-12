@@ -95,6 +95,7 @@ export async function processAgentChatRequest(
     temperature: req.options?.temperature,
     history: req.history,
     selectedNodeId: req.options?.selectedNodeId,
+    clientExecutionReceipts: req.clientExecutionReceipts,
     toolExecutionContext: {
       vtracerBridge: vtracerNodeBridge,
     },
