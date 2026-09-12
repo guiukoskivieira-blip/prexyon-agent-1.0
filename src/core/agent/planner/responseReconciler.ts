@@ -414,6 +414,21 @@ export function reconcileAgentResponseWithExecutionEvidence(
     reply = header + '\n\n' + lines.join('\n');
   }
 
+  if (successTools.some((s) => s.toolName === 'auto_fix_prepress_issues')) {
+    const autoFixTool = successTools.find((s) => s.toolName === 'auto_fix_prepress_issues');
+    const appliedCount = (autoFixTool?.result as any)?.data?.appliedFixes?.length ?? 0;
+    if (appliedCount === 0) {
+      if (reply.includes('Correções automáticas e seguras de pré-impressão aplicadas.')) {
+        reply = reply.replace(
+          '• Correções automáticas e seguras de pré-impressão aplicadas.',
+          '• Nenhuma correção automática e segura estava disponível.'
+        );
+      } else if (!reply.includes('Nenhuma correção')) {
+        reply = reply + '\n• Nenhuma correção automática e segura estava disponível.';
+      }
+    }
+  }
+
   if (successTools.some((s) => s.toolName === 'update_cut_contour' && s.args?.includeInnerContours === false)) {
     if (!reply.toLowerCase().includes('sem cortes internos') && !reply.toLowerCase().includes('sem corte interno')) {
       reply += '\n• Contorno de corte atualizado (sem cortes internos).';
