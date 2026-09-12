@@ -233,7 +233,7 @@ describe('PRYX — ETAPA 7.4 — DTF UV Production Skill (prepare_dtf_uv)', () =
     const raster = makeRaster({ physicalWidth_mm: 50, physicalHeight_mm: 50 });
     const doc = makeDocWithNodes({ [raster.id]: raster });
 
-    const result = await executeSkill('prepare_dtf_uv', { generateWhite: true }, doc, defaultContextOptions);
+    const result = await executeSkill('prepare_dtf_uv', { generateWhite: true, createPackage: true }, doc, defaultContextOptions);
     const pkgTool = result.executedTools.find((t) => t.toolName === 'generate_dtf_uv_production_package') as any;
     const pkgData = pkgTool.result?.data || pkgTool.data;
     const manifestArtifact = pkgData?.artifacts?.find((a: any) => a.format === 'manifest-json');

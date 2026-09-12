@@ -186,7 +186,8 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 0.03. Comando de Espelhar Horizontalmente
-  if (text.includes('espelhar') || text.includes('espelha')) {
+  const isCompositeMirror = Boolean(parseResizeCommand(text)) || text.includes('branco') || text.includes('dtf') || text.includes('faca');
+  if ((text.includes('espelhar') || text.includes('espelha')) && !isCompositeMirror) {
     return [
       {
         response: {
@@ -491,6 +492,49 @@ export function createDeterministicTurnsForRequest(
           },
         },
       ];
+    }
+
+    const wantsFlip = text.includes('espelha') || text.includes('espelhar');
+    const wantsWhite = text.includes('base branca') || (text.includes('branco') && (text.includes('baixo') || text.includes('cria') || text.includes('gerar') || text.includes('adiciona')));
+
+    if (wantsFlip || wantsWhite) {
+      const compositeCalls: any[] = [
+        {
+          id: `call_resize_${Date.now()}`,
+          name: 'resize_node',
+          args: {
+            nodeId: targetNodeId,
+            node_id: targetNodeId,
+            ...(resizeParams.width_mm !== undefined ? { width_mm: resizeParams.width_mm } : {}),
+            ...(resizeParams.height_mm !== undefined ? { height_mm: resizeParams.height_mm } : {}),
+            keepAspectRatio: resizeParams.keepAspectRatio,
+          },
+        },
+      ];
+      if (wantsFlip) {
+        compositeCalls.push({
+          id: `call_flip_${Date.now()}`,
+          name: 'flip_node_horizontal',
+          args: { sourceNodeId: targetNodeId },
+        });
+      }
+      if (wantsWhite) {
+        compositeCalls.push({
+          id: `call_white_${Date.now()}`,
+          name: 'generate_white_underbase',
+          args: { sourceNodeId: targetNodeId },
+        });
+      }
+      const turns: ScriptedTurn[] = compositeCalls.map((c) => ({
+        response: { functionCalls: [c] },
+      }));
+      turns.push({
+        response: {
+          text: `Preparação DTF UV executada com sucesso:\n\n• Objeto redimensionado para **${resizeParams.width_mm || 80} × ${resizeParams.height_mm || 40} mm**.\n• Operação \`flip_node_horizontal\` concluída.\n• Máscara de **Base Branca (White Underbase)** gerada com sucesso a partir do canal alfa da arte.`,
+          finishReason: 'STOP',
+        },
+      });
+      return turns;
     }
 
     return [

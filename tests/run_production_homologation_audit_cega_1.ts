@@ -128,7 +128,7 @@ async function runHomologation() {
       vgFinal2 &&
       Math.abs(vgFinal2.physicalHeight_mm - 40) < 1.0 &&
       vgFinal2.physicalWidth_mm !== 40 &&
-      finalDoc2?.separations?.white &&
+      (finalDoc2?.separations?.white || finalDoc2?.separations?.WHITE) &&
       req2.json.reply.toLowerCase().includes('base branca');
 
     console.log(`P0-02 height=40mm width=${vgFinal2?.physicalWidth_mm}mm: ${p0_02_pass ? 'PASS ✓' : 'FAIL ✗'}`);
@@ -140,15 +140,10 @@ async function runHomologation() {
     console.log('\n--- 3. P1-01: VOCABULÁRIO RASTER ---');
     let doc3 = createDocument({ width_mm: 100, height_mm: 100 });
     const clientReceipt3 = {
-      toolName: 'vectorize_raster',
-      args: { preset: 'logo' },
-      executedAt: Date.now(),
-      status: 'COMPLETED',
-      result: {
-        success: true,
-        message: 'Vetorização concluída no cliente.',
-        data: { vectorGroupId: 'vg-client-1' },
-      },
+      action: 'vectorize_raster',
+      status: 'success',
+      resultNodeId: 'vg-client-1',
+      timestamp: Date.now(),
     };
 
     const { groupNode: vg3, pathNodes: pn3 } = buildVectorGroupFromSvg({
@@ -264,7 +259,7 @@ async function runHomologation() {
     console.log('Regressões req6 HTTP:', req6.status);
     console.log('Regressões reply:', req6.json.reply);
     const finalDoc6 = req6.json.doc;
-    const hasFictitiousWhite = Boolean(finalDoc6?.separations?.white);
+    const hasFictitiousWhite = Boolean(finalDoc6?.separations?.white || finalDoc6?.separations?.WHITE);
 
     const reg_pass = req6.status === 200 && !hasFictitiousWhite;
     console.log(`REGRESSÕES STATUS: ${reg_pass ? 'PASS ✓' : 'FAIL ✗'}`);

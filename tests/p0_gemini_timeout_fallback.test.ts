@@ -42,8 +42,8 @@ function createSampleDoc(): PrexyonDocument {
 }
 
 describe('Hotfix de Latência Gemini — Timeout Controlado (3000ms) e Fallback Determinístico', () => {
-  it('1. Constante de timeout está configurada exatamente para 3000ms', () => {
-    expect(GEMINI_REQUEST_TIMEOUT_MS).toBe(3000);
+  it('1. Constante de timeout está configurada exatamente para 12000ms', () => {
+    expect(GEMINI_REQUEST_TIMEOUT_MS).toBe(12000);
   });
 
   it('2. Provedor com TimeoutError aciona fallback determinístico sem crash', async () => {

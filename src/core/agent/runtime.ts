@@ -45,8 +45,10 @@ export function sanitizeToolResultForLLM(result: any): any {
       cleanData.artifacts = cleanData.artifacts.map((a: any) => {
         const cleanArt = { ...a };
         delete cleanArt.blob;
-        delete cleanArt.dataString;
         delete cleanArt.dataUrl;
+        if (cleanArt.dataString && cleanArt.dataString.length > 50000) {
+          delete cleanArt.dataString;
+        }
         return cleanArt;
       });
     }
