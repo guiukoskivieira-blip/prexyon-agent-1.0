@@ -66,10 +66,18 @@ export function evaluatePolicyGate(
   if (process === 'DTF_UV' || doc.profileId === 'dtf-uv') {
     const profile = getProductionProfile(doc.profileId || 'dtf-uv');
     if (profile.dtfUvConfig) {
-      if (tool === 'generate_white_underbase' && profile.dtfUvConfig.whitePolicy === 'DISABLED' && !args.forceBypassPolicy) {
+      const effectiveWhitePolicy =
+        (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
+        profile.dtfUvConfig.whitePolicy ||
+        'OPTIONAL';
+      if (
+        tool === 'generate_white_underbase' &&
+        (effectiveWhitePolicy === 'DISABLED' || effectiveWhitePolicy === 'RIP_CONTROLLED') &&
+        !args.forceBypassPolicy
+      ) {
         return {
           allowed: false,
-          blockedReason: 'A geração de Base Branca está desabilitada nas políticas do perfil de produção DTF UV selecionado.',
+          blockedReason: `A geração de Base Branca está configurada como ${effectiveWhitePolicy} e é gerenciada pelo RIP.`,
         };
       }
       if (tool === 'generate_clear_separation' && (profile.dtfUvConfig.clearPolicy === 'DISABLED' || !profile.dtfUvConfig.capabilities?.supportsClear) && !args.forceBypassPolicy) {

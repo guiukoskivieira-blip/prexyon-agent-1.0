@@ -96,12 +96,27 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
 
     let groupNode: VectorGroupNode;
 
-    if (targetNode.type === 'group') {
+    if (targetNode.type === 'group' || (targetNode as any).type === 'vector_group') {
       groupNode = targetNode as VectorGroupNode;
     } else if (targetNode.type === 'raster_image') {
-      // Procura se já existe um grupo vetorial gerado para este nó raster
-      const existingGroup = Object.values(doc.nodes).find(
-        (n) => n && n.type === 'group' && (n as VectorGroupNode).sourceRasterNodeId === targetNode.id
+      const allNodes = Object.values(doc.nodes);
+      // Procura se já existe um grupo vetorial gerado para este nó raster ou disponível no documento
+      const existingGroup = (
+        allNodes.find(
+          (n) =>
+            n &&
+            (n.type === 'group' || (n as any).type === 'vector_group') &&
+            (n as VectorGroupNode).sourceRasterNodeId === targetNode.id
+        ) ||
+        allNodes.find(
+          (n) =>
+            n &&
+            (n.type === 'group' || (n as any).type === 'vector_group') &&
+            (n.name?.includes('Vetor') || n.name?.includes(targetNode.name))
+        ) ||
+        allNodes.find(
+          (n) => n && (n.type === 'group' || (n as any).type === 'vector_group')
+        )
       ) as VectorGroupNode | undefined;
 
       if (existingGroup) {

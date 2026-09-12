@@ -14,6 +14,7 @@ import { ValidationReport, ValidationIssue, ValidationStatus } from '../../valid
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
 import { parseDimensionsFromNaturalText } from '../../agent/planner/unitNormalizer';
 import { ClearSeparationMode } from '../../dtf/types';
+import { getProductionProfile } from '../../production/profile';
 
 export interface DtfUvProductionSkillParams {
   targetWidth_mm?: number;
@@ -101,9 +102,17 @@ export const dtfUvProductionSkill: SkillDefinition<DtfUvProductionSkillParams> =
     const hasWhiteSeparation = !!doc.separations?.['WHITE'];
     const hasClearSeparation = !!doc.separations?.['CLEAR'];
 
+    const profileConfig = getProductionProfile(doc.profileId || 'dtf-uv');
+    const effectiveWhitePolicy =
+      p.whitePolicy ||
+      (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
+      (doc as any).activeProfile?.dtfUvConfig?.whitePolicy ||
+      profileConfig?.dtfUvConfig?.whitePolicy ||
+      'OPTIONAL';
+
     const generateWhite =
       p.generateWhite ??
-      (!hasWhiteSeparation && p.whitePolicy !== 'DISABLED' && p.whitePolicy !== 'RIP_CONTROLLED');
+      (!hasWhiteSeparation && effectiveWhitePolicy !== 'DISABLED' && effectiveWhitePolicy !== 'RIP_CONTROLLED');
     const generateClear = p.generateClear ?? hasClearSeparation;
     const clearMode = p.clearMode || 'ARTWORK';
     const createPackage = p.createPackage ?? true;
@@ -141,8 +150,8 @@ export const dtfUvProductionSkill: SkillDefinition<DtfUvProductionSkillParams> =
       stepIds.push(sId);
     }
 
-    // Step 3: generate_white_underbase (se ativado e não for RIP_CONTROLLED)
-    if (generateWhite && p.whitePolicy !== 'RIP_CONTROLLED') {
+    // Step 3: generate_white_underbase (se ativado e não for RIP_CONTROLLED nem DISABLED)
+    if (generateWhite && effectiveWhitePolicy !== 'RIP_CONTROLLED' && effectiveWhitePolicy !== 'DISABLED') {
       const sId = 'step_white';
       steps.push({
         id: sId,

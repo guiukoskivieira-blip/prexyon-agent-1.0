@@ -114,13 +114,16 @@ export const generateWhiteUnderbaseTool: ToolDefinition<
     const profile = getProductionProfile(currentProfileId);
 
     // 1. Validação de Capability & Policy
-    const whitePolicy = profile.dtfUvConfig?.whitePolicy || 'OPTIONAL';
-    if (whitePolicy === 'DISABLED' && !args.forceBypassPolicy) {
+    const effectiveWhitePolicy =
+      (doc as any).activeProfile?.rules?.whiteUnderbasePolicy ||
+      profile.dtfUvConfig?.whitePolicy ||
+      'OPTIONAL';
+    if ((effectiveWhitePolicy === 'DISABLED' || effectiveWhitePolicy === 'RIP_CONTROLLED') && !args.forceBypassPolicy) {
       return {
         success: false,
         error: {
-          code: 'POLICY_DISABLED',
-          message: 'A geração de Base Branca está desabilitada nas políticas do perfil de produção DTF UV selecionado.',
+          code: effectiveWhitePolicy === 'DISABLED' ? 'POLICY_DISABLED' : 'POLICY_RESTRICTED',
+          message: `A geração de Base Branca está configurada como ${effectiveWhitePolicy} e é gerenciada pelo RIP.`,
         },
       };
     }
@@ -131,7 +134,7 @@ export const generateWhiteUnderbaseTool: ToolDefinition<
       const result = generateWhiteUnderbaseMask(doc, {
         dpi,
         sourceNodeIds: args.sourceNodeIds,
-        whitePolicy,
+        whitePolicy: effectiveWhitePolicy,
         forceBypassPolicy: args.forceBypassPolicy,
       });
 

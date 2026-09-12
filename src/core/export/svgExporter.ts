@@ -52,8 +52,8 @@ export function exportDocumentToSvg(
       const group = node as VectorGroupNode;
       const posX = roundPrecision(group.position_mm.x + offsetX_mm, 2);
       const posY = roundPrecision(group.position_mm.y + offsetY_mm, 2);
-      const viewBoxW = group.sourceViewBox.width || group.physicalWidth_mm || 1;
-      const viewBoxH = group.sourceViewBox.height || group.physicalHeight_mm || 1;
+      const viewBoxW = group.sourceViewBox?.width || group.physicalWidth_mm || 1;
+      const viewBoxH = group.sourceViewBox?.height || group.physicalHeight_mm || 1;
       const scaleX = roundPrecision(group.physicalWidth_mm / viewBoxW, 6);
       const scaleY = roundPrecision(group.physicalHeight_mm / viewBoxH, 6);
       const opacity = group.opacity !== undefined ? group.opacity : 1;

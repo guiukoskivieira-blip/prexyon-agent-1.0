@@ -135,32 +135,27 @@ export async function executeActionPlan(
       }
     } else if (step.tool === 'create_cut_contour') {
       const currentSource = stepArgs.sourceNodeId ? currentDoc.nodes[stepArgs.sourceNodeId as string] : null;
-      if (!currentSource || currentSource.type !== 'group') {
+      if (!currentSource || (currentSource.type !== 'group' && (currentSource as any).type !== 'vector_group')) {
         const targetRasterId = (stepArgs.sourceNodeId as string) || selectedNodeId;
         const allNodes = Object.values(currentDoc.nodes);
         
         // 1. Procura grupo vetorial derivado do raster alvo
         const matchingVector = allNodes.find(
-          (n) => n.type === 'group' && (
+          (n) => n && (n.type === 'group' || (n as any).type === 'vector_group') && (
             (n as any).sourceRasterNodeId === targetRasterId ||
-            (targetRasterId && currentDoc.nodes[targetRasterId] && n.name === `Vetor: ${currentDoc.nodes[targetRasterId].name}`)
+            (targetRasterId && currentDoc.nodes[targetRasterId] && n.name?.includes(currentDoc.nodes[targetRasterId].name)) ||
+            n.name?.includes('Vetor')
           )
-        );
+        ) || allNodes.find((n) => n && (n.type === 'group' || (n as any).type === 'vector_group'));
 
         if (matchingVector) {
           stepArgs.sourceNodeId = matchingVector.id;
         } else {
-          // 2. Procura qualquer grupo vetorial disponível no documento
-          const anyVector = allNodes.find((n) => n.type === 'group');
-          if (anyVector) {
-            stepArgs.sourceNodeId = anyVector.id;
-          } else {
-            const resolved = resolveTargetReference(plan.target, currentDoc, selectedNodeId);
-            if (resolved.node && resolved.node.type === 'group') {
-              stepArgs.sourceNodeId = resolved.node.id;
-            } else if (resolved.nodeId && !stepArgs.sourceNodeId) {
-              stepArgs.sourceNodeId = resolved.nodeId;
-            }
+          const resolved = resolveTargetReference(plan.target, currentDoc, selectedNodeId);
+          if (resolved.node && (resolved.node.type === 'group' || (resolved.node as any).type === 'vector_group')) {
+            stepArgs.sourceNodeId = resolved.node.id;
+          } else if (resolved.nodeId && !stepArgs.sourceNodeId) {
+            stepArgs.sourceNodeId = resolved.nodeId;
           }
         }
       }
