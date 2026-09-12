@@ -384,7 +384,19 @@ export class AgentRuntime {
             for (const detStep of deterministicPlan.steps) {
               const matchStep = plan.steps.find((s: any) => s.tool === detStep.tool);
               if (matchStep) {
-                matchStep.arguments = { ...detStep.arguments, ...matchStep.arguments };
+                if (detStep.tool === 'resize_node') {
+                  if (detStep.arguments.height_mm !== undefined) {
+                    delete matchStep.arguments.width_mm;
+                    matchStep.arguments.height_mm = detStep.arguments.height_mm;
+                    matchStep.arguments.keepAspectRatio = detStep.arguments.keepAspectRatio ?? true;
+                  } else if (detStep.arguments.width_mm !== undefined) {
+                    delete matchStep.arguments.height_mm;
+                    matchStep.arguments.width_mm = detStep.arguments.width_mm;
+                    matchStep.arguments.keepAspectRatio = detStep.arguments.keepAspectRatio ?? true;
+                  }
+                } else {
+                  matchStep.arguments = { ...detStep.arguments, ...matchStep.arguments };
+                }
                 if (detStep.arguments.includeInnerContours !== undefined) {
                   matchStep.arguments.includeInnerContours = detStep.arguments.includeInnerContours;
                 }
