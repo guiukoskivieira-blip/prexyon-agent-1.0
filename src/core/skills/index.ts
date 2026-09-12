@@ -8,10 +8,16 @@ export * from './types';
 export * from './registry';
 export * from './executor';
 export * from './definitions/stickerProductionSkill';
+export * from './definitions/dtfUvProductionSkill';
 
 import { defaultSkillRegistry } from './registry';
 import { stickerProductionSkill } from './definitions/stickerProductionSkill';
+import { dtfUvProductionSkill } from './definitions/dtfUvProductionSkill';
 
 if (!defaultSkillRegistry.has(stickerProductionSkill.id)) {
   defaultSkillRegistry.register(stickerProductionSkill);
+}
+
+if (!defaultSkillRegistry.has(dtfUvProductionSkill.id)) {
+  defaultSkillRegistry.register(dtfUvProductionSkill);
 }

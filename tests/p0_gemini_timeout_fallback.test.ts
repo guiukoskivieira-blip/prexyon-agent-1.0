@@ -96,7 +96,7 @@ describe('Hotfix de Latência Gemini — Timeout Controlado (3000ms) e Fallback 
     const start = Date.now();
     const result = await processAgentChatRequest(
       {
-        message: 'prepara para dtf uv, coloca branco por baixo e passa verniz só na arte',
+        message: 'ajusta dtf uv, coloca branco por baixo e passa verniz só na arte',
         doc,
       },
       slowProvider

@@ -349,9 +349,10 @@ describe('PRYX — ETAPA 7.2 — Fundação da Camada de Skills', () => {
     expect(result.reason).toContain('PolicyGate');
   });
 
-  it('20. Registro de Skills inicial de produção contém prepare_sticker_for_production (Etapa 7.3)', () => {
-    expect(defaultSkillRegistry.list()).toHaveLength(1);
+  it('20. Registro de Skills inicial de produção contém prepare_sticker_for_production (Etapa 7.3) e prepare_dtf_uv (Etapa 7.4)', () => {
+    expect(defaultSkillRegistry.list()).toHaveLength(2);
     expect(defaultSkillRegistry.has('prepare_sticker_for_production')).toBe(true);
+    expect(defaultSkillRegistry.has('prepare_dtf_uv')).toBe(true);
   });
 
   it('21. AgentRuntime com skillId inexistente retorna erro FAILED e NUNCA faz fallback silencioso para LLM', async () => {

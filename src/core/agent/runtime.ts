@@ -189,13 +189,14 @@ export class AgentRuntime {
       };
     } else {
       // Intenção automática de Skill na linguagem natural (se não fornecido skillId prévio)
-      const { detectStickerSkillFromUserRequest, executeSkill } = await import('../skills');
-      const detected = detectStickerSkillFromUserRequest(userMessage, currentDoc);
-      if (detected.isStickerSkill) {
+      const { detectStickerSkillFromUserRequest, detectDtfUvSkillFromUserRequest, executeSkill } = await import('../skills');
+      
+      const detectedSticker = detectStickerSkillFromUserRequest(userMessage, currentDoc);
+      if (detectedSticker.isStickerSkill) {
         currentDoc = { ...currentDoc, profileId: 'generic-sticker' };
         const skillRes = await executeSkill(
           'prepare_sticker_for_production',
-          detected.params || {},
+          detectedSticker.params || {},
           currentDoc,
           {
             registry: this.registry,
@@ -217,6 +218,37 @@ export class AgentRuntime {
             : {
                 code: skillRes.status,
                 message: skillRes.reason || `Falha na execução da Skill "prepare_sticker_for_production".`,
+              },
+        };
+      }
+
+      const detectedDtfUv = detectDtfUvSkillFromUserRequest(userMessage, currentDoc);
+      if (detectedDtfUv.isDtfUvSkill) {
+        currentDoc = { ...currentDoc, profileId: 'dtf-uv' };
+        const skillRes = await executeSkill(
+          'prepare_dtf_uv',
+          detectedDtfUv.params || {},
+          currentDoc,
+          {
+            registry: this.registry,
+            clientExecutionReceipts: options?.clientExecutionReceipts,
+            selectedNodeId: options?.selectedNodeId,
+            toolExecutionContext: options?.toolExecutionContext,
+          }
+        );
+        const isOk = skillRes.status === 'SUCCESS' || skillRes.status === 'SUCCESS_WITH_WARNINGS';
+        return {
+          success: isOk,
+          reply: skillRes.reason || `Arte preparada para DTF UV com sucesso. Status: ${skillRes.status}.`,
+          executedTools: skillRes.executedTools,
+          doc: skillRes.resultingDocument,
+          iterations: 1,
+          status: isOk ? 'completed' : 'error',
+          error: isOk
+            ? undefined
+            : {
+                code: skillRes.status,
+                message: skillRes.reason || `Falha na execução da Skill "prepare_dtf_uv".`,
               },
         };
       }
