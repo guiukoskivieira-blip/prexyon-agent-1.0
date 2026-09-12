@@ -989,6 +989,8 @@ export function createDeterministicTurnsForRequest(
   const wantsInnerContourRemoval =
     text.includes('sem os cortes de dentro') ||
     text.includes('sem cortes de dentro') ||
+    text.includes('sem corte dentro') ||
+    text.includes('sem cortes dentro') ||
     text.includes('remove os cortes internos') ||
     text.includes('remover os cortes internos') ||
     text.includes('sem recortes internos') ||

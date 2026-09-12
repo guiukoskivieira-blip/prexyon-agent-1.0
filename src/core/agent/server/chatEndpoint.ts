@@ -78,6 +78,8 @@ export async function processAgentChatRequest(
     doc.profileId = 'dtf-uv';
   }
 
+  const selectedNodeId = req.options?.selectedNodeId || (req as any).selectedNodeId;
+
   // Seleção de Provedor: customProvider > Gemini (se chave presente e fora de ambiente de teste) > Mock Determinístico (Etapa 6.3)
   const isTestEnv = typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST));
   const isGeminiAvailable = !customProvider && !isTestEnv && typeof process !== 'undefined' && Boolean(process.env?.GEMINI_API_KEY);
@@ -85,7 +87,7 @@ export async function processAgentChatRequest(
     customProvider ||
     (isGeminiAvailable
       ? new GeminiProvider(req.options?.model)
-      : new MockAIProvider(createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId)));
+      : new MockAIProvider(createDeterministicTurnsForRequest(req.message, doc, selectedNodeId)));
 
   const runtime = new AgentRuntime(provider, defaultToolRegistry);
 
@@ -94,7 +96,7 @@ export async function processAgentChatRequest(
     model: req.options?.model,
     temperature: req.options?.temperature,
     history: req.history,
-    selectedNodeId: req.options?.selectedNodeId,
+    selectedNodeId,
     clientExecutionReceipts: req.clientExecutionReceipts,
     toolExecutionContext: {
       vtracerBridge: vtracerNodeBridge,
@@ -110,14 +112,14 @@ export async function processAgentChatRequest(
   const canTriggerFallback = isGeminiAvailable || Boolean(customProvider);
 
   if (!result.success && canTriggerFallback && isProviderInfrastructureError) {
-    const fallbackTurns = createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId);
+    const fallbackTurns = createDeterministicTurnsForRequest(req.message, doc, selectedNodeId);
     if (fallbackTurns.length > 0) {
       console.log('[AgentRuntime] deterministic fallback started');
       const fallbackStartTime = Date.now();
       const fallbackProvider = new MockAIProvider(fallbackTurns);
       const fallbackRuntime = new AgentRuntime(fallbackProvider, defaultToolRegistry);
       const fallbackResult = await fallbackRuntime.run(req.message, doc, {
-        selectedNodeId: req.options?.selectedNodeId,
+        selectedNodeId,
         toolExecutionContext: {
           vtracerBridge: vtracerNodeBridge,
         },
