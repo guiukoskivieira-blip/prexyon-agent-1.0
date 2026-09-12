@@ -75,6 +75,16 @@ export const removeRedundantVectorPointsTool: ToolDefinition<
         };
       }
 
+      if (targetNode.locked) {
+        return {
+          success: false,
+          error: {
+            code: 'NODE_LOCKED',
+            message: `O nó "${targetNode.name || targetNodeId}" está bloqueado e não pode ser modificado.`,
+          },
+        };
+      }
+
       if (targetNode.type === 'vector_path') {
         candidatePaths.push(targetNode as VectorPathNode);
       } else if (targetNode.type === 'group') {

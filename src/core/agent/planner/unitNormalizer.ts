@@ -120,15 +120,20 @@ export function normalizeActionArguments(_toolName: string, args: Record<string,
 /**
  * Extrai o offset numérico em mm da faca de corte a partir de texto em linguagem natural.
  * Preserva valores decimais como 0.8, 1.5, 1.8, 2.5 mm (com vírgula ou ponto).
+ * Suporta a palavra 'folga' associada à faca.
  * Ignora solicitações de sangria/bleed para não confundir conceitos.
  */
 export function parseCutContourOffsetFromText(text: string): number | undefined {
   if (!text) return undefined;
   const clean = text.toLowerCase().trim();
 
-  // Ignora sangria isolada sem menção a faca/corte/contorno
-  const match = clean.match(/(?:faca|contorno(?:\s+de\s+corte)?|corte|offset)(?:\s+(?:de|com|para\s+fora|em))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
-                clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:de\s+)?(?:offset|faca|contorno)/i);
+  // Expressões de faca, contorno de corte e folga
+  const match =
+    clean.match(/(?:faca|contorno(?:\s+de\s+corte)?|corte|offset)(?:[^\d]*?(?:de|com|em|para\s+fora|folga|com\s+folga\s+de))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
+    clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:de\s+)?(?:folga|offset)(?:\s+da\s+(?:faca|corte))?/i) ||
+    clean.match(/(?:folga|offset)(?:\s+(?:de|da\s+faca\s+de))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
+    clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:de\s+)?(?:offset|faca|contorno)/i);
+
   if (match) {
     const rawVal = parseFloat(match[1].replace(',', '.'));
     if (Number.isFinite(rawVal) && rawVal > 0) {
@@ -162,16 +167,17 @@ export function parseMoveCommandFromNaturalText(text: string): {
     clean.includes('deslocar') ||
     clean.includes('posicione') ||
     clean.includes('posicionar') ||
+    clean.includes('posiciona') ||
     clean.includes('coordenada') ||
     clean.includes('posição') ||
     clean.includes('posicao') ||
-    /\bx\s*=\s*\d+/.test(clean) ||
-    /\by\s*=\s*\d+/.test(clean);
+    /\bx\s*[:=]?\s*\d+/.test(clean) ||
+    /\by\s*[:=]?\s*\d+/.test(clean);
 
   if (!isMove) return null;
 
-  // 1. Coordenadas explícitas no formato x=... e y=...
-  const xyMatch = clean.match(/x\s*=?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:e|,|\s)\s*y\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+  // 1. Coordenadas explícitas no formato x: 30mm e y: 40mm ou x=30mm y=40mm ou x 30mm e y 40mm
+  const xyMatch = clean.match(/x\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:e|,|\s)\s*y\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
   if (xyMatch) {
     const unitX = clean.includes('cm') ? 'cm' : 'mm';
     const unitY = xyMatch[2] || unitX;
@@ -182,8 +188,8 @@ export function parseMoveCommandFromNaturalText(text: string): {
     }
   }
 
-  // 2. Coordenada Y primeiro e X depois: y=... e x=...
-  const yxMatch = clean.match(/y\s*=?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:e|,|\s)\s*x\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+  // 2. Coordenada Y primeiro e X depois: y: 40mm e x: 30mm
+  const yxMatch = clean.match(/y\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:e|,|\s)\s*x\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
   if (yxMatch) {
     const unitY = clean.includes('cm') ? 'cm' : 'mm';
     const unitX = yxMatch[2] || unitY;
@@ -196,7 +202,7 @@ export function parseMoveCommandFromNaturalText(text: string): {
 
   // 3. Tupla de coordenadas: (50, 50) ou coordenada 50, 50
   const tupleMatch = clean.match(/(?:coordenada|posição|posicao|para)?\s*\(?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*,\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*\)?/i);
-  if (tupleMatch && (clean.includes('coordenada') || clean.includes('posição') || clean.includes('posicao') || clean.includes('para') || clean.includes('mova') || clean.includes('mover'))) {
+  if (tupleMatch && (clean.includes('coordenada') || clean.includes('posição') || clean.includes('posicao') || clean.includes('para') || clean.includes('mova') || clean.includes('mover') || clean.includes('posiciona'))) {
     const unit = tupleMatch[2] || (clean.includes('cm') ? 'cm' : 'mm');
     const x = normalizeDimensionMm(tupleMatch[1], unit);
     const y = normalizeDimensionMm(tupleMatch[2], unit);
@@ -205,10 +211,10 @@ export function parseMoveCommandFromNaturalText(text: string): {
     }
   }
 
-  // 4. Apenas eixo X explícito: x=30mm ou x 30
-  const xOnlyMatch = clean.match(/x\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
-  // 5. Apenas eixo Y explícito: y=45mm ou y 45
-  const yOnlyMatch = clean.match(/y\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+  // 4. Apenas eixo X explícito: x: 30mm, x=30mm, x 30mm
+  const xOnlyMatch = clean.match(/\bx\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?\b/i);
+  // 5. Apenas eixo Y explícito: y: 45mm, y=45mm, y 45mm
+  const yOnlyMatch = clean.match(/\by\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?\b/i);
 
   if (xOnlyMatch || yOnlyMatch) {
     const result: { x_mm?: number; y_mm?: number; relative: boolean } = { relative: false };
@@ -243,6 +249,7 @@ export function parseMoveCommandFromNaturalText(text: string): {
 
 /**
  * Extrai dimensões e parâmetros proporcionais a partir de texto em linguagem natural.
+ * Somente números semanticamente vinculados à dimensão da arte são interpretados como redimensionamento.
  */
 export function parseDimensionsFromNaturalText(text: string): {
   width_mm?: number;
@@ -254,131 +261,173 @@ export function parseDimensionsFromNaturalText(text: string): {
 
   let clean = text.toLowerCase().trim();
 
-  // Comandos de espessura de linha ou deslocamento não são redimensionamento de objeto
-  if (
-    clean.includes('engrosse') ||
-    clean.includes('espessura') ||
-    clean.includes('linhas finas') ||
-    clean.includes('linha fina') ||
-    clean.includes('traço fino') ||
-    clean.includes('traco fino') ||
-    clean.includes('mova') ||
-    clean.includes('mover') ||
-    clean.includes('desloque')
-  ) {
-    return null;
-  }
-
   // Substitui números por extenso comuns
   for (const [word, num] of Object.entries(PORTUGUESE_NUMBER_WORDS)) {
     clean = clean.replace(new RegExp(`\\b${word}\\b`, 'g'), String(num));
   }
 
-  // Remove expressões que representam offset de faca, sangria ou bleed
-  // para isolar as dimensões de redimensionamento do objeto/arte
+  // 1. Remove expressões que NÃO pertencem a dimensões da arte
   const textForDims = clean
-    .replace(/faca(?:\s+de\s+corte)?(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?(?:\s+para\s+fora)?(?:\s+sem\s+corte\s+dentro)?/gi, '')
-    .replace(/contorno(?:\s+de\s+corte)?(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
-    .replace(/sangria(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
-    .replace(/bleed(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    // Sangria / Bleed
+    .replace(/(?:sangria|sangrias|bleed|bleeds)(?:\s+(?:de|com|para|em|da|do))?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*(?:de\s+)?(?:sangria|sangrias|bleed|bleeds)/gi, '')
+    // Margem / Margin
+    .replace(/(?:margem|margens|margin|margins)(?:\s+(?:de|com|para|em|da|do))?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*(?:de\s+)?(?:margem|margens|margin|margins)/gi, '')
+    // White Recuo / Choke
+    .replace(/(?:recuo|recuos|choke|chokes)(?:\s+(?:de|com|para|em|da|do))?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*(?:de\s+)?(?:recuo|recuos|choke|chokes)/gi, '')
+    // Faca / Contorno / Corte / Folga / Offset
+    .replace(/(?:faca|facas|contorno|contornos|corte|cortes|folga|folgas|offset|offsets)(?:\s+(?:de|com|para|em|da|do|com\s+folga\s+de|folga\s+de))?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?(?:\s+(?:de\s+)?(?:folga|folgas|offset|offsets|para\s+fora))?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*(?:de\s+)?(?:folga|folgas|offset|offsets|faca|facas|contorno|contornos)/gi, '')
+    // Segurança / Safety
+    .replace(/(?:seguran[çc]a|seguran[çc]as|safety|safetys)(?:\s+(?:de|com|para|em|da|do))?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*(?:de\s+)?(?:seguran[çc]a|seguran[çc]as|safety)/gi, '')
+    // Espessura / Traço / Linhas Finas / Stroke
+    .replace(/(?:tra[çc]o|tra[çc]os|espessura|espessuras|linha|linhas|stroke|strokes|engrosse|engrossar|afine|afinar)(?:\s+(?:finas?|m[ií]nimas?|de|com|para|em|da|do|as))*\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*(?:de\s+)?(?:tra[çc]o|tra[çc]os|espessura|espessuras|stroke|strokes|linha|linhas)/gi, '')
+    // Coordenadas X/Y explícitas (ex: x:30mm, x=30mm, posicione em x 30, y 40) - NÃO remover '50mm x 30mm'
+    .replace(/(?:eixo\s+|coordenada\s+|posi[çc][ãa]o\s+)?\b[xy]\s*[:=]\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/(?:eixo|coordenada)\s+[xy]\s*[:=]?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/(?:mova|mover|posicione|posicionar)\s+(?:para\s+)?[xy]\s*[:=]?\s*\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*para\s+(?:a\s+)?(?:direita|esquerda|cima|baixo|topo|fundo)/gi, '')
     .trim();
 
-  // Se após remover essas expressões não sobrou texto com números ou intenção de redimensionamento
+  // Se após purgar medidas não-arte não sobrou nenhum número, não há redimensionamento
   if (!textForDims || !/\d/.test(textForDims)) {
     return null;
   }
 
-  // 1. Duas dimensões explícitas: "5cm x 3cm", "50mm x 30mm", "50 x 30 mm", "5 x 3 cm"
-  const twoDimMatch = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|mm)?\s*(?:x|×|por|\*)\s*(\d+(?:[.,]\d+)?)\s*(cm|mm)/i);
+  // 2. Análise de intenções de proporção vs eixos isolados
+  const isPropRequested =
+    clean.includes('proporcional') ||
+    clean.includes('proporcao') ||
+    clean.includes('proporção') ||
+    clean.includes('sem distorcer') ||
+    clean.includes('sem deformar') ||
+    clean.includes('mantendo propor') ||
+    clean.includes('aspect') ||
+    clean.includes('x proporcional');
+
+  const isSingleAxisLocked =
+    clean.includes('sem mexer na largura') ||
+    clean.includes('sem alterar a largura') ||
+    clean.includes('sem mudar a largura') ||
+    clean.includes('não mexe na largura') ||
+    clean.includes('nao mexa na largura') ||
+    clean.includes('sem mexer na altura') ||
+    clean.includes('sem alterar a altura') ||
+    clean.includes('sem mudar a altura') ||
+    clean.includes('não mexe na altura') ||
+    clean.includes('nao mexa na altura') ||
+    clean.includes('só a altura') ||
+    clean.includes('so a altura') ||
+    clean.includes('apenas a altura') ||
+    clean.includes('só na altura') ||
+    clean.includes('apenas na altura') ||
+    clean.includes('só a largura') ||
+    clean.includes('so a largura') ||
+    clean.includes('apenas a largura') ||
+    clean.includes('só na largura') ||
+    clean.includes('apenas na largura');
+
+  // 3. Duas dimensões explícitas: "5cm x 3cm", "50mm x 30mm", "50 x 30 mm", "5 x 3 cm", "50 por 30 mm"
+  const twoDimMatch = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)?\s*(?:x|×|por|\*)\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)/i);
   if (twoDimMatch) {
-    const w = normalizeDimensionMm(twoDimMatch[1], twoDimMatch[2] || twoDimMatch[4] || 'mm');
-    const h = normalizeDimensionMm(twoDimMatch[3], twoDimMatch[4] || 'mm');
+    const unit1 = twoDimMatch[2];
+    const unit2 = twoDimMatch[4] || unit1 || 'mm';
+    const w = normalizeDimensionMm(twoDimMatch[1], unit1 || unit2);
+    const h = normalizeDimensionMm(twoDimMatch[3], unit2);
     if (w && h) {
       return { width_mm: w, height_mm: h, keepAspectRatio: false };
     }
   }
 
-  const isProp =
-    textForDims.includes('proporcional') ||
-    textForDims.includes('proporcao') ||
-    textForDims.includes('proporção') ||
-    textForDims.includes('sem distorcer') ||
-    textForDims.includes('sem deformar') ||
-    textForDims.includes('mantendo') ||
-    textForDims.includes('aspect') ||
-    textForDims.includes('x proporcional');
-
-  // 2. Checagem direta de padrão sintático com eixo explícito (ALTURA)
+  // 4. Eixo explícito: ALTURA (ex: "altura de 40mm", "40mm de altura", "altura para 100mm", "muda só a altura para 90mm")
   const heightMatchA = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)?\s*(?:de\s+)?(altura|height|alto)\b/i);
-  const heightMatchB = textForDims.match(/\b(altura|height|alto)(?:\s+de)?\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
-  
+  const heightMatchB = textForDims.match(/\b(altura|height|alto)(?:\s+(?:de|para|em|com|=|:))?\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
+
   if (heightMatchA) {
     const hasUnit = Boolean(heightMatchA[2]);
     const dimMm = normalizeDimensionMm(heightMatchA[1], heightMatchA[2] || 'mm');
     if (dimMm) {
-      return { height_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+      const keepAspect = isSingleAxisLocked ? false : (isPropRequested ? true : true);
+      return { height_mm: dimMm, keepAspectRatio: keepAspect, isAmbiguous: !hasUnit };
     }
   } else if (heightMatchB) {
     const hasUnit = Boolean(heightMatchB[3]);
     const dimMm = normalizeDimensionMm(heightMatchB[2], heightMatchB[3] || 'mm');
     if (dimMm) {
-      return { height_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+      const keepAspect = isSingleAxisLocked ? false : (isPropRequested ? true : true);
+      return { height_mm: dimMm, keepAspectRatio: keepAspect, isAmbiguous: !hasUnit };
     }
   }
 
-  // 3. Checagem direta de padrão sintático com eixo explícito (LARGURA)
+  // 5. Eixo explícito: LARGURA (ex: "largura de 50mm", "50mm de largura", "largura para 80mm", "muda só a largura para 80mm")
   const widthMatchA = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)?\s*(?:de\s+)?(largura|width|largo)\b/i);
-  const widthMatchB = textForDims.match(/\b(largura|width|largo)(?:\s+de)?\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
+  const widthMatchB = textForDims.match(/\b(largura|width|largo)(?:\s+(?:de|para|em|com|=|:))?\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
 
   if (widthMatchA) {
     const hasUnit = Boolean(widthMatchA[2]);
     const dimMm = normalizeDimensionMm(widthMatchA[1], widthMatchA[2] || 'mm');
     if (dimMm) {
-      return { width_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+      const keepAspect = isSingleAxisLocked ? false : (isPropRequested ? true : true);
+      return { width_mm: dimMm, keepAspectRatio: keepAspect, isAmbiguous: !hasUnit };
     }
   } else if (widthMatchB) {
     const hasUnit = Boolean(widthMatchB[3]);
     const dimMm = normalizeDimensionMm(widthMatchB[2], widthMatchB[3] || 'mm');
     if (dimMm) {
-      return { width_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+      const keepAspect = isSingleAxisLocked ? false : (isPropRequested ? true : true);
+      return { width_mm: dimMm, keepAspectRatio: keepAspect, isAmbiguous: !hasUnit };
     }
   }
 
-  // 4. Dimensão única com unidade explícita sem vínculo sintático direto
+  // 6. Intenção explícita de redimensionamento da arte / tamanho (sem especificar eixo)
+  const isExplicitProportional =
+    isPropRequested ||
+    clean.includes('mantendo o formato') ||
+    clean.includes('manter o formato') ||
+    clean.includes('sem deformar') ||
+    clean.includes('sem distorcer') ||
+    clean.includes('mantém a proporção') ||
+    clean.includes('mantem a proporcao') ||
+    clean.includes('mantendo a proporção') ||
+    clean.includes('mantendo a proporcao') ||
+    clean.includes('x proporcional');
+
+  const isExplicitResize =
+    clean.includes('redimension') ||
+    clean.includes('escala') ||
+    clean.includes('reduz') ||
+    clean.includes('reduza') ||
+    clean.includes('aumenta') ||
+    clean.includes('aumente') ||
+    isExplicitProportional ||
+    /dtf[^\d]*com\s+\d+/i.test(clean) ||
+    /adesivo[^\d]*com\s+\d+/i.test(clean);
+
   const singleDimMatch = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
+
   if (singleDimMatch) {
     const dimMm = normalizeDimensionMm(singleDimMatch[1], singleDimMatch[2]);
     if (dimMm) {
-      const isWidth = textForDims.includes('largura') || textForDims.includes('width') || textForDims.includes('largo');
-      const isHeight = textForDims.includes('altura') || textForDims.includes('height') || textForDims.includes('alto');
-
-      if (isHeight && !isWidth) {
-        return { height_mm: dimMm, keepAspectRatio: isProp || true };
+      if (isExplicitResize) {
+        return { width_mm: dimMm, keepAspectRatio: isExplicitProportional ? true : (isPropRequested || true) };
       }
-      if (isWidth && !isHeight) {
-        return { width_mm: dimMm, keepAspectRatio: isProp || true };
-      }
-
-      const isExplicitResize =
-        textForDims.includes('redimension') ||
-        textForDims.includes('ajust') ||
-        textForDims.includes('mud') ||
-        textForDims.includes('alter') ||
-        textForDims.includes('escal') ||
-        textForDims.includes('tamanho');
-
-      if (!isWidth && !isHeight && !isProp && !isExplicitResize) {
-        const isProcessContext = textForDims.includes('adesivo') || textForDims.includes('dtf') || textForDims.includes('logo');
-        if (!isProcessContext) {
-          return { width_mm: dimMm, keepAspectRatio: true, isAmbiguous: true };
-        }
-      }
-
-      return { width_mm: dimMm, keepAspectRatio: isProp || true };
+      return { width_mm: dimMm, keepAspectRatio: true, isAmbiguous: true };
     }
   }
 
-  // 5. Medida SEM unidade explícita (ex: "deixe com 5 de largura", "largura de 5", "deixe com 5") -> AMBÍGUO
+  // 7. Medida com unidade isolada sem verbo de resize nem contexto de arte -> AMBÍGUO
+  if (singleDimMatch) {
+    const dimMm = normalizeDimensionMm(singleDimMatch[1], singleDimMatch[2]);
+    if (dimMm) {
+      return { width_mm: dimMm, keepAspectRatio: true, isAmbiguous: true };
+    }
+  }
+
+  // 8. Medida SEM unidade explícita (ex: "deixe com 5 de largura", "largura de 5", "deixe com 5") -> AMBÍGUO
   const noUnitMatch = textForDims.match(/(?:deixe com|tamanho|com|largura|altura|redimensione para)\s+(\d+(?:[.,]\d+)?)\b/i);
   if (noUnitMatch) {
     const rawNum = parseFloat(noUnitMatch[1].replace(',', '.'));

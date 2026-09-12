@@ -1072,6 +1072,8 @@ export function createDeterministicTurnsForRequest(
     text.includes('remover os cortes internos') ||
     text.includes('sem recortes internos') ||
     text.includes('sem recorte interno') ||
+    text.includes('sem os recortes de dentro') ||
+    text.includes('sem recortes de dentro') ||
     text.includes('não corta por dentro') ||
     text.includes('nao corta por dentro') ||
     text.includes('deixa só o corte externo') ||
@@ -1079,11 +1081,24 @@ export function createDeterministicTurnsForRequest(
     text.includes('só o corte externo') ||
     text.includes('so o corte externo') ||
     text.includes('apenas o corte externo') ||
+    text.includes('só corte externo') ||
+    text.includes('so corte externo') ||
+    text.includes('apenas corte externo') ||
+    text.includes('só o contorno externo') ||
+    text.includes('so o contorno externo') ||
+    text.includes('apenas o contorno externo') ||
+    text.includes('só contorno externo') ||
+    text.includes('so contorno externo') ||
+    text.includes('apenas contorno externo') ||
     text.includes('sem corte interno') ||
     text.includes('sem cortes internos') ||
     text.includes('sem corte de dentro') ||
+    text.includes('sem miolo') ||
     text.includes('sem vazado') ||
-    text.includes('sem vazados');
+    text.includes('sem vazados') ||
+    text.includes('sem furos internos') ||
+    text.includes('sem furo interno') ||
+    text.includes('sem furos de dentro');
 
   const existingCutNode = nodes.find((n) => n.type === 'cut_contour');
 

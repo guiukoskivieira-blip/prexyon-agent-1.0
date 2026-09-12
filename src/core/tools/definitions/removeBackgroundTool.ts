@@ -145,6 +145,16 @@ export const removeBackgroundTool: ToolDefinition<RemoveBackgroundArgs, RemoveBa
       };
     }
 
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `O nó "${targetNode.name || targetNode.id}" está bloqueado e não pode ser modificado.`,
+        },
+      };
+    }
+
     const rgba = getOrDecodeRgbaBuffer(targetNode);
     if (!rgba || rgba.length === 0) {
       return {

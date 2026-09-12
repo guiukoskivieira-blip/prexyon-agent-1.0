@@ -81,6 +81,16 @@ export const moveNodeTool: ToolDefinition<MoveNodeArgs, MoveNodeResultData> = {
       };
     }
 
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `O nó "${targetNode.name || targetNode.id}" está bloqueado e não pode ser modificado.`,
+        },
+      };
+    }
+
     if (args.x_mm === undefined && args.y_mm === undefined) {
       return {
         success: false,

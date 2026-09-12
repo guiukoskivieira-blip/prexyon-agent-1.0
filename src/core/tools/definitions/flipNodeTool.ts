@@ -39,6 +39,16 @@ export const flipNodeTool: ToolDefinition<FlipNodeArgs, FlipNodeResultData> = {
       };
     }
 
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `O nó "${targetNode.name || targetNode.id}" está bloqueado e não pode ser modificado.`,
+        },
+      };
+    }
+
     const currentFlipped = Boolean((targetNode as any).metadata?.flippedHorizontal);
     const newFlipped = !currentFlipped;
 

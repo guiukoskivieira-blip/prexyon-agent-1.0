@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tool: update_cut_contour
  *
  * Atualiza parâmetros e recalcula a geometria de uma faca de corte existente.
@@ -77,6 +77,16 @@ export const updateCutContourTool: ToolDefinition<UpdateCutContourArgs, UpdateCu
         error: {
           code: 'NODE_NOT_FOUND',
           message: `Nó com id "${args.nodeId}" não foi encontrado no documento.`,
+        },
+      };
+    }
+
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `A faca de corte "${targetNode.name || targetNode.id}" está bloqueada e não pode ser modificada.`,
         },
       };
     }

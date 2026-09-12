@@ -39,6 +39,16 @@ export const centerNodeTool: ToolDefinition<CenterNodeArgs, CenterNodeResultData
       };
     }
 
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `O nó "${targetNode.name || targetNode.id}" está bloqueado e não pode ser modificado.`,
+        },
+      };
+    }
+
     const w_mm = (targetNode as any).physicalWidth_mm || 50;
     const h_mm = (targetNode as any).physicalHeight_mm || 50;
 

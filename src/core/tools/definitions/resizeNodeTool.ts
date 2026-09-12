@@ -82,6 +82,16 @@ export const resizeNodeTool: ToolDefinition<ResizeNodeArgs, ResizeNodeResultData
       };
     }
 
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `O nó "${targetNode.name || targetNode.id}" está bloqueado e não pode ser modificado.`,
+        },
+      };
+    }
+
     if (
       targetNode.type !== 'raster_image' &&
       targetNode.type !== 'group' &&

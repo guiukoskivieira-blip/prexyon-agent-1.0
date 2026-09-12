@@ -96,6 +96,16 @@ export const closeCutContourTool: ToolDefinition<
       };
     }
 
+    if (targetNode.locked) {
+      return {
+        success: false,
+        error: {
+          code: 'NODE_LOCKED',
+          message: `A faca de corte "${targetNode.name || targetNode.id}" está bloqueada e não pode ser modificada.`,
+        },
+      };
+    }
+
     if (targetNode.type !== 'cut_contour') {
       return {
         success: false,
