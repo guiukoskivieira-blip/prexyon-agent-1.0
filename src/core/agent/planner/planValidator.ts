@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — Plan Validator
  *
  * Validador determinístico do plano de ação antes da execução:
@@ -69,7 +69,7 @@ export function validateActionPlan(
       id: stepId,
       arguments: normalizedArgs,
     };
-    actionWithTarget = injectResolvedNodeIdIntoAction(actionWithTarget, targetRes.nodeId);
+    actionWithTarget = injectResolvedNodeIdIntoAction(actionWithTarget, targetRes.nodeId, doc);
 
     // D. Validação de argumentos obrigatórios mínimos
     if (rawStep.tool === 'resize_node') {

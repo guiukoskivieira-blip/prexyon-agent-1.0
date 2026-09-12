@@ -51,6 +51,22 @@ export function verifyMutationEvidence(
         error: 'Nenhum contorno de corte foi gerado no documento.',
       };
     }
+  } else if (toolName === 'update_cut_contour') {
+    const cutNode = Object.values(nextDoc.nodes || {}).find(
+      (n) => n && n.type === 'cut_contour'
+    ) as any;
+    if (!cutNode) {
+      return {
+        verified: false,
+        error: 'Nenhum contorno de corte foi encontrado no documento para atualizar.',
+      };
+    }
+    if (args?.includeInnerContours !== undefined && cutNode.includeInnerContours !== args.includeInnerContours) {
+      return {
+        verified: false,
+        error: `Recortes internos da faca de corte não foram atualizados como esperado (includeInnerContours=${args.includeInnerContours}).`,
+      };
+    }
   } else if (toolName === 'generate_white_underbase') {
     const whiteSep = nextDoc.separations?.white || (nextDoc.separations as any)?.WHITE;
     const hasWhiteSeparation = Boolean(
@@ -373,10 +389,18 @@ export function reconcileAgentResponseWithExecutionEvidence(
         lines.push('• **Pacote de Produção** gerado com sucesso.');
       } else if (s.toolName === 'create_cut_contour') {
         lines.push('• Linha técnica de faca de corte gerada com offset de ' + (s.args?.offset_mm || 2) + ' mm.');
+      } else if (s.toolName === 'update_cut_contour') {
+        const noInner = s.args?.includeInnerContours === false;
+        lines.push('• Contorno de corte atualizado' + (noInner ? ' (sem cortes internos)' : '') + '.');
       } else if (s.toolName === 'vectorize_raster') {
         lines.push('• Imagem raster convertida para vetor.');
       } else if (s.toolName === 'auto_fix_prepress_issues') {
-        lines.push('• Correções automáticas e seguras de pré-impressão aplicadas.');
+        const appliedCount = (s.result as any)?.data?.appliedFixes?.length ?? 0;
+        if (appliedCount > 0) {
+          lines.push('• ' + appliedCount + ' correção(ões) automática(s) e segura(s) de pré-impressão aplicada(s).');
+        } else {
+          lines.push('• Nenhuma correção automática e segura estava disponível para os problemas detectados.');
+        }
       } else {
         lines.push('• Operação `' + s.toolName + '` concluída.');
       }

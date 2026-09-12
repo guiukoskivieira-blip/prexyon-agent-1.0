@@ -95,9 +95,11 @@ export function resolveTargetReference(
 /**
  * Injeta o ID do nó resolvido nos argumentos de uma ação planejada caso a ferramenta exija nodeId.
  */
-export function injectResolvedNodeIdIntoAction(action: PlannedAction, resolvedNodeId: string | null): PlannedAction {
-  if (!resolvedNodeId) return action;
-
+export function injectResolvedNodeIdIntoAction(
+  action: PlannedAction,
+  resolvedNodeId: string | null,
+  doc?: PrexyonDocument
+): PlannedAction {
   const updatedArgs = { ...action.arguments };
   const toolsRequiringNodeId = [
     'resize_node',
@@ -115,7 +117,17 @@ export function injectResolvedNodeIdIntoAction(action: PlannedAction, resolvedNo
   ];
 
   if (toolsRequiringNodeId.includes(action.tool)) {
-    if (!updatedArgs.nodeId && !updatedArgs.node_id && !updatedArgs.sourceNodeId) {
+    // Se a ferramenta for de atualização de faca de corte, o alvo deve ser o nó cut_contour
+    if (['update_cut_contour', 'center_cut_contour', 'close_cut_contour'].includes(action.tool)) {
+      if (doc?.nodes) {
+        const cutNode = Object.values(doc.nodes).find((n) => n && n.type === 'cut_contour');
+        if (cutNode) {
+          updatedArgs.nodeId = cutNode.id;
+        }
+      }
+    }
+
+    if (!updatedArgs.nodeId && !updatedArgs.node_id && !updatedArgs.sourceNodeId && resolvedNodeId) {
       if (action.tool === 'create_cut_contour') {
         updatedArgs.sourceNodeId = resolvedNodeId;
       } else {

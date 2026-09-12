@@ -276,7 +276,7 @@ function buildHumanSummaryMessage(params: {
         params.appliedFixes.map((f) => `- ${f.summary}`).join('\n')
     );
   } else if (params.failedCount === 0) {
-    parts.push('Nenhuma correção automática foi necessária.');
+    parts.push('Nenhuma correção automática e segura estava disponível para os problemas detectados.');
   }
 
   if (params.failedCount > 0) {

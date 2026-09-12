@@ -145,6 +145,25 @@ export function buildActionPlanFromUserRequest(
     });
   }
 
+  // 5.2. Passo de Espelhamento Horizontal
+  const wantsFlip =
+    text.includes('espelha') ||
+    text.includes('espelhar') ||
+    text.includes('espelhe') ||
+    text.includes('flip horizontal') ||
+    text.includes('espelhar horizontal');
+
+  if (wantsFlip) {
+    const flipDependsOn = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_flip',
+      tool: 'flip_node_horizontal',
+      arguments: {},
+      description: 'Espelhar elemento na horizontal.',
+      dependsOn: flipDependsOn.length > 0 ? flipDependsOn : undefined,
+    });
+  }
+
   // 5.5. Passo de Vetorização (se solicitado)
   const wantsVectorize =
     text.includes('vetoriz') ||
@@ -164,7 +183,7 @@ export function buildActionPlanFromUserRequest(
       tool: 'vectorize_raster',
       arguments: { preset: 'logo' },
       description: 'Vetorizar imagem raster usando VTracer.',
-      dependsOn: steps.length > 0 ? ['step_resize'] : undefined,
+      dependsOn: steps.length > 0 ? [...steps.map((s) => s.id!).filter(Boolean)] : undefined,
     });
     intent = 'VECTORIZE';
   }
@@ -281,51 +300,145 @@ export function buildActionPlanFromUserRequest(
     }
   }
 
-  // 9. Passo de Faca de Corte para Adesivo Convencional (GENERIC_STICKER)
+  // 9. Remoção de Cortes Internos / Ajuste de Faca de Corte
+  const wantsInnerContourRemoval =
+    text.includes('sem os cortes de dentro') ||
+    text.includes('sem cortes de dentro') ||
+    text.includes('remove os cortes internos') ||
+    text.includes('remover os cortes internos') ||
+    text.includes('sem recortes internos') ||
+    text.includes('sem recorte interno') ||
+    text.includes('não corta por dentro') ||
+    text.includes('nao corta por dentro') ||
+    text.includes('deixa só o corte externo') ||
+    text.includes('deixa apenas o corte externo') ||
+    text.includes('só o corte externo') ||
+    text.includes('so o corte externo') ||
+    text.includes('apenas o corte externo') ||
+    text.includes('sem corte interno') ||
+    text.includes('sem cortes internos') ||
+    text.includes('sem corte de dentro') ||
+    text.includes('sem vazado') ||
+    text.includes('sem vazados');
+
+  const existingCutNode = Object.values(doc.nodes || {}).find(
+    (n) => n && n.type === 'cut_contour'
+  );
+
   const wantsCutContour =
     (text.includes('faca') || text.includes('contorno de corte') || (text.includes('adesivo') && text.includes('corte'))) &&
     process !== 'DTF_UV' &&
     !constraints.forbidCutContour;
 
-  if (wantsCutContour) {
-    const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
-    const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
-    const includeInnerContours = !(
-      text.includes('sem corte dentro') ||
-      text.includes('sem vazado') ||
-      text.includes('sem vazados') ||
-      text.includes('sem corte interno') ||
-      text.includes('sem cortes internos') ||
-      text.includes('somente externo') ||
-      text.includes('somente contorno externo')
-    );
-
-    // Se o documento possui imagem raster e ainda não há vetor gerado, insere a etapa intermediária de vetorização
-    const nodes = Object.values(doc.nodes || {});
-    const hasVectorGroup = nodes.some((n) => n.type === 'group' || (n as any).type === 'vector_group');
-    const hasRaster = nodes.some((n) => n.type === 'raster_image' || (n as any).type === 'raster');
-    const needsAutoVectorize = hasRaster && !hasVectorGroup && !steps.some((s) => s.tool === 'vectorize_raster');
-
-    if (needsAutoVectorize) {
-      const prevStepIds = steps.map((s) => s.id!).filter(Boolean);
-      steps.push({
-        id: 'step_vectorize',
-        tool: 'vectorize_raster',
-        arguments: { preset: 'logo' },
-        description: 'Vetorizar imagem raster para gerar geometria de corte.',
-        dependsOn: prevStepIds.length > 0 ? prevStepIds : undefined,
-      });
-    }
-
+  if (wantsInnerContourRemoval && existingCutNode) {
     const previousStepIds = steps.map((s) => s.id!).filter(Boolean);
     steps.push({
-      id: 'step_cut_contour',
-      tool: 'create_cut_contour',
-      arguments: { offset_mm, joinStyle: 'round', includeInnerContours },
-      description: `Gerar contorno técnico de corte com offset de ${offset_mm} mm${!includeInnerContours ? ' (sem corte interno)' : ''}.`,
+      id: 'step_update_cut_contour',
+      tool: 'update_cut_contour',
+      arguments: {
+        nodeId: existingCutNode.id,
+        includeInnerContours: false,
+      },
+      description: 'Atualizar contorno de corte removendo recortes internos.',
       dependsOn: previousStepIds.length > 0 ? previousStepIds : undefined,
     });
-    intent = steps.length > 1 ? 'MODIFY' : 'GENERATE_CUT';
+    intent = 'GENERATE_CUT';
+  } else if (wantsCutContour) {
+    if (existingCutNode) {
+      const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
+      const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : existingCutNode.offset_mm;
+      const includeInnerContours = !wantsInnerContourRemoval;
+      const previousStepIds = steps.map((s) => s.id!).filter(Boolean);
+      steps.push({
+        id: 'step_update_cut_contour',
+        tool: 'update_cut_contour',
+        arguments: {
+          nodeId: existingCutNode.id,
+          offset_mm,
+          includeInnerContours,
+        },
+        description: `Atualizar faca de corte (offset: ${offset_mm} mm${!includeInnerContours ? ', sem corte interno' : ''}).`,
+        dependsOn: previousStepIds.length > 0 ? previousStepIds : undefined,
+      });
+      intent = steps.length > 1 ? 'MODIFY' : 'GENERATE_CUT';
+    } else {
+      const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
+      const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
+      const includeInnerContours = !wantsInnerContourRemoval;
+
+      const nodes = Object.values(doc.nodes || {});
+      const hasVectorGroup = nodes.some((n) => n.type === 'group' || (n as any).type === 'vector_group');
+      const hasRaster = nodes.some((n) => n.type === 'raster_image' || (n as any).type === 'raster');
+      const needsAutoVectorize = hasRaster && !hasVectorGroup && !steps.some((s) => s.tool === 'vectorize_raster');
+
+      if (needsAutoVectorize) {
+        const prevStepIds = steps.map((s) => s.id!).filter(Boolean);
+        steps.push({
+          id: 'step_vectorize',
+          tool: 'vectorize_raster',
+          arguments: { preset: 'logo' },
+          description: 'Vetorizar imagem raster para gerar geometria de corte.',
+          dependsOn: prevStepIds.length > 0 ? prevStepIds : undefined,
+        });
+      }
+
+      const previousStepIds = steps.map((s) => s.id!).filter(Boolean);
+      steps.push({
+        id: 'step_cut_contour',
+        tool: 'create_cut_contour',
+        arguments: { offset_mm, joinStyle: 'round', includeInnerContours },
+        description: `Gerar contorno técnico de corte com offset de ${offset_mm} mm${!includeInnerContours ? ' (sem corte interno)' : ''}.`,
+        dependsOn: previousStepIds.length > 0 ? previousStepIds : undefined,
+      });
+      intent = steps.length > 1 ? 'MODIFY' : 'GENERATE_CUT';
+    }
+  }
+
+  // 9.5. Passo de Centralização de Objeto (center_node)
+  const wantsCenter =
+    text.includes('centraliza') ||
+    text.includes('centralizar') ||
+    text.includes('centralize') ||
+    text.includes('no centro') ||
+    text.includes('ao centro') ||
+    text.includes('centralizado');
+
+  if (wantsCenter) {
+    const centerDependsOn = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_center',
+      tool: 'center_node',
+      arguments: {},
+      description: 'Centralizar objeto na prancheta.',
+      dependsOn: centerDependsOn.length > 0 ? centerDependsOn : undefined,
+    });
+  }
+
+  // 9.6. Passo de Ajuste de Prancheta (fit_artboard_to_artwork)
+  const wantsFitArtboard =
+    text.includes('ajusta a prancheta') ||
+    text.includes('ajustar a prancheta') ||
+    text.includes('ajustar prancheta') ||
+    text.includes('ajuste a prancheta') ||
+    text.includes('fit artboard') ||
+    (text.includes('prancheta') && (text.includes('margem') || text.includes('ajust')));
+
+  if (wantsFitArtboard) {
+    const matchMargin = text.match(/(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:de\s+)?margem/i) || text.match(/margem(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?/i);
+    let margin_mm = 0;
+    if (matchMargin) {
+      const rawVal = parseFloat(matchMargin[1].replace(',', '.'));
+      const isCm = text.includes('cm');
+      margin_mm = isCm ? rawVal * 10 : rawVal;
+    }
+    const fitDependsOn = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_fit_artboard',
+      tool: 'fit_artboard_to_artwork',
+      arguments: { margin_mm },
+      description: `Ajustar dimensões da prancheta aos limites do objeto (${margin_mm} mm de margem).`,
+      dependsOn: fitDependsOn.length > 0 ? fitDependsOn : undefined,
+    });
   }
 
   // 10. Passo de Exportação Direta (PNG, SVG, Cut-SVG)

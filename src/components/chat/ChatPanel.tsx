@@ -16,6 +16,7 @@ import { materializeAgentExports } from '@/core/agent/clientExportMaterializer';
 import { ProductionReviewModel } from '@/core/production/review/types';
 import { buildProductionReview } from '@/core/production/review/reviewBuilder';
 import { ProductionReviewPanel } from '@/components/review/ProductionReviewPanel';
+import { detectClientRasterIntents } from '@/core/agent/planner/clientRasterClassifier';
 
 export interface ChatMessageItem {
   id: string;
@@ -219,38 +220,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     try {
       let activeDoc = doc;
       const textLower = cleanText.toLowerCase();
-      const wantsCutOrVectorize =
-        textLower.includes('faca') ||
-        textLower.includes('corte') ||
-        textLower.includes('sangria') ||
-        textLower.includes('contorno') ||
-        textLower.includes('vetor') ||
-        textLower.includes('vector') ||
-        textLower.includes('adesivo') ||
-        (textLower.includes('prepare') && textLower.includes('produção')) ||
-        (textLower.includes('prepare') && textLower.includes('producao'));
-
-      const wantsRemoveBg =
-        textLower.includes('remove o fundo') ||
-        textLower.includes('remover fundo') ||
-        textLower.includes('tira o fundo') ||
-        textLower.includes('tira o branco de trás') ||
-        textLower.includes('tira o branco de tras') ||
-        textLower.includes('deixa o fundo transparente') ||
-        textLower.includes('fundo transparente');
-
-      const wantsWhiteUnderbase =
-        textLower.includes('branco por baixo') ||
-        textLower.includes('base branca') ||
-        textLower.includes('cria o branco') ||
-        textLower.includes('gerar branco') ||
-        textLower.includes('camada de branco');
-
-      const wantsClearArtwork =
-        textLower.includes('verniz só na arte') ||
-        textLower.includes('verniz so na arte') ||
-        textLower.includes('clear artwork') ||
-        textLower.includes('verniz somente onde');
+      const clientIntents = detectClientRasterIntents(cleanText);
+      const wantsCutOrVectorize = clientIntents.wantsCutOrVectorize;
+      const wantsRemoveBg = clientIntents.wantsRemoveBg;
+      const wantsWhiteUnderbase = clientIntents.wantsWhiteUnderbase;
+      const wantsClearArtwork = clientIntents.wantsClearArtwork;
 
       const clientReceipts: import('@/core/agent/types').ClientExecutionReceipt[] = [];
 

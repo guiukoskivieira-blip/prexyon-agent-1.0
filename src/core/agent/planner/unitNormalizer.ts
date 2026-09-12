@@ -167,32 +167,67 @@ export function parseDimensionsFromNaturalText(text: string): {
     }
   }
 
-  // 2. Dimensão única com unidade explícita (ex: "5cm", "50mm", "5 cm de largura", "5cm de altura", "50 mm de largura mantendo a proporção")
+  const isProp =
+    textForDims.includes('proporcional') ||
+    textForDims.includes('proporcao') ||
+    textForDims.includes('proporção') ||
+    textForDims.includes('sem distorcer') ||
+    textForDims.includes('sem deformar') ||
+    textForDims.includes('mantendo') ||
+    textForDims.includes('aspect') ||
+    textForDims.includes('x proporcional');
+
+  // 2. Checagem direta de padrão sintático com eixo explícito (ALTURA)
+  const heightMatchA = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)?\s*(?:de\s+)?(altura|height|alto)\b/i);
+  const heightMatchB = textForDims.match(/\b(altura|height|alto)(?:\s+de)?\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
+  
+  if (heightMatchA) {
+    const hasUnit = Boolean(heightMatchA[2]);
+    const dimMm = normalizeDimensionMm(heightMatchA[1], heightMatchA[2] || 'mm');
+    if (dimMm) {
+      return { height_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+    }
+  } else if (heightMatchB) {
+    const hasUnit = Boolean(heightMatchB[3]);
+    const dimMm = normalizeDimensionMm(heightMatchB[2], heightMatchB[3] || 'mm');
+    if (dimMm) {
+      return { height_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+    }
+  }
+
+  // 3. Checagem direta de padrão sintático com eixo explícito (LARGURA)
+  const widthMatchA = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)?\s*(?:de\s+)?(largura|width|largo)\b/i);
+  const widthMatchB = textForDims.match(/\b(largura|width|largo)(?:\s+de)?\s*(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
+
+  if (widthMatchA) {
+    const hasUnit = Boolean(widthMatchA[2]);
+    const dimMm = normalizeDimensionMm(widthMatchA[1], widthMatchA[2] || 'mm');
+    if (dimMm) {
+      return { width_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+    }
+  } else if (widthMatchB) {
+    const hasUnit = Boolean(widthMatchB[3]);
+    const dimMm = normalizeDimensionMm(widthMatchB[2], widthMatchB[3] || 'mm');
+    if (dimMm) {
+      return { width_mm: dimMm, keepAspectRatio: isProp || true, isAmbiguous: !hasUnit };
+    }
+  }
+
+  // 4. Dimensão única com unidade explícita sem vínculo sintático direto
   const singleDimMatch = textForDims.match(/(\d+(?:[.,]\d+)?)\s*(cm|cent[ií]metros?|mm|mil[ií]metros?)\b/i);
   if (singleDimMatch) {
     const dimMm = normalizeDimensionMm(singleDimMatch[1], singleDimMatch[2]);
     if (dimMm) {
       const isWidth = textForDims.includes('largura') || textForDims.includes('width') || textForDims.includes('largo');
       const isHeight = textForDims.includes('altura') || textForDims.includes('height') || textForDims.includes('alto');
-      const isProp =
-        textForDims.includes('proporcional') ||
-        textForDims.includes('proporcao') ||
-        textForDims.includes('proporção') ||
-        textForDims.includes('sem distorcer') ||
-        textForDims.includes('sem deformar') ||
-        textForDims.includes('mantendo') ||
-        textForDims.includes('aspect') ||
-        textForDims.includes('x proporcional');
 
-      if (isWidth && !isHeight) {
-        return { width_mm: dimMm, keepAspectRatio: isProp || true };
-      }
       if (isHeight && !isWidth) {
         return { height_mm: dimMm, keepAspectRatio: isProp || true };
       }
+      if (isWidth && !isHeight) {
+        return { width_mm: dimMm, keepAspectRatio: isProp || true };
+      }
 
-      // Se não especificou nem largura nem altura e não tem contexto de proporção ou verbo explícito de redimensionamento:
-      // Ex: "deixe com 5 cm" sem especificar se é largura ou altura
       const isExplicitResize =
         textForDims.includes('redimension') ||
         textForDims.includes('ajust') ||
@@ -208,12 +243,11 @@ export function parseDimensionsFromNaturalText(text: string): {
         }
       }
 
-      // Padrão gráfico de pré-impressão: 1 dimensão dada para arte/adesivo aplica em largura proporcional
       return { width_mm: dimMm, keepAspectRatio: isProp || true };
     }
   }
 
-  // 3. Medida SEM unidade explícita (ex: "deixe com 5 de largura", "largura de 5", "deixe com 5") -> AMBÍGUO
+  // 5. Medida SEM unidade explícita (ex: "deixe com 5 de largura", "largura de 5", "deixe com 5") -> AMBÍGUO
   const noUnitMatch = textForDims.match(/(?:deixe com|tamanho|com|largura|altura|redimensione para)\s+(\d+(?:[.,]\d+)?)\b/i);
   if (noUnitMatch) {
     const rawNum = parseFloat(noUnitMatch[1].replace(',', '.'));
