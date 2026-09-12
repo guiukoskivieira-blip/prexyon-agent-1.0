@@ -7,7 +7,7 @@
 
 import { PrexyonDocument } from '../../pdm/types';
 import { AgentActionPlan, PlannedAction, AgentConstraints, ProductionProcess, AgentIntent } from './types';
-import { parseDimensionsFromNaturalText } from './unitNormalizer';
+import { parseDimensionsFromNaturalText, parseCutContourOffsetFromText, parseMoveCommandFromNaturalText } from './unitNormalizer';
 
 /**
  * Constrói um AgentActionPlan determinístico e tipado a partir de intenção em linguagem natural.
@@ -145,6 +145,23 @@ export function buildActionPlanFromUserRequest(
     });
   }
 
+  // 5.1. Passo de Mover Nó (se coordenadas X/Y ou deslocamento relativo foram solicitados)
+  const moveParams = parseMoveCommandFromNaturalText(text);
+  if (moveParams) {
+    const moveDependsOn = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_move',
+      tool: 'move_node',
+      arguments: {
+        ...(moveParams.x_mm !== undefined ? { x_mm: moveParams.x_mm } : {}),
+        ...(moveParams.y_mm !== undefined ? { y_mm: moveParams.y_mm } : {}),
+        relative: moveParams.relative,
+      },
+      description: `Mover nó ${moveParams.relative ? 'relativo' : 'para posição'} (${moveParams.x_mm ?? '-'}, ${moveParams.y_mm ?? '-'}) mm.`,
+      dependsOn: moveDependsOn.length > 0 ? moveDependsOn : undefined,
+    });
+  }
+
   // 5.2. Passo de Espelhamento Horizontal
   const wantsFlip =
     text.includes('espelha') ||
@@ -161,6 +178,53 @@ export function buildActionPlanFromUserRequest(
       arguments: {},
       description: 'Espelhar elemento na horizontal.',
       dependsOn: flipDependsOn.length > 0 ? flipDependsOn : undefined,
+    });
+  }
+
+  // 5.3. Passo de Centralização de Objeto (center_node) — Antes de Faca / Prancheta
+  const wantsCenter =
+    text.includes('centraliza') ||
+    text.includes('centralizar') ||
+    text.includes('centralize') ||
+    text.includes('no centro') ||
+    text.includes('ao centro') ||
+    text.includes('centralizado');
+
+  if (wantsCenter) {
+    const centerDependsOn = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_center',
+      tool: 'center_node',
+      arguments: {},
+      description: 'Centralizar objeto na prancheta.',
+      dependsOn: centerDependsOn.length > 0 ? centerDependsOn : undefined,
+    });
+  }
+
+  // 5.4. Passo de Ajuste de Prancheta (fit_artboard_to_artwork)
+  const wantsFitArtboard =
+    text.includes('ajusta a prancheta') ||
+    text.includes('ajustar a prancheta') ||
+    text.includes('ajustar prancheta') ||
+    text.includes('ajuste a prancheta') ||
+    text.includes('fit artboard') ||
+    (text.includes('prancheta') && (text.includes('margem') || text.includes('ajust')));
+
+  if (wantsFitArtboard) {
+    const matchMargin = text.match(/(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:de\s+)?margem/i) || text.match(/margem(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?/i);
+    let margin_mm = 0;
+    if (matchMargin) {
+      const rawVal = parseFloat(matchMargin[1].replace(',', '.'));
+      const isCm = text.includes('cm');
+      margin_mm = isCm ? rawVal * 10 : rawVal;
+    }
+    const fitDependsOn = steps.map((s) => s.id!).filter(Boolean);
+    steps.push({
+      id: 'step_fit_artboard',
+      tool: 'fit_artboard_to_artwork',
+      arguments: { margin_mm },
+      description: `Ajustar dimensões da prancheta aos limites do objeto (${margin_mm} mm de margem).`,
+      dependsOn: fitDependsOn.length > 0 ? fitDependsOn : undefined,
     });
   }
 
@@ -346,9 +410,10 @@ export function buildActionPlanFromUserRequest(
     });
     intent = 'GENERATE_CUT';
   } else if (wantsCutContour) {
+    const parsedOffset = parseCutContourOffsetFromText(text);
+
     if (existingCutNode) {
-      const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
-      const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : existingCutNode.offset_mm;
+      const offset_mm = parsedOffset !== undefined ? parsedOffset : existingCutNode.offset_mm;
       const includeInnerContours = !wantsInnerContourRemoval;
       const previousStepIds = steps.map((s) => s.id!).filter(Boolean);
       steps.push({
@@ -364,8 +429,7 @@ export function buildActionPlanFromUserRequest(
       });
       intent = steps.length > 1 ? 'MODIFY' : 'GENERATE_CUT';
     } else {
-      const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
-      const offset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
+      const offset_mm = parsedOffset !== undefined ? parsedOffset : 2.0;
       const includeInnerContours = !wantsInnerContourRemoval;
 
       const nodes = Object.values(doc.nodes || {});
@@ -396,52 +460,7 @@ export function buildActionPlanFromUserRequest(
     }
   }
 
-  // 9.5. Passo de Centralização de Objeto (center_node)
-  const wantsCenter =
-    text.includes('centraliza') ||
-    text.includes('centralizar') ||
-    text.includes('centralize') ||
-    text.includes('no centro') ||
-    text.includes('ao centro') ||
-    text.includes('centralizado');
 
-  if (wantsCenter) {
-    const centerDependsOn = steps.map((s) => s.id!).filter(Boolean);
-    steps.push({
-      id: 'step_center',
-      tool: 'center_node',
-      arguments: {},
-      description: 'Centralizar objeto na prancheta.',
-      dependsOn: centerDependsOn.length > 0 ? centerDependsOn : undefined,
-    });
-  }
-
-  // 9.6. Passo de Ajuste de Prancheta (fit_artboard_to_artwork)
-  const wantsFitArtboard =
-    text.includes('ajusta a prancheta') ||
-    text.includes('ajustar a prancheta') ||
-    text.includes('ajustar prancheta') ||
-    text.includes('ajuste a prancheta') ||
-    text.includes('fit artboard') ||
-    (text.includes('prancheta') && (text.includes('margem') || text.includes('ajust')));
-
-  if (wantsFitArtboard) {
-    const matchMargin = text.match(/(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:de\s+)?margem/i) || text.match(/margem(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?/i);
-    let margin_mm = 0;
-    if (matchMargin) {
-      const rawVal = parseFloat(matchMargin[1].replace(',', '.'));
-      const isCm = text.includes('cm');
-      margin_mm = isCm ? rawVal * 10 : rawVal;
-    }
-    const fitDependsOn = steps.map((s) => s.id!).filter(Boolean);
-    steps.push({
-      id: 'step_fit_artboard',
-      tool: 'fit_artboard_to_artwork',
-      arguments: { margin_mm },
-      description: `Ajustar dimensões da prancheta aos limites do objeto (${margin_mm} mm de margem).`,
-      dependsOn: fitDependsOn.length > 0 ? fitDependsOn : undefined,
-    });
-  }
 
   // 10. Passo de Exportação Direta (PNG, SVG, Cut-SVG)
   const exportKeywordRegex = /\b(baixa|baixar|exporta|exportar|exporte|export|salva|salvar|salve|download|gerar png|gere png|gerar svg|gere svg)\b/i;

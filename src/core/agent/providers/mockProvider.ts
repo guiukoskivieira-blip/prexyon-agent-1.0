@@ -5,7 +5,7 @@
 import { AIProvider, AIProviderResponse, ChatMessage, AIProviderOptions } from '../types';
 import { ToolDeclaration } from '../../tools/types';
 import { defaultProposalManager } from '../../autofix';
-import { buildActionPlanFromUserRequest, parseDimensionsFromNaturalText } from '../planner';
+import { buildActionPlanFromUserRequest, parseDimensionsFromNaturalText, parseMoveCommandFromNaturalText, parseCutContourOffsetFromText } from '../planner';
 
 export interface ScriptedTurn {
   response: AIProviderResponse;
@@ -136,7 +136,7 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 0.01. Comando de Centralização de Objeto
-  const isCompositeCenter = Boolean(parseResizeCommand(text)) || text.includes('prancheta') || text.includes('faca');
+  const isCompositeCenter = Boolean(parseResizeCommand(text)) || text.includes('prancheta') || text.includes('faca') || text.includes('corte') || text.includes('mova') || text.includes('mover') || Boolean(parseMoveCommandFromNaturalText(text));
   if ((text.includes('centraliza') || text.includes('centralizar')) && !isCompositeCenter) {
     return [
       {
@@ -162,7 +162,7 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 0.02. Comando de Ajustar Prancheta à Arte
-  const isCompositeFit = Boolean(parseResizeCommand(text)) || text.includes('centraliza') || text.includes('centralizar');
+  const isCompositeFit = Boolean(parseResizeCommand(text)) || text.includes('centraliza') || text.includes('centralizar') || text.includes('faca') || text.includes('corte') || Boolean(parseMoveCommandFromNaturalText(text));
   if ((text.includes('ajusta a prancheta') || text.includes('ajustar prancheta') || text.includes('ajusta prancheta')) && !isCompositeFit) {
     return [
       {
@@ -188,7 +188,7 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 0.03. Comando de Espelhar Horizontalmente
-  const isCompositeMirror = Boolean(parseResizeCommand(text)) || text.includes('branco') || text.includes('dtf') || text.includes('faca');
+  const isCompositeMirror = Boolean(parseResizeCommand(text)) || text.includes('branco') || text.includes('dtf') || text.includes('faca') || text.includes('corte') || Boolean(parseMoveCommandFromNaturalText(text));
   if ((text.includes('espelhar') || text.includes('espelha')) && !isCompositeMirror) {
     return [
       {
@@ -281,33 +281,20 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 1. Comando de Mover Objeto (ex: "Mova este objeto 10 mm para a direita.")
+  // 1. Comando de Mover Objeto (ex: "Mova este objeto 10 mm para a direita.", "mova para x=40mm e y=60mm")
+  const moveParams = parseMoveCommandFromNaturalText(text);
   if (
-    (text.includes('mova') || text.includes('mover') || text.includes('desloque')) &&
+    moveParams &&
     !text.includes('remov')
   ) {
-    const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
-    const delta = matchMm ? parseFloat(matchMm[1]) : 10;
-
-    let x_mm: number | undefined;
-    let y_mm: number | undefined;
     let dirName = 'a posição desejada';
-
-    if (text.includes('direita') || text.includes('right')) {
-      x_mm = delta;
-      dirName = `${delta} mm para a direita`;
-    } else if (text.includes('esquerda') || text.includes('left')) {
-      x_mm = -delta;
-      dirName = `${delta} mm para a esquerda`;
-    } else if (text.includes('cima') || text.includes('topo') || text.includes('up')) {
-      y_mm = -delta;
-      dirName = `${delta} mm para cima`;
-    } else if (text.includes('baixo') || text.includes('fundo') || text.includes('down')) {
-      y_mm = delta;
-      dirName = `${delta} mm para baixo`;
+    if (moveParams.relative) {
+      if ((moveParams.x_mm ?? 0) > 0) dirName = `${moveParams.x_mm} mm para a direita`;
+      else if ((moveParams.x_mm ?? 0) < 0) dirName = `${Math.abs(moveParams.x_mm!)} mm para a esquerda`;
+      else if ((moveParams.y_mm ?? 0) > 0) dirName = `${moveParams.y_mm} mm para baixo`;
+      else if ((moveParams.y_mm ?? 0) < 0) dirName = `${Math.abs(moveParams.y_mm!)} mm para cima`;
     } else {
-      x_mm = delta;
-      dirName = `${delta} mm`;
+      dirName = `para (${moveParams.x_mm ?? '-'}, ${moveParams.y_mm ?? '-'}) mm`;
     }
 
     return [
@@ -320,9 +307,9 @@ export function createDeterministicTurnsForRequest(
               args: {
                 nodeId: targetNodeId,
                 node_id: targetNodeId,
-                x_mm,
-                y_mm,
-                relative: true,
+                ...(moveParams.x_mm !== undefined ? { x_mm: moveParams.x_mm } : {}),
+                ...(moveParams.y_mm !== undefined ? { y_mm: moveParams.y_mm } : {}),
+                relative: moveParams.relative,
               },
             },
           ],
@@ -356,8 +343,7 @@ export function createDeterministicTurnsForRequest(
     doc.profileId !== 'dtf-uv';
 
   if (resizeParams && wantsCutContour) {
-    const matchMm = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i) || text.match(/(\d+(?:[.,]\d+)?)\s*mm/i);
-    const offset = matchMm ? parseFloat(matchMm[1].replace(',', '.')) : 2.0;
+    const offset = parseCutContourOffsetFromText(text) ?? 2.0;
     const includeInnerContours = !(
       text.includes('sem corte dentro') ||
       text.includes('sem vazado') ||
@@ -997,8 +983,7 @@ export function createDeterministicTurnsForRequest(
     text.includes('pacote') ||
     (text.includes('adesivo') && (text.includes('prepar') || text.includes('produç') || text.includes('produc')))
   ) {
-    const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
-    const offset = matchMm ? parseFloat(matchMm[1]) : 2;
+    const offset = parseCutContourOffsetFromText(text) ?? 2.0;
 
     const hasCutContour = nodes.some((n) => n.type === 'cut_contour');
 
@@ -1127,10 +1112,9 @@ export function createDeterministicTurnsForRequest(
     ];
   }
 
-  // 5. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.", "crie uma faca de 1 mm sem corte dentro")
-  if (text.includes('faca') || text.includes('corte') || text.includes('sangria')) {
-    const matchMm = text.match(/(\d+(?:\.\d+)?)\s*mm/);
-    const offset = matchMm ? parseFloat(matchMm[1]) : 2;
+  // 5. Comando de Faca de Corte (ex: "Crie uma faca 2 mm para fora da imagem selecionada.", "crie uma faca de 1.5 mm sem corte dentro")
+  if (text.includes('faca') || text.includes('corte')) {
+    const offset = parseCutContourOffsetFromText(text) ?? 2.0;
     const includeInnerContours = !wantsInnerContourRemoval;
 
     const calls: any[] = [];

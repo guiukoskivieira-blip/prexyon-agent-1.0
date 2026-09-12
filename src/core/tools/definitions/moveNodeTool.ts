@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tool: move_node
  *
  * Move a posição física em milímetros de um nó ou guia técnica no PDM.
@@ -52,6 +52,13 @@ export const moveNodeTool: ToolDefinition<MoveNodeArgs, MoveNodeResultData> = {
   },
   async execute(args, context): Promise<ToolResult<MoveNodeResultData>> {
     const { doc, historyManager, setDoc } = context;
+
+    if (args) {
+      delete (args as any).width_mm;
+      delete (args as any).height_mm;
+      delete (args as any).width_cm;
+      delete (args as any).height_cm;
+    }
 
     if (!args || typeof args.nodeId !== 'string' || !args.nodeId.trim()) {
       return {

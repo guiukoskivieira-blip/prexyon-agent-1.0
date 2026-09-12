@@ -71,6 +71,13 @@ export function normalizeActionArguments(_toolName: string, args: Record<string,
   if (!args || typeof args !== 'object') return {};
   const normalized = { ...args };
 
+  if (_toolName === 'move_node') {
+    delete normalized.width_mm;
+    delete normalized.height_mm;
+    delete normalized.width_cm;
+    delete normalized.height_cm;
+  }
+
   // Suporte a width_cm / height_cm -> width_mm / height_mm
   if (normalized.width_cm !== undefined && normalized.width_mm === undefined) {
     const mm = normalizeDimensionMm(normalized.width_cm, 'cm');
@@ -96,7 +103,7 @@ export function normalizeActionArguments(_toolName: string, args: Record<string,
     if (mm !== null) normalized.height_mm = mm;
   }
 
-  // Se offset_mm for string / cm
+  // Se offset_cm for string / cm
   if (normalized.offset_cm !== undefined && normalized.offset_mm === undefined) {
     const mm = normalizeDimensionMm(normalized.offset_cm, 'cm');
     if (mm !== null) normalized.offset_mm = mm;
@@ -108,6 +115,130 @@ export function normalizeActionArguments(_toolName: string, args: Record<string,
   }
 
   return normalized;
+}
+
+/**
+ * Extrai o offset numérico em mm da faca de corte a partir de texto em linguagem natural.
+ * Preserva valores decimais como 0.8, 1.5, 1.8, 2.5 mm (com vírgula ou ponto).
+ * Ignora solicitações de sangria/bleed para não confundir conceitos.
+ */
+export function parseCutContourOffsetFromText(text: string): number | undefined {
+  if (!text) return undefined;
+  const clean = text.toLowerCase().trim();
+
+  // Ignora sangria isolada sem menção a faca/corte/contorno
+  const match = clean.match(/(?:faca|contorno(?:\s+de\s+corte)?|corte|offset)(?:\s+(?:de|com|para\s+fora|em))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
+                clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:de\s+)?(?:offset|faca|contorno)/i);
+  if (match) {
+    const rawVal = parseFloat(match[1].replace(',', '.'));
+    if (Number.isFinite(rawVal) && rawVal > 0) {
+      const unit = (match[2] || 'mm').toLowerCase();
+      if (unit === 'cm') {
+        return roundPrecision(rawVal * 10, 2);
+      }
+      return roundPrecision(rawVal, 2);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extrai comando de mover nó em coordenadas X e Y ou deslocamento relativo em mm.
+ * NUNCA retorna width_mm ou height_mm.
+ */
+export function parseMoveCommandFromNaturalText(text: string): {
+  x_mm?: number;
+  y_mm?: number;
+  relative: boolean;
+} | null {
+  if (!text) return null;
+  const clean = text.toLowerCase().trim();
+
+  const isMove =
+    clean.includes('mova') ||
+    clean.includes('mover') ||
+    clean.includes('move') ||
+    clean.includes('desloque') ||
+    clean.includes('deslocar') ||
+    clean.includes('posicione') ||
+    clean.includes('posicionar') ||
+    clean.includes('coordenada') ||
+    clean.includes('posição') ||
+    clean.includes('posicao') ||
+    /\bx\s*=\s*\d+/.test(clean) ||
+    /\by\s*=\s*\d+/.test(clean);
+
+  if (!isMove) return null;
+
+  // 1. Coordenadas explícitas no formato x=... e y=...
+  const xyMatch = clean.match(/x\s*=?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:e|,|\s)\s*y\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+  if (xyMatch) {
+    const unitX = clean.includes('cm') ? 'cm' : 'mm';
+    const unitY = xyMatch[2] || unitX;
+    const x = normalizeDimensionMm(xyMatch[1], unitX);
+    const y = normalizeDimensionMm(xyMatch[2], unitY);
+    if (x !== null && y !== null) {
+      return { x_mm: x, y_mm: y, relative: false };
+    }
+  }
+
+  // 2. Coordenada Y primeiro e X depois: y=... e x=...
+  const yxMatch = clean.match(/y\s*=?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*(?:e|,|\s)\s*x\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+  if (yxMatch) {
+    const unitY = clean.includes('cm') ? 'cm' : 'mm';
+    const unitX = yxMatch[2] || unitY;
+    const y = normalizeDimensionMm(yxMatch[1], unitY);
+    const x = normalizeDimensionMm(yxMatch[2], unitX);
+    if (x !== null && y !== null) {
+      return { x_mm: x, y_mm: y, relative: false };
+    }
+  }
+
+  // 3. Tupla de coordenadas: (50, 50) ou coordenada 50, 50
+  const tupleMatch = clean.match(/(?:coordenada|posição|posicao|para)?\s*\(?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*,\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*\)?/i);
+  if (tupleMatch && (clean.includes('coordenada') || clean.includes('posição') || clean.includes('posicao') || clean.includes('para') || clean.includes('mova') || clean.includes('mover'))) {
+    const unit = tupleMatch[2] || (clean.includes('cm') ? 'cm' : 'mm');
+    const x = normalizeDimensionMm(tupleMatch[1], unit);
+    const y = normalizeDimensionMm(tupleMatch[2], unit);
+    if (x !== null && y !== null) {
+      return { x_mm: x, y_mm: y, relative: false };
+    }
+  }
+
+  // 4. Apenas eixo X explícito: x=30mm ou x 30
+  const xOnlyMatch = clean.match(/x\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+  // 5. Apenas eixo Y explícito: y=45mm ou y 45
+  const yOnlyMatch = clean.match(/y\s*=?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i);
+
+  if (xOnlyMatch || yOnlyMatch) {
+    const result: { x_mm?: number; y_mm?: number; relative: boolean } = { relative: false };
+    if (xOnlyMatch) {
+      const x = normalizeDimensionMm(xOnlyMatch[1], xOnlyMatch[2] || 'mm');
+      if (x !== null) result.x_mm = x;
+    }
+    if (yOnlyMatch) {
+      const y = normalizeDimensionMm(yOnlyMatch[1], yOnlyMatch[2] || 'mm');
+      if (y !== null) result.y_mm = y;
+    }
+    if (result.x_mm !== undefined || result.y_mm !== undefined) {
+      return result;
+    }
+  }
+
+  // 6. Mover relativo por direção: ex "10mm para a direita"
+  const relMatch = clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:para\s+a\s+)?(direita|right|esquerda|left|cima|topo|up|baixo|fundo|down)/i);
+  if (relMatch) {
+    const val = normalizeDimensionMm(relMatch[1], relMatch[2] || 'mm');
+    if (val !== null) {
+      const dir = relMatch[3].toLowerCase();
+      if (dir === 'direita' || dir === 'right') return { x_mm: val, relative: true };
+      if (dir === 'esquerda' || dir === 'left') return { x_mm: -val, relative: true };
+      if (dir === 'cima' || dir === 'topo' || dir === 'up') return { y_mm: -val, relative: true };
+      if (dir === 'baixo' || dir === 'fundo' || dir === 'down') return { y_mm: val, relative: true };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -146,10 +277,10 @@ export function parseDimensionsFromNaturalText(text: string): {
   // Remove expressões que representam offset de faca, sangria ou bleed
   // para isolar as dimensões de redimensionamento do objeto/arte
   const textForDims = clean
-    .replace(/faca(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?(?:\s+para\s+fora)?(?:\s+sem\s+corte\s+dentro)?/gi, '')
-    .replace(/contorno(?:\s+de\s+corte)?(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
-    .replace(/sangria(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
-    .replace(/bleed(?:\s+de)?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/faca(?:\s+de\s+corte)?(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?(?:\s+para\s+fora)?(?:\s+sem\s+corte\s+dentro)?/gi, '')
+    .replace(/contorno(?:\s+de\s+corte)?(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/sangria(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
+    .replace(/bleed(?:\s+(?:de|com))?\s+\d+(?:[.,]\d+)?\s*(?:mm|cm)?/gi, '')
     .trim();
 
   // Se após remover essas expressões não sobrou texto com números ou intenção de redimensionamento
@@ -258,3 +389,4 @@ export function parseDimensionsFromNaturalText(text: string): {
 
   return null;
 }
+

@@ -237,6 +237,11 @@ export interface ProductionSettings {
   bleed: BleedSettings;
   /** Configuração da margem de segurança interna (Safety Margin) */
   safetyMargin: SafetyMarginSettings;
+  /** Configurações técnicas específicas para DTF UV */
+  dtfUv?: {
+    whiteUnderbasePolicy?: string;
+    clearVarnishPolicy?: string;
+  };
 }
 
 export const DEFAULT_PRODUCTION_SETTINGS: ProductionSettings = {

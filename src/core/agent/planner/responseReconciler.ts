@@ -129,6 +129,7 @@ export interface ReconciliationInput {
   initialDoc: PrexyonDocument;
   finalDoc: PrexyonDocument;
   validationReport?: ValidationReport;
+  userMessage?: string;
 }
 
 export interface ReconciledResponse {
@@ -204,7 +205,7 @@ export function reconcileAgentResponseWithExecutionEvidence(
 
     return {
       success: true,
-      reply: rawReply || 'Solicitação processada.',
+      reply: appendUnsupportedNotice(rawReply || 'Solicitação processada.', input),
       doc: finalDoc,
     };
   }
@@ -437,7 +438,27 @@ export function reconcileAgentResponseWithExecutionEvidence(
 
   return {
     success: true,
-    reply,
+    reply: appendUnsupportedNotice(reply, input),
     doc: finalDoc,
   };
+}
+
+function appendUnsupportedNotice(reply: string, input: ReconciliationInput): string {
+  const userText = (input.userMessage || input.plan?.explanation || input.rawReply || '').toLowerCase();
+  const hasUnsupportedSangria = userText.includes('sangria') || userText.includes('bleed');
+  const hasUnsupportedSafetyMargin = userText.includes('margem de segurança') || userText.includes('margem de seguranca') || userText.includes('safety margin');
+  const hasUnsupportedCropMarks = userText.includes('refilar') || userText.includes('marca de corte') || userText.includes('marcas de corte') || userText.includes('crop marks');
+
+  if (hasUnsupportedSangria || hasUnsupportedSafetyMargin || hasUnsupportedCropMarks) {
+    const unexecutedItems: string[] = [];
+    if (hasUnsupportedSangria) unexecutedItems.push('Sangria / Bleed (não suportado)');
+    if (hasUnsupportedSafetyMargin) unexecutedItems.push('Margem de Segurança (não suportada)');
+    if (hasUnsupportedCropMarks) unexecutedItems.push('Marcas de Corte / Refile (não suportadas)');
+
+    if (!reply.includes('Ações Não Executadas') && !reply.includes('Não Suportadas')) {
+      return reply + `\n\n⚠️ **Ações Não Executadas (Recursos Não Suportados):**\n` +
+        unexecutedItems.map((item) => `• **${item}**: A funcionalidade solicitada não está disponível no sistema e não alterou o PDM.`).join('\n');
+    }
+  }
+  return reply;
 }
