@@ -384,6 +384,9 @@ export class AgentRuntime {
             for (const detStep of deterministicPlan.steps) {
               const matchStep = plan.steps.find((s: any) => s.tool === detStep.tool);
               if (matchStep) {
+                if (!matchStep.arguments || typeof matchStep.arguments !== 'object') {
+                  matchStep.arguments = {};
+                }
                 if (detStep.tool === 'resize_node') {
                   if (detStep.arguments.height_mm !== undefined) {
                     delete matchStep.arguments.width_mm;
