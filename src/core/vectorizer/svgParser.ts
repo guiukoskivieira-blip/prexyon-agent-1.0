@@ -166,6 +166,7 @@ export function buildVectorGroupFromSvg(
       id: pathId,
       type: 'vector_path',
       name: `Caminho ${idx + 1}`,
+      parentId: groupId,
       visible: true,
       locked: false,
       position_mm: { x: 0, y: 0 }, // Relativo à origem do grupo

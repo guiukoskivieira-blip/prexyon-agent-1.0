@@ -442,7 +442,7 @@ export function addVectorGroup(
 ): PrexyonDocument {
   const newNodes = { ...doc.nodes, [groupNode.id]: groupNode };
   for (const p of pathNodes) {
-    newNodes[p.id] = p;
+    newNodes[p.id] = { ...p, parentId: p.parentId || groupNode.id };
   }
 
   return {
