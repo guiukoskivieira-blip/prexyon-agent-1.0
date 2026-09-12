@@ -157,6 +157,71 @@ export class AgentRuntime {
     let currentDoc = normalizeDocument(initialDoc);
     let iteration = 0;
 
+    // Caminho opcional da Camada de Skills (se skillId fornecida)
+    const skillId = options?.skillId;
+    if (skillId) {
+      const { executeSkill } = await import('../skills');
+      const skillRes = await executeSkill(
+        skillId,
+        options?.skillParams || {},
+        currentDoc,
+        {
+          registry: this.registry,
+          clientExecutionReceipts: options?.clientExecutionReceipts,
+          selectedNodeId: options?.selectedNodeId,
+          toolExecutionContext: options?.toolExecutionContext,
+        }
+      );
+      const isOk = skillRes.status === 'SUCCESS' || skillRes.status === 'SUCCESS_WITH_WARNINGS';
+      return {
+        success: isOk,
+        reply: skillRes.reason || `Skill "${skillId}" executada com status: ${skillRes.status}.`,
+        executedTools: skillRes.executedTools,
+        doc: skillRes.resultingDocument,
+        iterations: 1,
+        status: isOk ? 'completed' : 'error',
+        error: isOk
+          ? undefined
+          : {
+              code: skillRes.status,
+              message: skillRes.reason || `Falha na execução da Skill "${skillId}".`,
+            },
+      };
+    } else {
+      // Intenção automática de Skill na linguagem natural (se não fornecido skillId prévio)
+      const { detectStickerSkillFromUserRequest, executeSkill } = await import('../skills');
+      const detected = detectStickerSkillFromUserRequest(userMessage, currentDoc);
+      if (detected.isStickerSkill) {
+        currentDoc = { ...currentDoc, profileId: 'generic-sticker' };
+        const skillRes = await executeSkill(
+          'prepare_sticker_for_production',
+          detected.params || {},
+          currentDoc,
+          {
+            registry: this.registry,
+            clientExecutionReceipts: options?.clientExecutionReceipts,
+            selectedNodeId: options?.selectedNodeId,
+            toolExecutionContext: options?.toolExecutionContext,
+          }
+        );
+        const isOk = skillRes.status === 'SUCCESS' || skillRes.status === 'SUCCESS_WITH_WARNINGS';
+        return {
+          success: isOk,
+          reply: skillRes.reason || `Adesivo preparado para produção com sucesso. Status: ${skillRes.status}.`,
+          executedTools: skillRes.executedTools,
+          doc: skillRes.resultingDocument,
+          iterations: 1,
+          status: isOk ? 'completed' : 'error',
+          error: isOk
+            ? undefined
+            : {
+                code: skillRes.status,
+                message: skillRes.reason || `Falha na execução da Skill "prepare_sticker_for_production".`,
+              },
+        };
+      }
+    }
+
     // Inicializa histórico da conversa com histórico anterior (se houver) + mensagem atual
     const messages: ChatMessage[] = [
       ...(options?.history || []),

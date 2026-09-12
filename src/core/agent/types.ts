@@ -61,6 +61,8 @@ export interface AgentRunOptions {
   selectedNodeId?: string;
   clientExecutionReceipts?: ClientExecutionReceipt[];
   toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
+  skillId?: string;
+  skillParams?: Record<string, any>;
 }
 
 export interface ExecutedToolRecord {
@@ -104,10 +106,14 @@ export interface AgentChatRequestBody {
   doc: PrexyonDocument;
   history?: ChatMessage[];
   clientExecutionReceipts?: ClientExecutionReceipt[];
+  skillId?: string;
+  skillParams?: Record<string, any>;
   options?: {
     maxIterations?: number;
     model?: string;
     temperature?: number;
     selectedNodeId?: string;
+    skillId?: string;
+    skillParams?: Record<string, any>;
   };
 }
