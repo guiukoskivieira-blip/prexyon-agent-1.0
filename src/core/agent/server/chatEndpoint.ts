@@ -69,6 +69,7 @@ export async function processAgentChatRequest(
     };
   }
 
+  const reqStartTime = Date.now();
   const doc = normalizeDocument(req.doc as PrexyonDocument);
 
   // Reconhece contexto DTF UV explícito na mensagem e atualiza o profile do documento
@@ -110,6 +111,8 @@ export async function processAgentChatRequest(
   if (!result.success && canTriggerFallback && isProviderInfrastructureError) {
     const fallbackTurns = createDeterministicTurnsForRequest(req.message, doc, (req.options as any)?.selectedNodeId);
     if (fallbackTurns.length > 0) {
+      console.log('[AgentRuntime] deterministic fallback started');
+      const fallbackStartTime = Date.now();
       const fallbackProvider = new MockAIProvider(fallbackTurns);
       const fallbackRuntime = new AgentRuntime(fallbackProvider, defaultToolRegistry);
       const fallbackResult = await fallbackRuntime.run(req.message, doc, {
@@ -122,6 +125,7 @@ export async function processAgentChatRequest(
       if (fallbackResult.success) {
         result = fallbackResult;
       }
+      console.log(`[AgentRuntime] deterministic fallback completed in ${Date.now() - fallbackStartTime}ms`);
     }
   }
 
@@ -133,6 +137,8 @@ export async function processAgentChatRequest(
     initialDoc: doc,
     finalDoc,
   });
+
+  console.log(`[AgentRequest] completed in ${Date.now() - reqStartTime}ms`);
 
   return {
     ...result,

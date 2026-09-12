@@ -10,7 +10,7 @@ import { ToolDeclaration } from '../../tools/types';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './base';
 import { AGENT_ACTION_PLAN_GEMINI_SCHEMA } from '../planner/types';
 
-export const GEMINI_REQUEST_TIMEOUT_MS = 8000;
+export const GEMINI_REQUEST_TIMEOUT_MS = 3000;
 
 export class GeminiProvider implements AIProvider {
   public readonly name = 'gemini';
@@ -213,6 +213,7 @@ export class GeminiProvider implements AIProvider {
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
+    console.log('[GeminiProvider] request started');
     let response: Response;
     try {
       response = await fetch(endpoint, {
@@ -225,7 +226,7 @@ export class GeminiProvider implements AIProvider {
       });
     } catch (fetchErr: any) {
       if (fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError') {
-        console.warn(`[GeminiProvider] timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms; usando fallback determinístico`);
+        console.warn(`[GeminiProvider] timeout after ${GEMINI_REQUEST_TIMEOUT_MS}ms`);
         const err = new Error(`[GeminiProvider Error]: Timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms na API Gemini.`);
         (err as any).name = 'TimeoutError';
         (err as any).code = 'PROVIDER_TIMEOUT';
@@ -313,6 +314,7 @@ export class GeminiProvider implements AIProvider {
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
+    console.log('[GeminiProvider] request started');
     let response: Response;
     try {
       response = await fetch(endpoint, {
@@ -325,7 +327,7 @@ export class GeminiProvider implements AIProvider {
       });
     } catch (fetchErr: any) {
       if (fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError') {
-        console.warn(`[GeminiProvider] timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms; usando fallback determinístico`);
+        console.warn(`[GeminiProvider] timeout after ${GEMINI_REQUEST_TIMEOUT_MS}ms`);
         const err = new Error(`[GeminiProvider Error]: Timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms na API Gemini.`);
         (err as any).name = 'TimeoutError';
         (err as any).code = 'PROVIDER_TIMEOUT';

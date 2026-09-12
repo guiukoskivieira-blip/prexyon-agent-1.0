@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { processAgentChatRequest } from '../src/core/agent/server/chatEndpoint';
 import { PrexyonDocument, RasterNode } from '../src/core/pdm/types';
 import { AIProvider } from '../src/core/agent/types';
@@ -41,19 +41,18 @@ function createSampleDoc(): PrexyonDocument {
   };
 }
 
-describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determinístico', () => {
-  it('TESTE A: Constante de timeout está configurada para 8000ms', () => {
-    expect(GEMINI_REQUEST_TIMEOUT_MS).toBe(8000);
+describe('Hotfix de Latência Gemini — Timeout Controlado (3000ms) e Fallback Determinístico', () => {
+  it('1. Constante de timeout está configurada exatamente para 3000ms', () => {
+    expect(GEMINI_REQUEST_TIMEOUT_MS).toBe(3000);
   });
 
-  it('TESTE B: Provedor com TimeoutError aciona fallback determinístico sem crash', async () => {
+  it('2. Provedor com TimeoutError aciona fallback determinístico sem crash', async () => {
     const doc = createSampleDoc();
 
-    // Simula um provider que sofre timeout
     const timeoutProvider: AIProvider = {
       name: 'gemini',
       async generateActionPlan() {
-        const timeoutErr = new Error('Timeout após 8000ms na API Gemini.');
+        const timeoutErr = new Error('Timeout após 3000ms na API Gemini.');
         (timeoutErr as any).name = 'TimeoutError';
         (timeoutErr as any).code = 'PROVIDER_TIMEOUT';
         throw timeoutErr;
@@ -76,7 +75,7 @@ describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determin�
     expect(result.reply.toLowerCase()).toContain('dtf uv');
   });
 
-  it('TESTE C: DTF UV multi-step executa corretamente via fallback em caso de timeout', async () => {
+  it('3. Nenhuma segunda chamada ao Gemini e nenhuma execução duplicada após timeout', async () => {
     const doc = createSampleDoc();
 
     let externalCallCount = 0;
@@ -84,7 +83,7 @@ describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determin�
       name: 'gemini',
       async generateActionPlan() {
         externalCallCount++;
-        const timeoutErr = new Error('Timeout');
+        const timeoutErr = new Error('Timeout após 3000ms');
         timeoutErr.name = 'TimeoutError';
         throw timeoutErr;
       },
@@ -94,6 +93,7 @@ describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determin�
       },
     } as any;
 
+    const start = Date.now();
     const result = await processAgentChatRequest(
       {
         message: 'prepara para dtf uv, coloca branco por baixo e passa verniz só na arte',
@@ -101,16 +101,18 @@ describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determin�
       },
       slowProvider
     );
+    const elapsed = Date.now() - start;
 
-    // Garante que só fez UMA tentativa no provider e não repetiu chamadas externas
     expect(externalCallCount).toBe(1);
     expect(result.success).toBe(true);
     expect(result.doc?.profileId).toBe('dtf-uv');
     expect(result.doc?.separations.WHITE?.status).toBe('GENERATED');
     expect(result.doc?.separations.CLEAR?.metadata?.mode).toBe('ARTWORK');
+    // Conclusão com folga abaixo de 8s
+    expect(elapsed).toBeLessThan(8000);
   });
 
-  it('TESTE D: Frase não suportada com timeout retorna erro factual sem mutações falsas', async () => {
+  it('4. Frase não suportada com timeout retorna erro factual sem mutações falsas', async () => {
     const doc = createSampleDoc();
 
     const slowProvider: AIProvider = {
@@ -131,13 +133,12 @@ describe('Hotfix de Latência Gemini — Timeout Controlado e Fallback Determin�
     );
 
     expect(result.executedTools.length).toBe(0);
-    // Não inventou nenhuma mutação no PDM
     expect(result.doc?.separations.WHITE).toBeUndefined();
     expect(result.doc?.separations.CLEAR).toBeUndefined();
     expect(Object.keys(result.doc?.nodes || {}).length).toBe(1);
   });
 
-  it('TESTE E: P0-03 preservado em caso de timeout — não declara sucesso sem mutação real', async () => {
+  it('5. Comportamento da 6.17 preservado — sem falsos sucessos sem mutação real', async () => {
     const doc = createSampleDoc();
 
     const slowProvider: AIProvider = {
