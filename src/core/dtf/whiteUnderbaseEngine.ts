@@ -103,7 +103,6 @@ export function generateWhiteUnderbaseMask(
   // Na máscara técnica DTF UV:
   // R=255, G=255, B=255, A=whiteCoverage (permite visualização direta e composição)
   const maskBuffer = new Uint8ClampedArray(widthPx * heightPx * 4);
-  let totalWhiteIntensity = 0;
 
   // Processa cada nó participante
   for (const id of targetNodeIds) {
@@ -182,14 +181,8 @@ export function generateWhiteUnderbaseMask(
     }
   }
 
-  // Calcula cobertura global
-  const totalPixels = widthPx * heightPx;
-  for (let i = 0; i < maskBuffer.length; i += 4) {
-    totalWhiteIntensity += maskBuffer[i + 3];
-  }
-  const coverageRatio = totalPixels > 0 ? totalWhiteIntensity / (totalPixels * 255) : 0;
-
-  const analysis = analyzeAlphaFromRgbaBuffer(maskBuffer, widthPx, heightPx);
+  const analysis = analyzeAlphaFromRgbaBuffer(maskBuffer, widthPx, heightPx, { sampleStep: 4 });
+  const coverageRatio = analysis.opaquePixelRatio + analysis.semiTransparentPixelRatio * 0.5;
   const fingerprint = calculateSeparationFingerprint(doc, targetNodeIds);
 
   const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();

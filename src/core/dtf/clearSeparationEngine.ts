@@ -139,16 +139,10 @@ export function generateClearSeparationMask(
         throw new Error('Não foi possível acessar os pixels da arte para gerar essa separação.');
       }
     }
-
-    for (let i = 0; i < maskBuffer.length; i += 4) {
-      totalClearIntensity += maskBuffer[i + 3];
-    }
   }
 
-  const totalPixels = widthPx * heightPx;
-  const coverageRatio = totalPixels > 0 ? totalClearIntensity / (totalPixels * 255) : 0;
-
-  const analysis = analyzeAlphaFromRgbaBuffer(maskBuffer, widthPx, heightPx);
+  const analysis = analyzeAlphaFromRgbaBuffer(maskBuffer, widthPx, heightPx, { sampleStep: 4 });
+  const coverageRatio = analysis.opaquePixelRatio + analysis.semiTransparentPixelRatio * 0.5;
   const fingerprint = calculateSeparationFingerprint(doc, targetNodeIds);
 
   const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
