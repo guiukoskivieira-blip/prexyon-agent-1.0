@@ -35,7 +35,7 @@ export const fitArtboardTool: ToolDefinition<FitArtboardArgs, FitArtboardResultD
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     for (const node of Object.values(doc.nodes)) {
-      if (!node || !node.visible || node.type === 'technical_guide') continue;
+      if (!node || !node.visible || node.type === 'technical_guide' || (node as any).parentId) continue;
       const x = node.position_mm?.x ?? 0;
       const y = node.position_mm?.y ?? 0;
       const w = (node as any).physicalWidth_mm || 50;
