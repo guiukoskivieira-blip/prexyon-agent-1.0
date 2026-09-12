@@ -459,7 +459,10 @@ export class AgentRuntime {
           const planExecResult = await executeActionPlan(resolvedPlan, currentDoc, {
             registry: this.registry,
             clientExecutionReceipts: options?.clientExecutionReceipts,
-            toolExecutionContext: options?.toolExecutionContext,
+            toolExecutionContext: {
+              ...options?.toolExecutionContext,
+              selectedNodeId: options?.selectedNodeId,
+            },
           });
 
           return {
