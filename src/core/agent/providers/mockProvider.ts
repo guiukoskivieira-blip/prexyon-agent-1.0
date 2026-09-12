@@ -136,7 +136,8 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 0.01. Comando de Centralização de Objeto
-  if (text.includes('centraliza') || text.includes('centralizar')) {
+  const isCompositeCenter = Boolean(parseResizeCommand(text)) || text.includes('prancheta') || text.includes('faca');
+  if ((text.includes('centraliza') || text.includes('centralizar')) && !isCompositeCenter) {
     return [
       {
         response: {
@@ -161,7 +162,8 @@ export function createDeterministicTurnsForRequest(
   }
 
   // 0.02. Comando de Ajustar Prancheta à Arte
-  if (text.includes('ajusta a prancheta') || text.includes('ajustar prancheta') || text.includes('ajusta prancheta')) {
+  const isCompositeFit = Boolean(parseResizeCommand(text)) || text.includes('centraliza') || text.includes('centralizar');
+  if ((text.includes('ajusta a prancheta') || text.includes('ajustar prancheta') || text.includes('ajusta prancheta')) && !isCompositeFit) {
     return [
       {
         response: {
@@ -496,6 +498,52 @@ export function createDeterministicTurnsForRequest(
 
     const wantsFlip = text.includes('espelha') || text.includes('espelhar');
     const wantsWhite = text.includes('base branca') || (text.includes('branco') && (text.includes('baixo') || text.includes('cria') || text.includes('gerar') || text.includes('adiciona')));
+
+    const wantsCenter = text.includes('centraliza') || text.includes('centralizar');
+    const wantsArtboard = text.includes('prancheta');
+
+    if (wantsCenter || wantsArtboard) {
+      const matchMargin = text.match(/(\d+(?:[.,]\d+)?)\s*mm/i);
+      const margin = matchMargin ? parseFloat(matchMargin[1].replace(',', '.')) : 3.0;
+
+      const compositeCalls: any[] = [
+        {
+          id: `call_resize_${Date.now()}`,
+          name: 'resize_node',
+          args: {
+            nodeId: targetNodeId,
+            node_id: targetNodeId,
+            ...(resizeParams.width_mm !== undefined ? { width_mm: resizeParams.width_mm } : {}),
+            ...(resizeParams.height_mm !== undefined ? { height_mm: resizeParams.height_mm } : {}),
+            keepAspectRatio: resizeParams.keepAspectRatio,
+          },
+        },
+      ];
+      if (wantsCenter) {
+        compositeCalls.push({
+          id: `call_center_${Date.now()}`,
+          name: 'center_node',
+          args: { sourceNodeId: targetNodeId },
+        });
+      }
+      if (wantsArtboard) {
+        compositeCalls.push({
+          id: `call_fit_${Date.now()}`,
+          name: 'fit_artboard_to_artwork',
+          args: { margin_mm: margin },
+        });
+      }
+      const turns: ScriptedTurn[] = compositeCalls.map((c) => ({
+        response: { functionCalls: [c] },
+      }));
+      turns.push({
+        response: {
+          text: `Ações executadas com sucesso:\n\n• Objeto redimensionado para **${resizeParams.width_mm || 60} × ${resizeParams.height_mm || 60} mm**.\n• Operação \`center_node\` concluída.\n• Operação \`fit_artboard_to_artwork\` concluída.`,
+          finishReason: 'STOP',
+        },
+      });
+      return turns;
+    }
 
     if (wantsFlip || wantsWhite) {
       const compositeCalls: any[] = [
