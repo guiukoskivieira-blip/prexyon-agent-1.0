@@ -10,6 +10,7 @@ import { ProductionSeparation, SeparationStatus, ClearSeparationMode, AlphaAnaly
 import { analyzeAlphaFromRgbaBuffer } from './alphaAnalyzer';
 import { calculateSeparationFingerprint } from './whiteUnderbaseEngine';
 import { getArtworkBounds } from '../export/geometry';
+import { getOrDecodeRgbaBuffer } from '../pdm/pngDecoder';
 
 export interface GenerateClearSeparationOptions {
   mode?: ClearSeparationMode;
@@ -88,7 +89,7 @@ export function generateClearSeparationMask(
 
       if (nodeW_px <= 0 || nodeH_px <= 0) continue;
 
-      const customBuffer = (node as any).__rgbaBuffer as Uint8ClampedArray | Uint8Array | undefined;
+      const customBuffer = getOrDecodeRgbaBuffer(node);
       const isJpeg =
         (node as RasterNode).mimeType === 'image/jpeg' ||
         (typeof (node as any).src === 'string' && (node as any).src.startsWith('data:image/jpeg')) ||
@@ -122,7 +123,7 @@ export function generateClearSeparationMask(
             }
           }
         }
-      } else if (isJpeg || (node as any).type === 'vector_path' || (node as any).type === 'group') {
+      } else if (isJpeg || (node as any).type === 'vector_path' || (node as any).type === 'group' || (node as any).hasRasterSource || (node as any).physicalWidth_mm) {
         const coverageVal = Math.round(255 * opacity);
         for (let y = nodeTopPx; y < nodeBottomPx; y++) {
           for (let x = nodeLeftPx; x < nodeRightPx; x++) {
@@ -135,16 +136,7 @@ export function generateClearSeparationMask(
           }
         }
       } else {
-        const coverageVal = Math.round(255 * opacity);
-        for (let y = nodeTopPx; y < nodeBottomPx; y++) {
-          for (let x = nodeLeftPx; x < nodeRightPx; x++) {
-            const dstIdx = (y * widthPx + x) * 4;
-            maskBuffer[dstIdx] = 255;
-            maskBuffer[dstIdx + 1] = 255;
-            maskBuffer[dstIdx + 2] = 255;
-            maskBuffer[dstIdx + 3] = Math.max(maskBuffer[dstIdx + 3], coverageVal);
-          }
-        }
+        throw new Error('Não foi possível acessar os pixels da arte para gerar essa separação.');
       }
     }
 

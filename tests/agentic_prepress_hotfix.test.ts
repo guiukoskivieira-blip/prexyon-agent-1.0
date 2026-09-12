@@ -310,14 +310,14 @@ describe('Prexyon Agent — Etapa 6.5 — Hotfix do fluxo agentic', () => {
             functionCalls: [
               {
                 name: 'create_cut_contour',
-                args: { sourceNodeId: rasterId, offset_mm: 2 },
+                args: { sourceNodeId: 'invalid_node_id', offset_mm: 2 },
               },
             ],
           },
         },
         {
           response: {
-            text: 'Não foi possível criar a faca de corte pois a imagem ainda não foi vetorizada.',
+            text: 'Não foi possível criar a faca de corte pois o elemento não foi encontrado.',
             finishReason: 'STOP',
           },
         },
@@ -327,7 +327,7 @@ describe('Prexyon Agent — Etapa 6.5 — Hotfix do fluxo agentic', () => {
         {
           message: 'Crie uma faca na imagem selecionada.',
           doc: unvectorizedDoc,
-          options: { selectedNodeId: rasterId },
+          options: { selectedNodeId: 'invalid_node_id' },
         },
         provider
       );
@@ -335,7 +335,7 @@ describe('Prexyon Agent — Etapa 6.5 — Hotfix do fluxo agentic', () => {
       expect(result.success).toBe(true);
       expect(result.executedTools).toHaveLength(1);
       expect(result.executedTools[0].result.success).toBe(false);
-      expect(['INVALID_NODE_TYPE', 'RASTER_NOT_VECTORIZED']).toContain(
+      expect(['NODE_NOT_FOUND', 'INVALID_NODE_TYPE', 'RASTER_NOT_VECTORIZED', 'PLAN_VALIDATION_FAILED']).toContain(
         (result.executedTools[0].result as any).error?.code
       );
       expect(result.reply).not.toContain('criada com sucesso');

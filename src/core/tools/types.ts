@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prexyon Agent — Tool Registry Types (v1.0)
  *
  * Tipagem estrita da camada determinística de ferramentas para execução por agentes de IA.
@@ -30,6 +30,7 @@ export interface ToolSuccessResult<T = any> {
   data: T;
   doc?: PrexyonDocument;
   message?: string;
+  reply?: string;
 }
 
 export interface ToolErrorResult {
@@ -57,6 +58,7 @@ export interface ToolExecutionContext {
   doc: PrexyonDocument;
   historyManager?: HistoryManager;
   setDoc?: (doc: PrexyonDocument) => void;
+  selectedNodeId?: string;
   vtracerBridge?: {
     vectorizeRasterNode: (node: RasterNode, options?: any) => Promise<VectorizationResult>;
   };

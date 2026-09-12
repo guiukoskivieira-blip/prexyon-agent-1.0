@@ -19,8 +19,8 @@ import { Polygon2D, flattenSvgPathToPolygons } from './svgPathFlatten';
 import { mmToGeometryUnits, geometryUnitsToMm, GEOMETRY_SCALE } from './units';
 import { VectorGroupNode, VectorPathNode, CutContourNode, PrexyonDocument } from '../pdm/types';
 import { roundPrecision } from '../pdm/units';
-import { validateCutContourIntegrity } from './vectorPathIntegrity';
-export { validateCutContourIntegrity };
+import { validateCutContourIntegrity, calculateClosedPathArea } from './vectorPathIntegrity';
+export { validateCutContourIntegrity, calculateClosedPathArea };
 
 export function cleanPolygonRing(pts: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
   if (!pts || pts.length < 3) return [];
@@ -228,6 +228,7 @@ export function generateCutContour(
 
   // 5. Converte o resultado de volta para milímetros e classifica contornos/furos
   const contours: ContourPolygonResult[] = [];
+  const minIslandAreaMm2 = 1.0; // Parâmetro interno documentado para eliminação de microilhas e microfuros
 
   for (const path of offsetPaths) {
     if (path.length < 3) continue;
@@ -243,6 +244,12 @@ export function generateCutContour(
     const cleanedPts = cleanPolygonRing(rawPts);
     if (cleanedPts.length < 3) continue;
 
+    // Filtra microilhas e microfuros com área insignificante em mm²
+    const polyArea = calculateClosedPathArea(cleanedPts);
+    if (polyArea < minIslandAreaMm2 && (isHole || contours.length > 0)) {
+      continue;
+    }
+
     contours.push({
       points_mm: cleanedPts,
       isHole,
@@ -250,13 +257,13 @@ export function generateCutContour(
   }
 
   if (contours.length === 0) {
-    throw new Error('Não foi possível gerar um contorno fechado válido para esta geometria.');
+    throw new Error('Não consegui gerar uma faca segura automaticamente para esta arte.');
   }
 
   // Validação estrita de integridade pré-persistência
   const integrity = validateCutContourIntegrity(contours);
   if (!integrity.isValid) {
-    throw new Error(`A geometria da faca de corte gerada contém irregularidades: ${integrity.failureReasons.join('; ')}`);
+    throw new Error(`Não consegui gerar uma faca segura automaticamente para esta arte. (Irregularidades: ${integrity.failureReasons.join('; ')})`);
   }
 
   const boundingBox_mm = calculateBoundingBox(contours);

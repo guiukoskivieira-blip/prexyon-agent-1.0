@@ -76,9 +76,9 @@ describe('Prexyon Agent — Tool Registry V1 (Etapa 6.1)', () => {
   }
 
   describe('1. Infraestrutura do Tool Registry', () => {
-    it('deve conter as 19 ferramentas essenciais registradas na instância padrão', () => {
+    it('deve conter as 23 ferramentas essenciais registradas na instância padrão', () => {
       const allTools = defaultToolRegistry.getAllTools();
-      expect(allTools.length).toBe(19);
+      expect(allTools.length).toBe(23);
 
       const toolNames = allTools.map((t) => t.name);
       expect(toolNames).toContain('resize_node');
@@ -104,7 +104,7 @@ describe('Prexyon Agent — Tool Registry V1 (Etapa 6.1)', () => {
 
     it('deve exportar declarações de ferramentas (schemas) compatíveis com LLM function calling', () => {
       const declarations = defaultToolRegistry.getToolDeclarations();
-      expect(declarations.length).toBe(19);
+      expect(declarations.length).toBe(23);
 
       const resizeDecl = declarations.find((d) => d.name === 'resize_node');
       expect(resizeDecl).toBeDefined();
@@ -408,13 +408,13 @@ describe('Prexyon Agent — Tool Registry V1 (Etapa 6.1)', () => {
       }
     });
 
-    it('deve rejeitar criação de faca em nós que não sejam grupo vetorial', async () => {
+    it('deve rejeitar criação de faca em tipos de nó incompatíveis (ex: guias técnicas)', async () => {
       const doc = createTestFixtureDoc();
-      const rasterNode = Object.values(doc.nodes).find((n) => n.type === 'raster_image')!;
+      const guideNode = Object.values(doc.nodes).find((n) => n.type === 'technical_guide')!;
 
       const result = await executeTool(
         'create_cut_contour',
-        { sourceNodeId: rasterNode.id },
+        { sourceNodeId: guideNode.id },
         { doc }
       );
 

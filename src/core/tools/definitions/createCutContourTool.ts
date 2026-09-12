@@ -70,7 +70,8 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
     required: ['sourceNodeId'],
   },
   async execute(args, context): Promise<ToolResult<CreateCutContourResultData>> {
-    const { doc, historyManager, setDoc } = context;
+    let { doc } = context;
+    const { historyManager, setDoc } = context;
 
     if (!args || typeof args.sourceNodeId !== 'string' || !args.sourceNodeId.trim()) {
       return {
@@ -93,17 +94,60 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
       };
     }
 
-    if (targetNode.type !== 'group') {
+    let groupNode: VectorGroupNode;
+
+    if (targetNode.type === 'group') {
+      groupNode = targetNode as VectorGroupNode;
+    } else if (targetNode.type === 'raster_image') {
+      // Procura se já existe um grupo vetorial gerado para este nó raster
+      const existingGroup = Object.values(doc.nodes).find(
+        (n) => n && n.type === 'group' && (n as VectorGroupNode).sourceRasterNodeId === targetNode.id
+      ) as VectorGroupNode | undefined;
+
+      if (existingGroup) {
+        groupNode = existingGroup;
+      } else if (context.vtracerBridge) {
+        // Vetorização automática transparente do nó raster
+        try {
+          const vecRes = await context.vtracerBridge.vectorizeRasterNode(targetNode as any);
+          const pathNodesMap = (vecRes.pathNodes || []).reduce(
+            (acc, p) => ({ ...acc, [p.id]: p }),
+            {} as Record<string, any>
+          );
+          const newNodes = { ...doc.nodes, [vecRes.groupNode.id]: vecRes.groupNode, ...pathNodesMap };
+          doc = {
+            ...doc,
+            rootNodeIds: [...doc.rootNodeIds, vecRes.groupNode.id],
+            nodes: newNodes,
+          };
+          groupNode = vecRes.groupNode;
+        } catch (err: any) {
+          return {
+            success: false,
+            error: {
+              code: 'VECTORIZATION_FAILED',
+              message: `Não foi possível extrair a silhueta da imagem raster para gerar a faca: ${err?.message || err}`,
+            },
+          };
+        }
+      } else {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_NODE_TYPE',
+            message: 'Para gerar a faca a partir de uma imagem raster, a ponte de vetorização precisa estar ativa.',
+          },
+        };
+      }
+    } else {
       return {
         success: false,
         error: {
           code: 'INVALID_NODE_TYPE',
-          message: `O nó "${args.sourceNodeId}" é do tipo "${targetNode.type}". A ferramenta create_cut_contour só pode ser aplicada a grupos vetoriais ("group").`,
+          message: `O nó "${args.sourceNodeId}" é do tipo "${targetNode.type}". A faca só pode ser aplicada a grupos vetoriais ou imagens raster.`,
         },
       };
     }
-
-    const groupNode = targetNode as VectorGroupNode;
 
     const offset_mm = args.offset_mm !== undefined ? args.offset_mm : 2.0;
     if (typeof offset_mm !== 'number' || !Number.isFinite(offset_mm) || offset_mm < 0.1 || offset_mm > 50.0) {

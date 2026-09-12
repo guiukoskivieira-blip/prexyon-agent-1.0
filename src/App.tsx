@@ -169,6 +169,11 @@ export const App: React.FC = () => {
             onImportFile={actions.importRasterFile}
             onArchitecturalTest={actions.triggerArchitecturalRebuild}
             onOpenExport={() => setIsExportModalOpen(true)}
+            profileId={doc.profileId}
+            onSelectProfile={actions.setProfileId}
+            onCenterNode={() => actions.executeAgentTool('center_node', {})}
+            onFitArtboard={() => actions.executeAgentTool('fit_artboard_to_artwork', { margin_mm: 5.0 })}
+            onFlipNode={() => actions.executeAgentTool('flip_node_horizontal', {})}
           />
         }
         documentPanel={

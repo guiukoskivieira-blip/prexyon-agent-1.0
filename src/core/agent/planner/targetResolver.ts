@@ -108,6 +108,10 @@ export function injectResolvedNodeIdIntoAction(action: PlannedAction, resolvedNo
     'close_cut_contour',
     'remove_redundant_vector_points',
     'simplify_vector_path',
+    'remove_background',
+    'center_node',
+    'fit_artboard_to_artwork',
+    'flip_node_horizontal',
   ];
 
   if (toolsRequiringNodeId.includes(action.tool)) {

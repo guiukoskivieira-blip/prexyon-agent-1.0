@@ -24,6 +24,10 @@ import { simplifyVectorPathTool } from './definitions/simplifyVectorPathTool';
 import { generateWhiteUnderbaseTool } from './definitions/generateWhiteUnderbaseTool';
 import { generateClearSeparationTool } from './definitions/generateClearSeparationTool';
 import { generateDtfUvProductionPackageTool } from './definitions/generateDtfUvProductionPackageTool';
+import { removeBackgroundTool } from './definitions/removeBackgroundTool';
+import { centerNodeTool } from './definitions/centerNodeTool';
+import { fitArtboardTool } from './definitions/fitArtboardTool';
+import { flipNodeTool } from './definitions/flipNodeTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -47,6 +51,10 @@ export * from './definitions/removeRedundantVectorPointsTool';
 export * from './definitions/simplifyVectorPathTool';
 export * from './definitions/generateWhiteUnderbaseTool';
 export * from './definitions/generateClearSeparationTool';
+export * from './definitions/removeBackgroundTool';
+export * from './definitions/centerNodeTool';
+export * from './definitions/fitArtboardTool';
+export * from './definitions/flipNodeTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -71,6 +79,10 @@ export const defaultToolRegistry = new ToolRegistry([
   simplifyVectorPathTool,
   generateWhiteUnderbaseTool,
   generateClearSeparationTool,
+  removeBackgroundTool,
+  centerNodeTool,
+  fitArtboardTool,
+  flipNodeTool,
 ]);
 
 /**

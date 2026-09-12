@@ -1587,6 +1587,13 @@ export function useEditorStore() {
     [doc]
   );
 
+  const setProfileId = useCallback((profileId: string) => {
+    setDoc((prev) => ({
+      ...prev,
+      profileId,
+    }));
+  }, []);
+
   const actions = useMemo(
     () => ({
       importRasterFile,
@@ -1633,6 +1640,7 @@ export function useEditorStore() {
       addToast,
       removeToast,
       setDoc,
+      setProfileId,
       executeAgentTool,
       applyAgentDocumentChange,
     }),
@@ -1681,6 +1689,7 @@ export function useEditorStore() {
       addToast,
       removeToast,
       setDoc,
+      setProfileId,
       executeAgentTool,
       applyAgentDocumentChange,
     ]

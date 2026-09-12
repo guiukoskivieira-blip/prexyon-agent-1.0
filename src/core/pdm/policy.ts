@@ -30,8 +30,10 @@ export function calculateInitialRasterDimensions(
 ): InitialDimensionResult {
   const aspectRatio = calculateAspectRatio(naturalWidth, naturalHeight);
 
-  // Define limite máximo inicial como 60% da menor dimensão da prancheta
-  const targetMaxDimensionMm = Math.min(artboard.width_mm, artboard.height_mm) * 0.6;
+  // Define limite máximo inicial como 60% da menor dimensão da prancheta ou o tamanho físico natural a 300 DPI
+  const naturalPhysicalMaxMm = (Math.max(naturalWidth, naturalHeight) / 300) * 25.4;
+  const artboardMaxMm = Math.min(artboard.width_mm, artboard.height_mm) * 0.6;
+  const targetMaxDimensionMm = Math.min(artboardMaxMm, Math.max(10, naturalPhysicalMaxMm));
 
   let width_mm: number;
   let height_mm: number;

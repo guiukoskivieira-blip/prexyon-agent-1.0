@@ -26,6 +26,11 @@ interface HeaderProps {
   onImportFile: (file: File) => void;
   onArchitecturalTest: () => void;
   onOpenExport: () => void;
+  profileId?: string;
+  onSelectProfile?: (profileId: string) => void;
+  onCenterNode?: () => void;
+  onFitArtboard?: () => void;
+  onFlipNode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,6 +47,11 @@ export const Header: React.FC<HeaderProps> = ({
   onImportFile,
   onArchitecturalTest,
   onOpenExport,
+  profileId,
+  onSelectProfile,
+  onCenterNode,
+  onFitArtboard,
+  onFlipNode,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,7 +118,60 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Exportar</span>
         </button>
 
-        {/* Undo / Redo Controls */}
+        {/* Process Selector Segmented Control */}
+        <div className="flex items-center bg-surface-subtle border border-surface-border p-0.5 rounded-lg text-xs font-medium">
+          <button
+            onClick={() => onSelectProfile?.('generic-sticker')}
+            className={`px-2.5 py-1 rounded transition-colors ${
+              profileId === 'generic-sticker' || profileId === 'default' || !profileId
+                ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Adesivo
+          </button>
+          <button
+            onClick={() => onSelectProfile?.('dtf-uv')}
+            className={`px-2.5 py-1 rounded transition-colors ${
+              profileId === 'dtf-uv'
+                ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            DTF UV
+          </button>
+        </div>
+
+        {/* Quick Controls */}
+        <div className="hidden md:flex items-center gap-1.5">
+          {onCenterNode && (
+            <button
+              onClick={onCenterNode}
+              title="Centralizar Arte na Prancheta"
+              className="px-2 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
+            >
+              Centralizar
+            </button>
+          )}
+          {onFitArtboard && (
+            <button
+              onClick={onFitArtboard}
+              title="Ajustar Prancheta à Arte"
+              className="px-2 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
+            >
+              Ajustar Prancheta
+            </button>
+          )}
+          {onFlipNode && (
+            <button
+              onClick={onFlipNode}
+              title="Espelhar Horizontalmente"
+              className="px-2 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
+            >
+              Espelhar
+            </button>
+          )}
+        </div>
         <div className="flex items-center bg-surface-subtle border border-surface-border p-0.5 rounded-lg">
           <button
             onClick={onUndo}

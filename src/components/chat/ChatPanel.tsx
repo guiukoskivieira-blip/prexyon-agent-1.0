@@ -230,11 +230,94 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         (textLower.includes('prepare') && textLower.includes('produção')) ||
         (textLower.includes('prepare') && textLower.includes('producao'));
 
+      const wantsRemoveBg =
+        textLower.includes('remove o fundo') ||
+        textLower.includes('remover fundo') ||
+        textLower.includes('tira o fundo') ||
+        textLower.includes('tira o branco de trás') ||
+        textLower.includes('tira o branco de tras') ||
+        textLower.includes('deixa o fundo transparente') ||
+        textLower.includes('fundo transparente');
+
+      const wantsWhiteUnderbase =
+        textLower.includes('branco por baixo') ||
+        textLower.includes('base branca') ||
+        textLower.includes('cria o branco') ||
+        textLower.includes('gerar branco') ||
+        textLower.includes('camada de branco');
+
+      const wantsClearArtwork =
+        textLower.includes('verniz só na arte') ||
+        textLower.includes('verniz so na arte') ||
+        textLower.includes('clear artwork') ||
+        textLower.includes('verniz somente onde');
+
+      // Se a intenção demandar remoção de fundo e houver raster com pixels no cliente:
+      if (wantsRemoveBg && activeDoc.nodes) {
+        const nodes = Object.values(activeDoc.nodes) as DocumentNode[];
+        const targetRaster = (selectedNodeId && activeDoc.nodes[selectedNodeId]?.type === 'raster_image'
+          ? activeDoc.nodes[selectedNodeId]
+          : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
+
+        if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {
+          try {
+            const { removeBackgroundTool } = await import('@/core/tools/definitions/removeBackgroundTool');
+            const bgRes = await removeBackgroundTool.execute(
+              { sourceNodeId: targetRaster.id, colorTolerance: 25 },
+              { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
+            );
+            if (bgRes.success && bgRes.doc) {
+              activeDoc = bgRes.doc;
+            }
+          } catch (bgErr) {
+            console.warn('Remoção de fundo local no navegador falhou:', bgErr);
+          }
+        }
+      }
+
+      // Se a intenção demandar White Underbase para DTF UV e houver raster no cliente:
+      if (wantsWhiteUnderbase && activeDoc.nodes) {
+        try {
+          const { generateWhiteUnderbaseMask } = await import('@/core/dtf/whiteUnderbaseEngine');
+          const whiteRes = generateWhiteUnderbaseMask(activeDoc, { dpi: 300 });
+          if (whiteRes && whiteRes.separation) {
+            activeDoc = {
+              ...activeDoc,
+              separations: {
+                ...(activeDoc.separations || {}),
+                white: whiteRes.separation,
+              },
+            };
+          }
+        } catch (wErr) {
+          console.warn('Geração local da base branca falhou:', wErr);
+        }
+      }
+
+      // Se a intenção demandar Clear ARTWORK para DTF UV e houver raster no cliente:
+      if (wantsClearArtwork && activeDoc.nodes) {
+        try {
+          const { generateClearSeparationMask } = await import('@/core/dtf/clearSeparationEngine');
+          const clearRes = generateClearSeparationMask(activeDoc, { mode: 'ARTWORK', dpi: 300 });
+          if (clearRes && clearRes.separation) {
+            activeDoc = {
+              ...activeDoc,
+              separations: {
+                ...(activeDoc.separations || {}),
+                clear: clearRes.separation,
+              },
+            };
+          }
+        } catch (cErr) {
+          console.warn('Geração local do verniz ARTWORK falhou:', cErr);
+        }
+      }
+
       // Se a intenção demandar geometria vetorial (faca/vetorização) e houver imagem raster sem vetor:
-      if (wantsCutOrVectorize && doc.nodes) {
-        const nodes = Object.values(doc.nodes) as DocumentNode[];
-        const targetRaster = (selectedNodeId && doc.nodes[selectedNodeId]?.type === 'raster_image'
-          ? doc.nodes[selectedNodeId]
+      if (wantsCutOrVectorize && activeDoc.nodes) {
+        const nodes = Object.values(activeDoc.nodes) as DocumentNode[];
+        const targetRaster = (selectedNodeId && activeDoc.nodes[selectedNodeId]?.type === 'raster_image'
+          ? activeDoc.nodes[selectedNodeId]
           : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
 
         if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {

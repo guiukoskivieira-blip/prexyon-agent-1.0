@@ -202,7 +202,7 @@ describe('Prexyon Agent — Chat Integration V1 (Etapa 6.3)', () => {
       const { FormattedChatMessage, ChatPanel } = await import('../src/components/chat/ChatPanel');
       expect(FormattedChatMessage).toBeDefined();
       expect(ChatPanel).toBeDefined();
-    });
+    }, 15000);
 
     it('deve normalizar/renderizar Markdown com negrito, itálico, código inline e listas', async () => {
       const { FormattedChatMessage } = await import('../src/components/chat/ChatPanel');

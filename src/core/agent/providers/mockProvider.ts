@@ -101,6 +101,115 @@ export function createDeterministicTurnsForRequest(
     nodes[0];
   const targetNodeId = targetNode?.id || 'node_1';
 
+  // 0.0. Comando de Remoção de Fundo Branco / Transparência
+  if (
+    text.includes('remove o fundo') ||
+    text.includes('remover fundo') ||
+    text.includes('tira o fundo') ||
+    text.includes('tira o branco de trás') ||
+    text.includes('tira o branco de tras') ||
+    text.includes('deixa o fundo transparente') ||
+    text.includes('fundo transparente')
+  ) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_remove_bg_${Date.now()}`,
+              name: 'remove_background',
+              args: {
+                sourceNodeId: targetNodeId,
+                colorTolerance: 25,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Fundo branco removido com sucesso. O branco interno foi preservado.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 0.01. Comando de Centralização de Objeto
+  if (text.includes('centraliza') || text.includes('centralizar')) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_center_${Date.now()}`,
+              name: 'center_node',
+              args: {
+                sourceNodeId: targetNodeId,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Objeto centralizado na prancheta com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 0.02. Comando de Ajustar Prancheta à Arte
+  if (text.includes('ajusta a prancheta') || text.includes('ajustar prancheta') || text.includes('ajusta prancheta')) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_fit_${Date.now()}`,
+              name: 'fit_artboard_to_artwork',
+              args: {
+                margin_mm: 5.0,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Prancheta ajustada com precisão ao redor da arte.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
+  // 0.03. Comando de Espelhar Horizontalmente
+  if (text.includes('espelhar') || text.includes('espelha')) {
+    return [
+      {
+        response: {
+          functionCalls: [
+            {
+              id: `call_flip_${Date.now()}`,
+              name: 'flip_node_horizontal',
+              args: {
+                sourceNodeId: targetNodeId,
+              },
+            },
+          ],
+        },
+      },
+      {
+        response: {
+          text: 'Arte espelhada horizontalmente com sucesso.',
+          finishReason: 'STOP',
+        },
+      },
+    ];
+  }
+
   // 0. Confirmação explícita de proposta assistida (ex: "Pode aplicar a proposta", "Confirmo a alteração", "Sim, aplique", "pode aplicar")
   if (
     text.includes('pode aplicar') ||
