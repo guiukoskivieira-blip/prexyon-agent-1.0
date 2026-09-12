@@ -139,9 +139,26 @@ async function runHomologation() {
     // ----------------------------------------------------
     console.log('\n--- 3. P1-01: VOCABULÁRIO RASTER ---');
     let doc3 = createDocument({ width_mm: 100, height_mm: 100 });
+    const raster3: any = {
+      id: 'raster-1',
+      name: 'Imagem Raster',
+      type: 'raster_image',
+      src: 'data:image/png;base64,iVBORw0KGgAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      physicalWidth_mm: 50,
+      physicalHeight_mm: 50,
+      position_mm: { x: 10, y: 10 },
+      visible: true,
+    };
+    doc3 = {
+      ...doc3,
+      nodes: { ...doc3.nodes, [raster3.id]: raster3 },
+      rootNodeIds: [raster3.id],
+    };
+
     const clientReceipt3 = {
       action: 'vectorize_raster',
       status: 'success',
+      sourceNodeId: 'raster-1',
       resultNodeId: 'vg-client-1',
       timestamp: Date.now(),
     };
@@ -154,6 +171,7 @@ async function runHomologation() {
       position_mm: { x: 10, y: 10 },
     });
     vg3.id = 'vg-client-1';
+    (vg3 as any).sourceRasterNodeId = 'raster-1';
     doc3 = addVectorGroup(doc3, vg3, pn3);
 
     const req3 = await sendChatRequest({

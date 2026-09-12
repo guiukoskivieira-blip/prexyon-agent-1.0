@@ -70,6 +70,8 @@ export async function executeActionPlan(
       const targetRaster = targetId ? (currentDoc.nodes[targetId] as import('../../pdm/types').RasterNode) : undefined;
       const derivedVector = Object.values(currentDoc.nodes).find(
         (n) => n && (n.type === 'group' || (n as any).type === 'vector_group') && (
+          n.id === (receipts.find((r) => r.action === 'vectorize_raster')?.resultNodeId) ||
+          (targetId && currentDoc.nodes[targetId] && ((currentDoc.nodes[targetId] as any).type === 'group' || (currentDoc.nodes[targetId] as any).type === 'vector_group') && n.id === targetId) ||
           (n as any).sourceRasterNodeId === targetId ||
           (targetId && currentDoc.nodes[targetId] && n.name === `Vetor: ${currentDoc.nodes[targetId].name}`)
         )
