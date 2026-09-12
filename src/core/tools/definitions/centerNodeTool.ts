@@ -50,9 +50,32 @@ export const centerNodeTool: ToolDefinition<CenterNodeArgs, CenterNodeResultData
       position_mm: { x: newX, y: newY },
     };
 
+    const updatedNodes: Record<string, any> = {
+      ...doc.nodes,
+      [nodeId]: updatedNode,
+    };
+
+    if (targetNode.type === 'raster_image' || targetNode.type === 'group') {
+      for (const n of Object.values(doc.nodes)) {
+        if (!n) continue;
+        if (n.type === 'group' && (n as any).sourceRasterNodeId === nodeId) {
+          updatedNodes[n.id] = {
+            ...n,
+            position_mm: { x: newX, y: newY },
+          };
+        } else if (n.type === 'cut_contour' && (n as any).sourceNodeId === nodeId) {
+          const offset = (n as any).offset_mm ?? 2;
+          updatedNodes[n.id] = {
+            ...n,
+            position_mm: { x: Number((newX - offset).toFixed(2)), y: Number((newY - offset).toFixed(2)) },
+          };
+        }
+      }
+    }
+
     const nextDoc = {
       ...doc,
-      nodes: { ...doc.nodes, [nodeId]: updatedNode },
+      nodes: updatedNodes,
     };
 
     if (setDoc) setDoc(nextDoc);

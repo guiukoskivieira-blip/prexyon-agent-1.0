@@ -67,13 +67,24 @@ export async function executeActionPlan(
     if (step.tool === 'vectorize_raster') {
       const hasReceipt = receipts.some((r) => r.action === 'vectorize_raster' && r.status === 'success');
       const targetId = (stepArgs.nodeId as string) || selectedNodeId;
-      const hasDerivedVector = Object.values(currentDoc.nodes).some(
+      const targetRaster = targetId ? (currentDoc.nodes[targetId] as import('../../pdm/types').RasterNode) : undefined;
+      const derivedVector = Object.values(currentDoc.nodes).find(
         (n) => n && (n.type === 'group' || (n as any).type === 'vector_group') && (
           (n as any).sourceRasterNodeId === targetId ||
           (targetId && currentDoc.nodes[targetId] && n.name === `Vetor: ${currentDoc.nodes[targetId].name}`)
         )
+      ) as import('../../pdm/types').VectorGroupNode | undefined;
+
+      const isVectorFresh = Boolean(
+        derivedVector && (!targetRaster || (
+          Math.abs(derivedVector.physicalWidth_mm - targetRaster.physicalWidth_mm) < 0.1 &&
+          Math.abs(derivedVector.physicalHeight_mm - targetRaster.physicalHeight_mm) < 0.1 &&
+          Math.abs((derivedVector.position_mm?.x ?? 0) - (targetRaster.position_mm?.x ?? 0)) < 0.1 &&
+          Math.abs((derivedVector.position_mm?.y ?? 0) - (targetRaster.position_mm?.y ?? 0)) < 0.1
+        ))
       );
-      alreadyCompletedOnClient = (hasReceipt && hasDerivedVector) || hasDerivedVector;
+
+      alreadyCompletedOnClient = (hasReceipt && isVectorFresh) || isVectorFresh;
     } else if (step.tool === 'remove_background') {
       const hasReceipt = receipts.some((r) => r.action === 'remove_background' && r.status === 'success');
       alreadyCompletedOnClient = hasReceipt;

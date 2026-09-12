@@ -149,6 +149,29 @@ export const createCutContourTool: ToolDefinition<CreateCutContourArgs, CreateCu
       };
     }
 
+    if (groupNode && groupNode.sourceRasterNodeId && doc.nodes[groupNode.sourceRasterNodeId]) {
+      const sourceRaster = doc.nodes[groupNode.sourceRasterNodeId] as import('../../pdm/types').RasterNode;
+      if (sourceRaster && sourceRaster.type === 'raster_image') {
+        const wDiff = Math.abs(groupNode.physicalWidth_mm - sourceRaster.physicalWidth_mm);
+        const hDiff = Math.abs(groupNode.physicalHeight_mm - sourceRaster.physicalHeight_mm);
+        const xDiff = Math.abs((groupNode.position_mm?.x ?? 0) - (sourceRaster.position_mm?.x ?? 0));
+        const yDiff = Math.abs((groupNode.position_mm?.y ?? 0) - (sourceRaster.position_mm?.y ?? 0));
+
+        if (wDiff > 0.1 || hDiff > 0.1 || xDiff > 0.1 || yDiff > 0.1) {
+          groupNode = {
+            ...groupNode,
+            physicalWidth_mm: sourceRaster.physicalWidth_mm,
+            physicalHeight_mm: sourceRaster.physicalHeight_mm,
+            position_mm: { x: sourceRaster.position_mm.x, y: sourceRaster.position_mm.y },
+          };
+          doc = {
+            ...doc,
+            nodes: { ...doc.nodes, [groupNode.id]: groupNode },
+          };
+        }
+      }
+    }
+
     const offset_mm = args.offset_mm !== undefined ? args.offset_mm : 2.0;
     if (typeof offset_mm !== 'number' || !Number.isFinite(offset_mm) || offset_mm < 0.1 || offset_mm > 50.0) {
       return {

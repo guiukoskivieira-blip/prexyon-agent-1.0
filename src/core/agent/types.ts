@@ -91,6 +91,12 @@ export interface ClientExecutionReceipt {
   resultNodeId?: string;
   separationId?: string;
   timestamp?: number;
+  sourceGeometry?: {
+    physicalWidth_mm: number;
+    physicalHeight_mm: number;
+    x: number;
+    y: number;
+  };
 }
 
 export interface AgentChatRequestBody {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tool: resize_node
  *
  * Redimensiona as dimensões físicas em milímetros de um nó gráfico do PDM.
@@ -171,6 +171,25 @@ export const resizeNodeTool: ToolDefinition<ResizeNodeArgs, ResizeNodeResultData
         physicalHeight_mm: targetH,
         keepAspectRatio: false,
       });
+    }
+
+    if (node.type === 'raster_image') {
+      const updatedNodes = { ...nextDoc.nodes };
+      let docChanged = false;
+      for (const n of Object.values(nextDoc.nodes)) {
+        if (n && n.type === 'group' && (n as VectorGroupNode).sourceRasterNodeId === node.id) {
+          updatedNodes[n.id] = {
+            ...n,
+            physicalWidth_mm: targetW,
+            physicalHeight_mm: targetH,
+            aspectRatio: roundPrecision(targetW / targetH, 4),
+          };
+          docChanged = true;
+        }
+      }
+      if (docChanged) {
+        nextDoc = { ...nextDoc, nodes: updatedNodes };
+      }
     }
 
     if (setDoc) {

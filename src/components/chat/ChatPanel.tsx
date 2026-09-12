@@ -8,7 +8,7 @@ import {
   CheckCircle2,
   User,
 } from 'lucide-react';
-import { PrexyonDocument, DocumentNode, RasterNode } from '@/core/pdm/types';
+import { PrexyonDocument, DocumentNode, RasterNode, VectorGroupNode } from '@/core/pdm/types';
 import { sanitizeDocumentForAgentTransport, mergeAgentResultDocument } from '@/core/pdm/document';
 import { vtracerBridge } from '@/core/vectorizer/vtracerBridge';
 import { getVTracerOptionsForPreset } from '@/core/vectorizer/presets';
@@ -336,39 +336,141 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       // Se a intenção demandar geometria vetorial (faca/vetorização) e houver imagem raster sem vetor:
       if (wantsCutOrVectorize && activeDoc.nodes) {
         const nodes = Object.values(activeDoc.nodes) as DocumentNode[];
-        const targetRaster = (selectedNodeId && activeDoc.nodes[selectedNodeId]?.type === 'raster_image'
+        let targetRaster = (selectedNodeId && activeDoc.nodes[selectedNodeId]?.type === 'raster_image'
           ? activeDoc.nodes[selectedNodeId]
           : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
 
         if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {
-          const existingGroup = nodes.find(
+          // Pre-execução de mutações geométricas antes da vetorização no cliente
+          const cmMatch = textLower.match(/(\d+(?:[.,]\d+)?)\s*(?:cm|centímetros|centimetros)/);
+          const mmMatch = textLower.match(/(\d+(?:[.,]\d+)?)\s*(?:mm|milímetros|milimetros)/);
+          const hasResizeIntent = Boolean(
+            cmMatch ||
+            mmMatch ||
+            textLower.includes('largura') ||
+            textLower.includes('altura') ||
+            textLower.includes('tamanho') ||
+            textLower.includes('redimensiona') ||
+            textLower.includes('deixa com') ||
+            textLower.includes('resize')
+          );
+
+          const hasCenterIntent =
+            textLower.includes('centraliza') ||
+            textLower.includes('centralizar') ||
+            textLower.includes('centro') ||
+            textLower.includes('center');
+
+          const hasFitArtboardIntent =
+            textLower.includes('ajusta a prancheta') ||
+            textLower.includes('ajustar prancheta') ||
+            textLower.includes('fit artboard') ||
+            textLower.includes('fit_artboard');
+
+          if (hasResizeIntent) {
+            let targetWidth_mm: number | undefined = undefined;
+            if (cmMatch) {
+              targetWidth_mm = parseFloat(cmMatch[1].replace(',', '.')) * 10;
+            } else if (mmMatch) {
+              targetWidth_mm = parseFloat(mmMatch[1].replace(',', '.'));
+            }
+            if (targetWidth_mm && targetWidth_mm > 0) {
+              try {
+                const { resizeNodeTool } = await import('@/core/tools/definitions/resizeNodeTool');
+                const rRes = await resizeNodeTool.execute(
+                  { nodeId: targetRaster.id, width_mm: targetWidth_mm, keepAspectRatio: true },
+                  { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
+                );
+                if (rRes.success && rRes.doc) {
+                  activeDoc = rRes.doc;
+                }
+              } catch (rErr) {
+                console.warn('Redimensionamento local pré-vetorização falhou:', rErr);
+              }
+            }
+          }
+
+          if (hasCenterIntent) {
+            try {
+              const { centerNodeTool } = await import('@/core/tools/definitions/centerNodeTool');
+              const cRes = await centerNodeTool.execute(
+                { sourceNodeId: targetRaster.id },
+                { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
+              );
+              if (cRes.success && cRes.doc) {
+                activeDoc = cRes.doc;
+              }
+            } catch (cErr) {
+              console.warn('Centralização local pré-vetorização falhou:', cErr);
+            }
+          }
+
+          if (hasFitArtboardIntent) {
+            try {
+              const { fitArtboardTool } = await import('@/core/tools/definitions/fitArtboardTool');
+              const fRes = await fitArtboardTool.execute(
+                { margin_mm: 5 },
+                { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
+              );
+              if (fRes.success && fRes.doc) {
+                activeDoc = fRes.doc;
+              }
+            } catch (fErr) {
+              console.warn('Ajuste de prancheta local pré-vetorização falhou:', fErr);
+            }
+          }
+
+          // Atualiza referência ao targetRaster após mutações geométricas prévias
+          targetRaster = (activeDoc.nodes[targetRaster.id] as RasterNode) || targetRaster;
+
+          const currentNodes = Object.values(activeDoc.nodes) as DocumentNode[];
+          const existingGroup = currentNodes.find(
             (n) =>
               n &&
               (n.type === 'group' || (n as any).type === 'vector_group') &&
-              ((n as any).sourceRasterNodeId === targetRaster.id || n.name === `Vetor: ${targetRaster.name}`)
-          );
+              ((n as any).sourceRasterNodeId === targetRaster!.id || n.name === `Vetor: ${targetRaster!.name}`)
+          ) as VectorGroupNode | undefined;
 
-          if (existingGroup) {
+          // Verifica se o vetor existente é compatível com a geometria atual do raster (não-stale)
+          const isVectorFresh =
+            existingGroup &&
+            Math.abs(existingGroup.physicalWidth_mm - targetRaster.physicalWidth_mm) < 0.1 &&
+            Math.abs(existingGroup.physicalHeight_mm - targetRaster.physicalHeight_mm) < 0.1 &&
+            Math.abs((existingGroup.position_mm?.x ?? 0) - (targetRaster.position_mm?.x ?? 0)) < 0.1 &&
+            Math.abs((existingGroup.position_mm?.y ?? 0) - (targetRaster.position_mm?.y ?? 0)) < 0.1;
+
+          if (existingGroup && isVectorFresh) {
             clientReceipts.push({
               action: 'vectorize_raster',
               status: 'success',
               sourceNodeId: targetRaster.id,
               resultNodeId: existingGroup.id,
               timestamp: Date.now(),
+              sourceGeometry: {
+                physicalWidth_mm: targetRaster.physicalWidth_mm,
+                physicalHeight_mm: targetRaster.physicalHeight_mm,
+                x: targetRaster.position_mm?.x ?? 0,
+                y: targetRaster.position_mm?.y ?? 0,
+              },
             });
           } else {
             try {
               const options = getVTracerOptionsForPreset('logo');
               const vResult = await vtracerBridge.vectorizeRasterNode(targetRaster, options);
               const updatedNodes = { ...activeDoc.nodes };
+              // Se havia um vetor stale antigo, remove do documento para evitar duplicidades
+              if (existingGroup && existingGroup.id) {
+                delete updatedNodes[existingGroup.id];
+              }
               updatedNodes[vResult.groupNode.id] = vResult.groupNode;
               for (const pNode of vResult.pathNodes) {
                 updatedNodes[pNode.id] = pNode;
               }
+              const filteredRootIds = activeDoc.rootNodeIds.filter((id) => id !== existingGroup?.id);
               activeDoc = {
                 ...activeDoc,
                 nodes: updatedNodes,
-                rootNodeIds: [...activeDoc.rootNodeIds, vResult.groupNode.id],
+                rootNodeIds: [...filteredRootIds, vResult.groupNode.id],
               };
               clientReceipts.push({
                 action: 'vectorize_raster',
@@ -376,6 +478,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 sourceNodeId: targetRaster.id,
                 resultNodeId: vResult.groupNode.id,
                 timestamp: Date.now(),
+                sourceGeometry: {
+                  physicalWidth_mm: targetRaster.physicalWidth_mm,
+                  physicalHeight_mm: targetRaster.physicalHeight_mm,
+                  x: targetRaster.position_mm?.x ?? 0,
+                  y: targetRaster.position_mm?.y ?? 0,
+                },
               });
             } catch (vErr) {
               console.warn('Vetorização local no navegador não pôde ser executada:', vErr);
