@@ -174,10 +174,13 @@ export async function executeActionPlan(
         doc: currentDoc,
       });
 
+      const { sanitizeToolResultForLLM } = await import('../runtime');
+      const cleanResult = sanitizeToolResultForLLM(execResult);
+
       executedTools.push({
         toolName: step.tool,
         args: stepArgs,
-        result: execResult,
+        result: cleanResult,
         timestamp: Date.now(),
       });
 
@@ -192,7 +195,7 @@ export async function executeActionPlan(
             toolName: step.tool,
             args: stepArgs,
             status: 'COMPLETED',
-            result: execResult,
+            result: cleanResult,
           });
         } else {
           executionHalted = true;
@@ -201,7 +204,7 @@ export async function executeActionPlan(
             toolName: step.tool,
             args: stepArgs,
             status: 'FAILED',
-            result: execResult,
+            result: cleanResult,
             error: evidence.error || 'A mutação esperada não foi encontrada no documento.',
           });
         }

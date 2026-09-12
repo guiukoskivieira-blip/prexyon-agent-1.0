@@ -5,15 +5,33 @@ const PROD_URL = 'https://prexyon-agent-10-production.up.railway.app';
 
 console.log('=== INICIANDO HOMOLOGAÇÃO EM PRODUÇÃO (COMMIT 71f4631) ===\n');
 
-async function sendChatRequest(payload: any) {
-  const res = await fetch(`${PROD_URL}/api/agent/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const status = res.status;
-  const json = await res.json();
-  return { status, json };
+async function sendChatRequest(payload: any, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await new Promise((r) => setTimeout(r, 300));
+      const res = await fetch(`${PROD_URL}/api/agent/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 502 && attempt < retries) {
+        console.warn(`[HTTP 502] Tentando novamente (tentativa ${attempt}/${retries})...`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      const status = res.status;
+      const json = await res.json();
+      return { status, json };
+    } catch (err: any) {
+      if (attempt < retries) {
+        console.warn(`[Erro de rede] Tentando novamente (tentativa ${attempt}/${retries}): ${err.message}`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Falha no sendChatRequest após tentativas.');
 }
 
 async function runHomologation() {
