@@ -414,6 +414,12 @@ export function reconcileAgentResponseWithExecutionEvidence(
     reply = header + '\n\n' + lines.join('\n');
   }
 
+  if (successTools.some((s) => s.toolName === 'update_cut_contour' && s.args?.includeInnerContours === false)) {
+    if (!reply.toLowerCase().includes('sem cortes internos') && !reply.toLowerCase().includes('sem corte interno')) {
+      reply += '\n• Contorno de corte atualizado (sem cortes internos).';
+    }
+  }
+
   return {
     success: true,
     reply,
