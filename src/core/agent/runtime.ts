@@ -189,7 +189,14 @@ export class AgentRuntime {
       };
     } else {
       // Intenção automática de Skill na linguagem natural (se não fornecido skillId prévio)
-      const { detectStickerSkillFromUserRequest, detectDtfUvSkillFromUserRequest, executeSkill } = await import('../skills');
+      const {
+        detectStickerSkillFromUserRequest,
+        detectDtfUvSkillFromUserRequest,
+        detectCuttingWorkflowSkillFromUserRequest,
+        detectVectorizeArtworkSkillFromUserRequest,
+        detectPreflightDocumentSkillFromUserRequest,
+        executeSkill,
+      } = await import('../skills');
       
       const detectedSticker = detectStickerSkillFromUserRequest(userMessage, currentDoc);
       if (detectedSticker.isStickerSkill) {
@@ -249,6 +256,96 @@ export class AgentRuntime {
             : {
                 code: skillRes.status,
                 message: skillRes.reason || `Falha na execução da Skill "prepare_dtf_uv".`,
+              },
+        };
+      }
+
+      const detectedCut = detectCuttingWorkflowSkillFromUserRequest(userMessage, currentDoc);
+      if (detectedCut.isCuttingWorkflowSkill) {
+        const skillRes = await executeSkill(
+          'create_cutting_workflow',
+          detectedCut.params || {},
+          currentDoc,
+          {
+            registry: this.registry,
+            clientExecutionReceipts: options?.clientExecutionReceipts,
+            selectedNodeId: options?.selectedNodeId,
+            toolExecutionContext: options?.toolExecutionContext,
+          }
+        );
+        const isOk = skillRes.status === 'SUCCESS' || skillRes.status === 'SUCCESS_WITH_WARNINGS';
+        return {
+          success: isOk,
+          reply: skillRes.reason || `Faca de corte criada com sucesso. Status: ${skillRes.status}.`,
+          executedTools: skillRes.executedTools,
+          doc: skillRes.resultingDocument,
+          iterations: 1,
+          status: isOk ? 'completed' : 'error',
+          error: isOk
+            ? undefined
+            : {
+                code: skillRes.status,
+                message: skillRes.reason || `Falha na execução da Skill "create_cutting_workflow".`,
+              },
+        };
+      }
+
+      const detectedVector = detectVectorizeArtworkSkillFromUserRequest(userMessage, currentDoc);
+      if (detectedVector.isVectorizeSkill) {
+        const skillRes = await executeSkill(
+          'vectorize_artwork',
+          detectedVector.params || {},
+          currentDoc,
+          {
+            registry: this.registry,
+            clientExecutionReceipts: options?.clientExecutionReceipts,
+            selectedNodeId: options?.selectedNodeId,
+            toolExecutionContext: options?.toolExecutionContext,
+          }
+        );
+        const isOk = skillRes.status === 'SUCCESS' || skillRes.status === 'SUCCESS_WITH_WARNINGS';
+        return {
+          success: isOk,
+          reply: skillRes.reason || `Arte vetorizada com sucesso. Status: ${skillRes.status}.`,
+          executedTools: skillRes.executedTools,
+          doc: skillRes.resultingDocument,
+          iterations: 1,
+          status: isOk ? 'completed' : 'error',
+          error: isOk
+            ? undefined
+            : {
+                code: skillRes.status,
+                message: skillRes.reason || `Falha na execução da Skill "vectorize_artwork".`,
+              },
+        };
+      }
+
+      const detectedPreflight = detectPreflightDocumentSkillFromUserRequest(userMessage, currentDoc);
+      if (detectedPreflight.isPreflightSkill) {
+        const skillRes = await executeSkill(
+          'preflight_document',
+          detectedPreflight.params || {},
+          currentDoc,
+          {
+            registry: this.registry,
+            clientExecutionReceipts: options?.clientExecutionReceipts,
+            selectedNodeId: options?.selectedNodeId,
+            toolExecutionContext: options?.toolExecutionContext,
+          }
+        );
+        const isOk = skillRes.status === 'SUCCESS' || skillRes.status === 'SUCCESS_WITH_WARNINGS';
+        return {
+          success: isOk,
+          reply: skillRes.reason || `Preflight do documento concluído com sucesso. Status: ${skillRes.status}.`,
+          executedTools: skillRes.executedTools,
+          doc: skillRes.resultingDocument,
+          iterations: 1,
+          status: isOk ? 'completed' : 'error',
+          error: isOk
+            ? undefined
+            : {
+                code: skillRes.status,
+                message: skillRes.reason || `Falha na execução da Skill "preflight_document".`,
               },
         };
       }

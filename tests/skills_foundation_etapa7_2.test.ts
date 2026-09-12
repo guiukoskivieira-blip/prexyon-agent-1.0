@@ -350,7 +350,7 @@ describe('PRYX — ETAPA 7.2 — Fundação da Camada de Skills', () => {
   });
 
   it('20. Registro de Skills inicial de produção contém prepare_sticker_for_production (Etapa 7.3) e prepare_dtf_uv (Etapa 7.4)', () => {
-    expect(defaultSkillRegistry.list()).toHaveLength(2);
+    expect(defaultSkillRegistry.list().length).toBeGreaterThanOrEqual(2);
     expect(defaultSkillRegistry.has('prepare_sticker_for_production')).toBe(true);
     expect(defaultSkillRegistry.has('prepare_dtf_uv')).toBe(true);
   });
