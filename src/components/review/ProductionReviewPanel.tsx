@@ -27,7 +27,7 @@ import {
   ListTodo,
 } from 'lucide-react';
 import { ProductionReviewModel } from '@/core/production/review/types';
-import { downloadExportResult } from '@/core/export/exportEngine';
+import { downloadProductionArtifact, DownloadableArtifact } from '@/core/export/exportEngine';
 
 export interface ProductionReviewPanelProps {
   review: ProductionReviewModel | null;
@@ -88,15 +88,8 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
     }
   };
 
-  const handleDownloadArtifact = (art: { fileName: string; mimeType: string; blob?: Blob }) => {
-    if (!art.blob) return;
-    downloadExportResult({
-      fileName: art.fileName,
-      mimeType: art.mimeType,
-      blob: art.blob,
-      width_mm: 100,
-      height_mm: 100,
-    });
+  const handleDownloadArtifact = (art: DownloadableArtifact) => {
+    downloadProductionArtifact(art);
   };
 
   return (
@@ -174,7 +167,7 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
             </div>
 
             {/* Downloads do Pacote */}
-            {review.packageEvidence?.zipArtifact?.blob && (
+            {review.packageEvidence?.zipArtifact && (
               <button
                 onClick={() => handleDownloadArtifact(review.packageEvidence!.zipArtifact!)}
                 className="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-[11px] flex items-center gap-1.5 shadow-sm transition-colors"
@@ -403,7 +396,7 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
                             <p className="font-mono text-[11px] text-slate-200 truncate">{art.fileName}</p>
                             <p className="text-[10px] text-slate-400 truncate">{art.description}</p>
                           </div>
-                          {art.blob && (
+                          {(art.blob || (art as any).dataUrl || (art as any).dataString || (art as any)._bytes) && (
                             <button
                               onClick={() => handleDownloadArtifact(art)}
                               className="p-1 text-slate-400 hover:text-indigo-400 hover:bg-surface-elevated rounded transition-colors"

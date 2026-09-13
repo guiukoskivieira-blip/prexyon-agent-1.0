@@ -8,6 +8,8 @@ import { PreflightIssuesView } from './PreflightIssuesView';
 import { ProductionReviewView } from './ProductionReviewView';
 import { ProductionPackage } from '@/core/production/package/types';
 
+import { getProductionReadiness } from '@/core/production/readinessSSOT';
+
 export interface ProductionWorkspaceProps {
   doc?: PrexyonDocument;
   validationReport?: ValidationReport | null;
@@ -39,42 +41,24 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'issues' | 'review'>('chat');
 
-  // Determina o status amigável
-  const issues = validationReport?.issues || [];
-  const blockersCount = issues.filter((i) => i.severity === 'error').length;
-  const warningsCount = issues.filter((i) => i.severity === 'warning').length;
-  const pendingProposalsCount = proposedFixes.filter((p) => p.status === 'PENDING').length;
-  const manualActionRequired = issues.some(
-    (i) => (i as any).manualActionRequired === true || (i as any).requiresManualIntervention === true
-  );
+  // Determina o status canônico via SSOT
+  const readiness = getProductionReadiness({
+    doc,
+    validationReport,
+    proposedFixes,
+  });
 
-  const graphicNodes = Object.values(doc?.nodes || {}).filter(
-    (n) => n && n.type !== 'technical_guide'
-  );
+  const blockersCount = readiness.blockers.length;
+  const warningsCount = readiness.warnings.length;
+  const pendingProposalsCount = readiness.pendingConfirmationsCount;
+  const issuesTotalCount = blockersCount + warningsCount + pendingProposalsCount;
 
   let currentStatus: HumanProductionStatus = 'READY_FOR_PRODUCTION';
-
-  if (!doc || graphicNodes.length === 0 || validationReport?.status === 'waiting_for_file') {
-    currentStatus = 'WAITING_FOR_FILE';
-  } else if (blockersCount > 0 || validationReport?.status === 'blocked' || manualActionRequired) {
-    currentStatus = 'BLOCKED';
-  } else if (pendingProposalsCount > 0) {
-    currentStatus = 'WAITING_CONFIRMATION';
-  } else if (warningsCount > 0 || validationReport?.status === 'attention') {
-    currentStatus = 'ATTENTION';
-  } else if (doc.profileId === 'dtf-uv') {
-    currentStatus = 'READY_FOR_PRODUCTION';
-  } else {
-    // Adesivo convencional: se não há faca de corte e há nós no documento, produção bloqueada
-    const hasCutContour = graphicNodes.some((n) => n.type === 'cut_contour');
-    if (!hasCutContour && graphicNodes.length > 0) {
-      currentStatus = 'BLOCKED';
-    } else {
-      currentStatus = 'READY_FOR_PRODUCTION';
-    }
-  }
-
-  const issuesTotalCount = issues.length + pendingProposalsCount;
+  if (readiness.status === 'WAITING_FOR_FILE') currentStatus = 'WAITING_FOR_FILE';
+  else if (readiness.status === 'BLOCKED') currentStatus = 'BLOCKED';
+  else if (readiness.status === 'AWAITING_CONFIRMATION') currentStatus = 'WAITING_CONFIRMATION';
+  else if (readiness.status === 'READY_WITH_WARNINGS') currentStatus = 'ATTENTION';
+  else currentStatus = 'READY_FOR_PRODUCTION';
 
   return (
     <aside className="w-96 h-full bg-surface-panel border-l border-surface-border flex flex-col select-none text-slate-200">
@@ -116,7 +100,7 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
           {issuesTotalCount > 0 && (
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                blockersCount > 0 || manualActionRequired
+                blockersCount > 0 || readiness.manualActions.length > 0
                   ? 'bg-rose-500/20 text-rose-400'
                   : pendingProposalsCount > 0
                   ? 'bg-amber-500/20 text-amber-300'

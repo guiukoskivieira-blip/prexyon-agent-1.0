@@ -22,8 +22,10 @@ import {
 } from './types';
 import { buildToolExecutionReceipt } from './receiptBuilder';
 import { validateDocumentForPackage } from '../package/packageValidator';
-import { GENERIC_STICKER_PROFILE, DTF_UV_PROFILE } from '../profile';
+import { GENERIC_STICKER_PROFILE } from '../profile/genericStickerProfile';
+import { DTF_UV_PROFILE } from '../profile/dtfUvProfile';
 import { generateProposedFixes, defaultProposalManager, buildPreflightPlan } from '../../autofix';
+
 
 export interface BuildReviewParams {
   executedTools?: ExecutedToolRecord[];
@@ -219,13 +221,19 @@ export function buildProductionReview({
 
   // 6. Evidência do Pacote de Produção
   let packageEvidence: PackageEvidence | undefined;
-  const pkgReceipt = receipts.find((r) => r.toolName === 'create_production_package' && r.status !== 'failure');
+  const pkgReceipt = receipts.find(
+    (r) =>
+      (r.toolName === 'create_production_package' ||
+        r.toolName === 'generate_dtf_uv_production_package' ||
+        r.toolName === 'build_production_package') &&
+      r.status !== 'failure'
+  );
 
   if (pkgReceipt && pkgReceipt.resultData) {
-    const pkg = pkgReceipt.resultData as any;
+    const pkg = (pkgReceipt.resultData as any).package || pkgReceipt.resultData;
     packageEvidence = {
-      profileId: pkg.profile?.id || 'generic-sticker',
-      profileName: pkg.profile?.name || 'Perfil Genérico de Adesivos',
+      profileId: pkg.profile?.id || (afterDoc.profileId === 'dtf-uv' ? 'dtf-uv' : 'generic-sticker'),
+      profileName: pkg.profile?.name || (afterDoc.profileId === 'dtf-uv' ? 'DTF UV Transfer' : 'Perfil Genérico de Adesivos'),
       status: pkg.status || 'READY',
       artifacts: Array.isArray(pkg.artifacts)
         ? pkg.artifacts.map((a: any) => ({
@@ -234,6 +242,9 @@ export function buildProductionReview({
             mimeType: a.mimeType,
             description: a.description,
             blob: a.blob,
+            dataUrl: a.dataUrl,
+            dataString: a.dataString,
+            _bytes: a._bytes,
           }))
         : [],
       zipArtifact: pkg.zipArtifact
@@ -242,6 +253,9 @@ export function buildProductionReview({
             mimeType: pkg.zipArtifact.mimeType,
             size_bytes: pkg.zipArtifact.size_bytes,
             blob: pkg.zipArtifact.blob,
+            dataUrl: pkg.zipArtifact.dataUrl,
+            dataString: pkg.zipArtifact.dataString,
+            _bytes: pkg.zipArtifact._bytes,
           }
         : undefined,
     };

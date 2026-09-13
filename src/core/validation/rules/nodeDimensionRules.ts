@@ -14,8 +14,18 @@ export function validateNodeDimensions(doc: PrexyonDocument): ValidationIssue[] 
 
     if (node.type === 'raster_image' || node.type === 'group' || node.type === 'cut_contour') {
       const physicalNode = node as RasterNode | VectorGroupNode | CutContourNode;
-      const w = physicalNode.physicalWidth_mm;
-      const h = physicalNode.physicalHeight_mm;
+      let w = physicalNode.physicalWidth_mm;
+      let h = physicalNode.physicalHeight_mm;
+      if (node.type === 'cut_contour' && (w === undefined || h === undefined)) {
+        const cut = node as any;
+        if (Array.isArray(cut.contours) && cut.contours.length > 0) {
+          const first = cut.contours[0];
+          if (first.bounds) {
+            w = w ?? first.bounds.width;
+            h = h ?? first.bounds.height;
+          }
+        }
+      }
       const isWValid = typeof w === 'number' && Number.isFinite(w) && w > 0;
       const isHValid = typeof h === 'number' && Number.isFinite(h) && h > 0;
 

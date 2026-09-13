@@ -96,12 +96,18 @@ export interface PackageEvidence {
     mimeType: string;
     description: string;
     blob?: Blob;
+    dataUrl?: string;
+    dataString?: string;
+    _bytes?: Uint8Array;
   }[];
   zipArtifact?: {
     fileName: string;
     mimeType: string;
     size_bytes?: number;
     blob?: Blob;
+    dataUrl?: string;
+    dataString?: string;
+    _bytes?: Uint8Array;
   };
 }
 

@@ -13,6 +13,7 @@ import { ExecutedToolRecord } from '../types';
 import { AgentActionPlan } from './types';
 
 import { validateCutContourIntegrity } from '../../geometry/vectorPathIntegrity';
+import { getProductionReadiness } from '../../production/readinessSSOT';
 
 /**
  * Verifica determinística e fisicamente se uma ferramenta gerou a mutação esperada no PDM.
@@ -474,6 +475,18 @@ export function reconcileAgentResponseWithExecutionEvidence(
   if (successTools.some((s) => s.toolName === 'update_cut_contour' && s.args?.includeInnerContours === false)) {
     if (!reply.toLowerCase().includes('sem cortes internos') && !reply.toLowerCase().includes('sem corte interno')) {
       reply += '\n• Contorno de corte atualizado (sem cortes internos).';
+    }
+  }
+
+  const readiness = getProductionReadiness({
+    doc: finalDoc,
+    validationReport,
+    proposedFixes: (input.plan as any)?.proposedFixes,
+  });
+
+  if (readiness.status === 'BLOCKED') {
+    if (reply.toLowerCase().includes('pronto para produção') || reply.toLowerCase().includes('pronta para produção')) {
+      reply = reply.replace(/pront[oa] para produção/gi, 'com pendências impeditivas');
     }
   }
 

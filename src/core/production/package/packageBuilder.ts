@@ -217,6 +217,7 @@ export async function buildProductionPackage(
       blob: zipBlob,
       size_bytes: zipBytes.length,
     };
+    (zipArtifact as any)._bytes = zipBytes;
   }
 
   return {

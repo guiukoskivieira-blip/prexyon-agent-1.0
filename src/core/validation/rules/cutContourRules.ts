@@ -55,28 +55,32 @@ export function validateCutContours(doc: PrexyonDocument, policy?: ValidationPol
     const hasValidContours =
       Array.isArray(cutNode.contours) &&
       cutNode.contours.length > 0 &&
-      cutNode.contours.every(
-        (c) =>
-          Array.isArray(c.points_mm) &&
-          c.points_mm.length >= 3 &&
-          c.points_mm.every(
-            (pt) =>
+      cutNode.contours.every((c: any) => {
+        const pts = c?.points_mm || c?.points;
+        return (
+          Array.isArray(pts) &&
+          pts.length >= 3 &&
+          pts.every(
+            (pt: any) =>
               typeof pt.x === 'number' &&
               Number.isFinite(pt.x) &&
               typeof pt.y === 'number' &&
               Number.isFinite(pt.y)
           )
-      );
+        );
+      });
 
     const hasValidDimensions =
-      typeof cutNode.physicalWidth_mm === 'number' &&
-      Number.isFinite(cutNode.physicalWidth_mm) &&
-      cutNode.physicalWidth_mm > 0 &&
-      typeof cutNode.physicalHeight_mm === 'number' &&
-      Number.isFinite(cutNode.physicalHeight_mm) &&
-      cutNode.physicalHeight_mm > 0 &&
-      typeof cutNode.offset_mm === 'number' &&
-      Number.isFinite(cutNode.offset_mm);
+      (cutNode.physicalWidth_mm === undefined ||
+        (typeof cutNode.physicalWidth_mm === 'number' &&
+          Number.isFinite(cutNode.physicalWidth_mm) &&
+          cutNode.physicalWidth_mm > 0)) &&
+      (cutNode.physicalHeight_mm === undefined ||
+        (typeof cutNode.physicalHeight_mm === 'number' &&
+          Number.isFinite(cutNode.physicalHeight_mm) &&
+          cutNode.physicalHeight_mm > 0)) &&
+      (cutNode.offset_mm === undefined ||
+        (typeof cutNode.offset_mm === 'number' && Number.isFinite(cutNode.offset_mm)));
 
     if (!hasValidContours || !hasValidDimensions) {
       issues.push({

@@ -102,7 +102,7 @@ export function validateDtfUvTransparency(
 
   // 4. VALIDAÇÃO DE SEPARAÇÃO TÉCNICA DE BASE BRANCA (WHITE UNDERBASE)
   const whitePolicy = policy.customConfig?.dtfUv?.whitePolicy || 'OPTIONAL';
-  const whiteSeparation = doc.separations?.['WHITE'];
+  const whiteSeparation = doc.separations?.['WHITE'] || doc.separations?.['white'];
 
   if (whitePolicy === 'REQUIRED' && !whiteSeparation) {
     issues.push({
@@ -147,7 +147,7 @@ export function validateDtfUvTransparency(
 
   // 5. VALIDAÇÃO DE SEPARAÇÃO TÉCNICA DE VERNIZ (CLEAR / VARNISH)
   const clearPolicy = policy.customConfig?.dtfUv?.clearPolicy || 'OPTIONAL';
-  const clearSeparation = doc.separations?.['CLEAR'];
+  const clearSeparation = doc.separations?.['CLEAR'] || doc.separations?.['clear'];
 
   if (clearPolicy === 'REQUIRED' && !clearSeparation) {
     issues.push({

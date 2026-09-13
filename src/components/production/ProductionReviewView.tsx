@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ValidationReport } from '@/core/validation/types';
 import { ProductionPackage, ProductionArtifact } from '@/core/production/package/types';
-import { downloadExportResult } from '@/core/export/exportEngine';
+import { downloadProductionArtifact } from '@/core/export/exportEngine';
 
 import { PrexyonDocument } from '@/core/pdm/types';
 import { Info, HelpCircle } from 'lucide-react';
@@ -60,14 +60,7 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
   const isEmpty = !doc || graphicNodes.length === 0 || validationReport?.status === 'waiting_for_file';
 
   const handleDownloadArtifact = (art: ProductionArtifact) => {
-    if (!art.blob) return;
-    downloadExportResult({
-      fileName: art.fileName,
-      mimeType: art.mimeType,
-      blob: art.blob,
-      width_mm: 100,
-      height_mm: 100,
-    });
+    downloadProductionArtifact(art);
   };
 
   return (
@@ -323,7 +316,7 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
           </div>
 
           {/* Botão de Download do Pacote ZIP Consolidado */}
-          {packageResult.zipArtifact?.blob && (
+          {packageResult.zipArtifact && (packageResult.zipArtifact.blob || (packageResult.zipArtifact as any).dataUrl || (packageResult.zipArtifact as any).dataString || (packageResult.zipArtifact as any)._bytes) && (
             <button
               type="button"
               onClick={() => handleDownloadArtifact(packageResult.zipArtifact!)}
@@ -335,31 +328,34 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
           )}
 
           <div className="space-y-1.5">
-            {packageResult.artifacts.map((art: ProductionArtifact, idx: number) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between p-2 rounded-lg bg-surface-base border border-surface-border"
-              >
-                <div className="min-w-0 pr-2">
-                  <p className="font-mono text-[11px] text-slate-200 truncate">
-                    {art.fileName}
-                  </p>
-                  <p className="text-[10px] text-slate-400 truncate">
-                    {art.description}
-                  </p>
+            {packageResult.artifacts.map((art: ProductionArtifact, idx: number) => {
+              const hasData = Boolean(art.blob || art.dataUrl || (art as any).dataString || (art as any)._bytes);
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-2 rounded-lg bg-surface-base border border-surface-border"
+                >
+                  <div className="min-w-0 pr-2">
+                    <p className="font-mono text-[11px] text-slate-200 truncate">
+                      {art.fileName}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {art.description}
+                    </p>
+                  </div>
+                  {hasData && (
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadArtifact(art)}
+                      className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-surface-elevated rounded-md transition-colors cursor-pointer"
+                      title="Baixar arquivo"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-                {art.blob && (
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadArtifact(art)}
-                    className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-surface-elevated rounded-md transition-colors"
-                    title="Baixar arquivo"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

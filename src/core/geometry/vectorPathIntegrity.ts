@@ -478,10 +478,12 @@ export function detectContourIntersections(
 /**
  * Normaliza contornos recebidos como ContourPolygon[] ou Point2D[][].
  */
-export function normalizeContourPolygons(contours: (ContourPolygon | Point2D[])[]): Point2D[][] {
-  return (contours || []).map((c) => {
+export function normalizeContourPolygons(contours: (ContourPolygon | Point2D[] | any)[]): Point2D[][] {
+  return (contours || []).map((c: any) => {
     if (Array.isArray(c)) return c;
-    return (c as ContourPolygon).points_mm || [];
+    if (c?.points_mm && Array.isArray(c.points_mm)) return c.points_mm;
+    if (c?.points && Array.isArray(c.points)) return c.points;
+    return [];
   });
 }
 
@@ -515,6 +517,31 @@ export function validateCutContourIntegrity(
     failureReasons.push('A faca de corte possui menos de 3 vértices úteis para fechamento.');
   }
 
+  // 1b. Verificação de Contornos Abertos (Open Contours / Gaps > 0.5mm)
+  let hasOpenContour = false;
+  const rawList =
+    rawContours && !Array.isArray(rawContours) && 'contours' in rawContours
+      ? (rawContours as CutContourNode).contours
+      : (rawContours as any[]);
+
+  for (let rIdx = 0; rIdx < (rawList || []).length; rIdx++) {
+    const rawContour = (rawList as any)[rIdx];
+    if (rawContour && rawContour.closed === false) {
+      const ring = contours[rIdx] || [];
+      if (ring.length >= 2) {
+        const pFirst = ring[0];
+        const pLast = ring[ring.length - 1];
+        const gap = Math.hypot(pFirst.x - pLast.x, pFirst.y - pLast.y);
+        if (gap > 0.5) {
+          hasOpenContour = true;
+          failureReasons.push(
+            `O contorno ${rIdx + 1} da faca de corte está aberto (distância entre extremidades: ${gap.toFixed(2)} mm).`
+          );
+        }
+      }
+    }
+  }
+
   // 2. Verificação de Área Mínima
   if (totalArea < minArea) {
     isDegenerate = true;
@@ -534,7 +561,7 @@ export function validateCutContourIntegrity(
     failureReasons.push(`A faca de corte contém ${overlappingSegments.length} segmento(s) colinear(es) sobreposto(s).`);
   }
 
-  const isValid = !isDegenerate && !isSelfIntersecting && !hasOverlappingSegments;
+  const isValid = !isDegenerate && !hasOpenContour && !isSelfIntersecting && !hasOverlappingSegments;
 
   const totalSegments = contours.reduce((acc, c) => acc + c.length, 0);
 
