@@ -33,9 +33,14 @@ export const PreflightIssuesView: React.FC<PreflightIssuesViewProps> = ({
 
   const pendingProposals = proposedFixes.filter((p) => p.status === 'PENDING');
 
-  // Issues que exigem resolução manual pelo operador
-  const manualIssues = issues.filter(
-    (i) => !i.fixable && !pendingProposals.some((p) => p.targetNodeId === i.nodeId)
+  // Issues bloqueantes (erros) que exigem resolução manual pelo operador
+  const blockingManualIssues = issues.filter(
+    (i) => i.severity === 'error' && !i.fixable && !pendingProposals.some((p) => p.targetNodeId === i.nodeId)
+  );
+
+  // Avisos técnicos (não bloqueantes)
+  const warningIssues = issues.filter(
+    (i) => i.severity === 'warning' && !i.fixable && !pendingProposals.some((p) => p.targetNodeId === i.nodeId)
   );
 
   return (
@@ -87,42 +92,67 @@ export const PreflightIssuesView: React.FC<PreflightIssuesViewProps> = ({
         </div>
       )}
 
-      {/* 2. Seção: Problemas que Exigem Atenção Manual */}
-      {manualIssues.length > 0 && (
+      {/* 2. Seção: Bloqueios Críticos de Produção (Erros Manuais) */}
+      {blockingManualIssues.length > 0 && (
         <div className="space-y-2">
-          <span className="font-semibold text-slate-300 text-xs flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-            Precisa ser corrigido manualmente ({manualIssues.length})
+          <span className="font-semibold text-rose-300 text-xs flex items-center gap-1.5">
+            <XCircle className="w-3.5 h-3.5 text-rose-400" />
+            Precisa ser corrigido manualmente ({blockingManualIssues.length})
           </span>
 
           <div className="space-y-2">
-            {manualIssues.map((issue) => (
+            {blockingManualIssues.map((issue) => (
               <div
                 key={issue.id}
                 onClick={() => issue.nodeId && onSelectNode && onSelectNode(issue.nodeId)}
-                className={`p-3 rounded-lg border space-y-1.5 transition-colors cursor-pointer ${
-                  issue.severity === 'error'
-                    ? 'bg-rose-500/5 border-rose-500/30 text-rose-200 hover:bg-rose-500/10'
-                    : 'bg-amber-500/5 border-amber-500/30 text-amber-200 hover:bg-amber-500/10'
-                }`}
+                className="p-3 rounded-lg border space-y-1.5 transition-colors cursor-pointer bg-rose-500/5 border-rose-500/30 text-rose-200 hover:bg-rose-500/10"
               >
                 <div className="flex items-center justify-between font-semibold">
                   <div className="flex items-center gap-1.5">
-                    {issue.severity === 'error' ? (
-                      <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    )}
+                    <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     <span>{issue.title}</span>
                   </div>
-                  <span
-                    className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-bold ${
-                      issue.severity === 'error'
-                        ? 'bg-rose-500/20 text-rose-300'
-                        : 'bg-amber-500/20 text-amber-300'
-                    }`}
-                  >
-                    {issue.severity === 'error' ? 'Bloqueante' : 'Aviso'}
+                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-bold bg-rose-500/20 text-rose-300">
+                    Bloqueante
+                  </span>
+                </div>
+
+                <p className="text-slate-300 text-xs pl-5">{issue.message}</p>
+
+                {issue.suggestedAction && (
+                  <p className="text-[11px] text-slate-400 pl-5 flex items-center gap-1 italic">
+                    <ArrowRight className="w-3 h-3 text-slate-500 shrink-0" />
+                    {issue.suggestedAction}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Seção: Avisos Técnicos (Não Bloqueantes) */}
+      {warningIssues.length > 0 && (
+        <div className="space-y-2">
+          <span className="font-semibold text-amber-300 text-xs flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            Avisos Técnicos ({warningIssues.length})
+          </span>
+
+          <div className="space-y-2">
+            {warningIssues.map((issue) => (
+              <div
+                key={issue.id}
+                onClick={() => issue.nodeId && onSelectNode && onSelectNode(issue.nodeId)}
+                className="p-3 rounded-lg border space-y-1.5 transition-colors cursor-pointer bg-amber-500/5 border-amber-500/30 text-amber-200 hover:bg-amber-500/10"
+              >
+                <div className="flex items-center justify-between font-semibold">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>{issue.title}</span>
+                  </div>
+                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300">
+                    Aviso
                   </span>
                 </div>
 

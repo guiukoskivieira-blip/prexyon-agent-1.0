@@ -12,6 +12,8 @@ import { validateProductionDocument } from '../../validation/productionValidatio
 import { ExecutedToolRecord } from '../types';
 import { AgentActionPlan } from './types';
 
+import { validateCutContourIntegrity } from '../../geometry/vectorPathIntegrity';
+
 /**
  * Verifica determinística e fisicamente se uma ferramenta gerou a mutação esperada no PDM.
  */
@@ -42,13 +44,26 @@ export function verifyMutationEvidence(
       };
     }
   } else if (toolName === 'create_cut_contour') {
-    const hasCutNode = Object.values(nextDoc.nodes || {}).some(
+    const cutNode = Object.values(nextDoc.nodes || {}).find(
       (n) => n && n.type === 'cut_contour'
-    );
-    if (!hasCutNode) {
+    ) as any;
+    if (!cutNode) {
       return {
         verified: false,
         error: 'Nenhum contorno de corte foi gerado no documento.',
+      };
+    }
+    const cutValidation = validateCutContourIntegrity(cutNode.contours || []);
+    if (!cutValidation.isValid) {
+      return {
+        verified: false,
+        error: `Contorno de corte gerado é geometricamente inválido (${cutValidation.failureReasons.join('; ')}).`,
+      };
+    }
+    if (args?.includeInnerContours !== undefined && cutNode.includeInnerContours !== args.includeInnerContours) {
+      return {
+        verified: false,
+        error: `Recortes internos da faca de corte não correspondem ao solicitado (includeInnerContours=${args.includeInnerContours}).`,
       };
     }
   } else if (toolName === 'update_cut_contour') {
@@ -59,6 +74,13 @@ export function verifyMutationEvidence(
       return {
         verified: false,
         error: 'Nenhum contorno de corte foi encontrado no documento para atualizar.',
+      };
+    }
+    const cutValidation = validateCutContourIntegrity(cutNode.contours || []);
+    if (!cutValidation.isValid) {
+      return {
+        verified: false,
+        error: `Contorno de corte atualizado é geometricamente inválido (${cutValidation.failureReasons.join('; ')}).`,
       };
     }
     if (args?.includeInnerContours !== undefined && cutNode.includeInnerContours !== args.includeInnerContours) {

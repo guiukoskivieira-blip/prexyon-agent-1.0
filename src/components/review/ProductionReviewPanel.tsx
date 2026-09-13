@@ -373,6 +373,9 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
                       <div>
                         Espessura do Traço: <span className="text-slate-200">{review.cutContourEvidence.strokeWidth_mm} mm</span>
                       </div>
+                      <div className="col-span-2">
+                        Recortes Internos: <span className="text-slate-200">{review.cutContourEvidence.includeInnerContours ? 'Incluídos (Com miolo)' : 'Removidos (Sem miolo / Apenas externo)'}</span>
+                      </div>
                     </div>
                   </div>
                 )}

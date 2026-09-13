@@ -207,7 +207,7 @@ export function validateDocumentForDtfUvPackage(
   }
 
   // 4. Governança da camada de Base Branca (White)
-  const whiteSep = doc.separations?.['WHITE'];
+  const whiteSep = doc.separations?.['WHITE'] || doc.separations?.['white'];
   if (effectiveWhitePolicy === 'REQUIRED') {
     if (!whiteSep) {
       const msg = 'A separação de Base Branca (White Underbase) é obrigatória e não foi gerada.';
@@ -253,7 +253,7 @@ export function validateDocumentForDtfUvPackage(
   }
 
   // 5. Governança da camada de Verniz (Clear / Varnish)
-  const clearSep = doc.separations?.['CLEAR'];
+  const clearSep = doc.separations?.['CLEAR'] || doc.separations?.['clear'];
   if (effectiveClearPolicy === 'REQUIRED') {
     if (!clearSep) {
       const msg = 'A separação de Verniz (Clear) é obrigatória e não foi gerada.';
@@ -388,7 +388,7 @@ export async function buildDtfUvProductionPackage(
   artifacts.push(colorArtifact);
 
   // 2. Camada WHITE (Base Branca — Somente se gerada e aplicável)
-  const whiteSep = doc.separations?.['WHITE'];
+  const whiteSep = doc.separations?.['WHITE'] || doc.separations?.['white'];
   let whiteArtifact: ProductionArtifact | undefined;
   let whiteIncluded = false;
   let whiteFileName: string | undefined;
@@ -436,8 +436,17 @@ export async function buildDtfUvProductionPackage(
         whiteBytes = encodeGrayscalePng(whiteSep.maskBuffer, whiteSep.widthPx, whiteSep.heightPx);
       }
       whiteBlob = new Blob([whiteBytes.buffer as ArrayBuffer], { type: 'image/png' });
+    } else if (whiteSep.maskDataUrl) {
+      // Fallback a partir de maskDataUrl se buffer não estiver presente (ex: após sanitização)
+      const base64Data = whiteSep.maskDataUrl.split(',')[1] || '';
+      const binaryStr = typeof atob === 'function'
+        ? atob(base64Data)
+        : (typeof Buffer !== 'undefined' ? Buffer.from(base64Data, 'base64').toString('binary') : '');
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      whiteBytes = bytes;
+      whiteBlob = new Blob([whiteBytes.buffer as ArrayBuffer], { type: 'image/png' });
     } else {
-      // Fallback a partir de dataUrl se buffer não estiver presente
       whiteBlob = new Blob([], { type: 'image/png' });
       whiteBytes = new Uint8Array(0);
     }
@@ -448,6 +457,7 @@ export async function buildDtfUvProductionPackage(
       format: 'png',
       description: `Máscara técnica de Base Branca (White Underbase) em escala de cinza de 8 bits (${whiteSep.dpi} DPI, cobertura ${Math.round((whiteSep.coverageRatio || 0) * 100)}%)`,
       blob: whiteBlob,
+      dataUrl: whiteSep.maskDataUrl,
       width_mm: whiteWidthMm,
       height_mm: whiteHeightMm,
     };
@@ -457,7 +467,7 @@ export async function buildDtfUvProductionPackage(
   }
 
   // 3. Camada CLEAR (Verniz — Somente se gerada e aplicável)
-  const clearSep = doc.separations?.['CLEAR'];
+  const clearSep = doc.separations?.['CLEAR'] || doc.separations?.['clear'];
   let clearArtifact: ProductionArtifact | undefined;
   let clearIncluded = false;
   let clearFileName: string | undefined;
@@ -507,6 +517,16 @@ export async function buildDtfUvProductionPackage(
         clearBytes = encodeGrayscalePng(clearSep.maskBuffer, clearSep.widthPx, clearSep.heightPx);
       }
       clearBlob = new Blob([clearBytes.buffer as ArrayBuffer], { type: 'image/png' });
+    } else if (clearSep.maskDataUrl) {
+      // Fallback a partir de maskDataUrl se buffer não estiver presente
+      const base64Data = clearSep.maskDataUrl.split(',')[1] || '';
+      const binaryStr = typeof atob === 'function'
+        ? atob(base64Data)
+        : (typeof Buffer !== 'undefined' ? Buffer.from(base64Data, 'base64').toString('binary') : '');
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      clearBytes = bytes;
+      clearBlob = new Blob([clearBytes.buffer as ArrayBuffer], { type: 'image/png' });
     } else {
       clearBlob = new Blob([], { type: 'image/png' });
       clearBytes = new Uint8Array(0);
@@ -518,6 +538,7 @@ export async function buildDtfUvProductionPackage(
       format: 'png',
       description: `Máscara técnica de Verniz (Clear / Varnish) em escala de cinza de 8 bits (${clearSep.dpi} DPI, modo ${clearSep.metadata?.mode || 'ARTWORK'})`,
       blob: clearBlob,
+      dataUrl: clearSep.maskDataUrl,
       width_mm: clearWidthMm,
       height_mm: clearHeightMm,
     };
@@ -714,13 +735,15 @@ export function isDtfUvPackageStale(
   }
 
   // Verifica se alguma separação existente está stale
-  if (doc.separations?.['WHITE']) {
-    const whiteAlign = validateWhiteSeparationAlignment(doc, doc.separations['WHITE']);
+  const whiteSep = doc.separations?.['WHITE'] || doc.separations?.['white'];
+  if (whiteSep) {
+    const whiteAlign = validateWhiteSeparationAlignment(doc, whiteSep);
     if (whiteAlign.status === 'STALE' || whiteAlign.status === 'INVALID') return true;
   }
 
-  if (doc.separations?.['CLEAR']) {
-    const clearAlign = validateClearSeparationAlignment(doc, doc.separations['CLEAR']);
+  const clearSep = doc.separations?.['CLEAR'] || doc.separations?.['clear'];
+  if (clearSep) {
+    const clearAlign = validateClearSeparationAlignment(doc, clearSep);
     if (clearAlign.status === 'STALE' || clearAlign.status === 'INVALID') return true;
   }
 

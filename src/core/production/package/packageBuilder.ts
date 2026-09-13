@@ -143,6 +143,7 @@ export async function buildProductionPackage(
           offset_mm: cutNode.offset_mm,
           joinStyle: cutNode.joinStyle,
           contoursCount: cutNode.contours.length,
+          includeInnerContours: cutNode.includeInnerContours ?? false,
           strokeColor: cutNode.strokeColor,
           strokeWidth_mm: cutNode.strokeWidth_mm,
         }

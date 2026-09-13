@@ -25,10 +25,19 @@ export { validateCutContourIntegrity, calculateClosedPathArea };
 export function cleanPolygonRing(pts: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
   if (!pts || pts.length < 3) return [];
 
+  // Safe auto-close para pequenas lacunas (<= 0.5 mm) entre o primeiro e o último vértice
+  const firstPt = pts[0];
+  const lastPt = pts[pts.length - 1];
+  const endGap = Math.hypot(firstPt.x - lastPt.x, firstPt.y - lastPt.y);
+  let workingPts = [...pts];
+  if (endGap > 0.002 && endGap <= 0.5) {
+    workingPts.push({ x: firstPt.x, y: firstPt.y });
+  }
+
   // 1. Remove pontos duplicados ou quase idênticos (< 0.002 mm)
   const noDups: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
+  for (let i = 0; i < workingPts.length; i++) {
+    const p = workingPts[i];
     if (noDups.length === 0) {
       noDups.push(p);
       continue;

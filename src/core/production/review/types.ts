@@ -80,6 +80,7 @@ export interface CutContourEvidence {
   offset_mm: number;
   joinStyle: string;
   contoursCount: number;
+  includeInnerContours?: boolean;
   strokeWidth_mm: number;
   sourceNodeId?: string;
   sourceNodeName?: string;

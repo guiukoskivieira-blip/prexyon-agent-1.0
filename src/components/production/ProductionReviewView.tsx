@@ -45,8 +45,18 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
   const hasRaster = graphicNodes.some((n) => n.type === 'raster_image' || (n as any).type === 'raster');
   const hasVector = graphicNodes.some((n) => n.type === 'group' || (n as any).type === 'vector_group');
   const hasCutContour = graphicNodes.some((n) => n.type === 'cut_contour');
-  const hasWhite = Boolean(doc?.separations?.white?.status === 'GENERATED' || doc?.separations?.white?.maskDataUrl);
-  const hasClear = Boolean(doc?.separations?.clear?.status === 'GENERATED' || doc?.separations?.clear?.maskDataUrl);
+  const hasWhite = Boolean(
+    doc?.separations?.white?.status === 'GENERATED' ||
+    (doc?.separations as any)?.WHITE?.status === 'GENERATED' ||
+    doc?.separations?.white?.maskDataUrl ||
+    (doc?.separations as any)?.WHITE?.maskDataUrl
+  );
+  const hasClear = Boolean(
+    doc?.separations?.clear?.status === 'GENERATED' ||
+    (doc?.separations as any)?.CLEAR?.status === 'GENERATED' ||
+    doc?.separations?.clear?.maskDataUrl ||
+    (doc?.separations as any)?.CLEAR?.maskDataUrl
+  );
   const isEmpty = !doc || graphicNodes.length === 0 || validationReport?.status === 'waiting_for_file';
 
   const handleDownloadArtifact = (art: ProductionArtifact) => {

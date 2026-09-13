@@ -26,14 +26,14 @@ import { GENERIC_STICKER_PROFILE, DTF_UV_PROFILE } from '../profile';
 import { generateProposedFixes, defaultProposalManager, buildPreflightPlan } from '../../autofix';
 
 export interface BuildReviewParams {
-  executedTools: ExecutedToolRecord[];
+  executedTools?: ExecutedToolRecord[];
   beforeDoc: PrexyonDocument;
   afterDoc: PrexyonDocument;
   customTitle?: string;
 }
 
 export function buildProductionReview({
-  executedTools,
+  executedTools = [],
   beforeDoc,
   afterDoc,
   customTitle,
@@ -210,6 +210,7 @@ export function buildProductionReview({
       offset_mm: cutNode.offset_mm,
       joinStyle: cutNode.joinStyle,
       contoursCount: Array.isArray(cutNode.contours) ? cutNode.contours.length : 1,
+      includeInnerContours: cutNode.includeInnerContours ?? false,
       strokeWidth_mm: cutNode.strokeWidth_mm,
       sourceNodeId: cutNode.sourceNodeId,
       sourceNodeName: sourceNode?.name || cutNode.sourceNodeId,
