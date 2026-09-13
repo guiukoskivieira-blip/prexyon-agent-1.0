@@ -104,7 +104,7 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
     const bridge = context.vtracerBridge || vtracerBridge;
 
     try {
-      const result = await bridge.vectorizeRasterNode(rasterNode, vtracerOptions);
+      const result = await bridge.vectorizeRasterNode(rasterNode, vtracerOptions, presetId);
 
       const cmd = new VectorizeCommand(result.groupNode, result.pathNodes, rasterNode.id);
 

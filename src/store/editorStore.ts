@@ -254,7 +254,7 @@ export function useEditorStore() {
       const rasterNode = targetNode as RasterNode;
 
       try {
-        const result = await vtracerBridge.vectorizeRasterNode(rasterNode, options);
+        const result = await vtracerBridge.vectorizeRasterNode(rasterNode, options, presetId);
 
         const cmd = new VectorizeCommand(result.groupNode, result.pathNodes, rasterNode.id);
         const res = historyManagerRef.current.executeCommand(cmd, doc);

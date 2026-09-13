@@ -13,7 +13,7 @@
 import { PrexyonDocument, DocumentNode, RasterNode, VectorGroupNode } from '../pdm/types';
 import { ClientExecutionReceipt } from './types';
 import { detectClientRasterIntents } from './planner/clientRasterClassifier';
-import { getVTracerOptionsForPreset } from '../vectorizer/presets';
+import { getVTracerOptionsForPreset, type VectorizePresetId } from '../vectorizer/presets';
 import { vtracerBridge as defaultVTracerBridge } from '../vectorizer/vtracerBridge';
 
 export interface ClientPreExecutionOptions {
@@ -21,7 +21,8 @@ export interface ClientPreExecutionOptions {
   vtracerBridgeInstance?: {
     vectorizeRasterNode: (
       node: RasterNode,
-      options?: any
+      options?: any,
+      requestedPreset?: VectorizePresetId
     ) => Promise<{ groupNode: VectorGroupNode; pathNodes: any[] }>;
   };
 }
@@ -169,7 +170,7 @@ export async function runClientPreExecution(
       } else {
         try {
           const options = getVTracerOptionsForPreset('logo');
-          const vResult = await vtracer.vectorizeRasterNode(targetRaster, options);
+          const vResult = await vtracer.vectorizeRasterNode(targetRaster, options, 'logo');
           const updatedNodes = { ...activeDoc.nodes };
           if (existingGroup && existingGroup.id) {
             delete updatedNodes[existingGroup.id];

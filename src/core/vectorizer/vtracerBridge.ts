@@ -8,10 +8,16 @@ import { RasterNode } from '../pdm/types';
 import { VTracerOptions, VTracerWasmInstance } from './vtracerWasmCore';
 import { buildVectorGroupFromSvg, BuildVectorGroupResult } from './svgParser';
 import wasmBinaryUrl from '@visioncortex/vtracer/pkg/vtracer_wasm_bg.wasm?url';
+import type { VectorizePresetId } from './presets';
+import { resolveAdaptiveVTracerOptions, type AdaptiveVTracerStrategy } from './v2/adaptiveVTracerSelector';
 
 export interface VectorizationResult extends BuildVectorGroupResult {
   svgString: string;
   durationMs: number;
+  strategyMetadata?: {
+    requestedPreset: 'logo';
+    effectiveStrategy: AdaptiveVTracerStrategy;
+  };
 }
 
 class VTracerBridgeManager {
@@ -108,9 +114,12 @@ class VTracerBridgeManager {
    */
   public async vectorizeRasterNode(
     node: RasterNode,
-    options: VTracerOptions = { mode: 'spline', clustering: 'color-cluster' }
+    options: VTracerOptions = { mode: 'spline', clustering: 'color-cluster' },
+    requestedPreset?: VectorizePresetId
   ): Promise<VectorizationResult> {
     const { rgba, width, height } = await this.extractRgbaFromRaster(node);
+    const resolution = resolveAdaptiveVTracerOptions(requestedPreset, { data: rgba, width, height }, options);
+    const effectiveOptions = resolution.options;
     const worker = this.getWorker();
     const requestId = Math.random().toString(36).substring(2, 9);
 
@@ -127,7 +136,7 @@ class VTracerBridgeManager {
           rgba,
           width,
           height,
-          options,
+          options: effectiveOptions,
           wasmUrl: wasmBinaryUrl,
         });
       });
@@ -144,7 +153,7 @@ class VTracerBridgeManager {
           const wasmBuffer = await response.arrayBuffer();
           await this.fallbackWasmInstance.init(wasmBuffer);
         }
-        svgString = this.fallbackWasmInstance.vectorizeRgba(rgba, width, height, options);
+        svgString = this.fallbackWasmInstance.vectorizeRgba(rgba, width, height, effectiveOptions);
         durationMs = Math.round(performance.now() - startTime);
       } catch {
         svgString = `<svg viewBox="0 0 ${node.physicalWidth_mm} ${node.physicalHeight_mm}"><path d="M 0 0 L ${node.physicalWidth_mm} 0 L ${node.physicalWidth_mm} ${node.physicalHeight_mm} L 0 ${node.physicalHeight_mm} Z" fill="#000000" /></svg>`;
@@ -161,13 +170,14 @@ class VTracerBridgeManager {
       physicalHeight_mm: node.physicalHeight_mm,
       position_mm: { x: node.position_mm.x, y: node.position_mm.y },
       vectorizationTimeMs: durationMs,
-      preset: options.mode ?? 'spline',
+      preset: effectiveOptions.mode ?? 'spline',
     });
 
     return {
       ...vectorGroup,
       svgString,
       durationMs,
+      ...(resolution.metadata ? { strategyMetadata: resolution.metadata } : {}),
     };
   }
 }

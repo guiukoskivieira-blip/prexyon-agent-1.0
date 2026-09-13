@@ -7,6 +7,7 @@
 import { PrexyonDocument, RasterNode } from '../pdm/types';
 import { HistoryManager } from '../history/historyManager';
 import { VectorizationResult } from '../vectorizer/vtracerBridge';
+import type { VectorizePresetId } from '../vectorizer/presets';
 
 export type ToolErrorCode =
   | 'TOOL_NOT_FOUND'
@@ -60,7 +61,7 @@ export interface ToolExecutionContext {
   setDoc?: (doc: PrexyonDocument) => void;
   selectedNodeId?: string;
   vtracerBridge?: {
-    vectorizeRasterNode: (node: RasterNode, options?: any) => Promise<VectorizationResult>;
+    vectorizeRasterNode: (node: RasterNode, options?: any, requestedPreset?: VectorizePresetId) => Promise<VectorizationResult>;
   };
 }
 

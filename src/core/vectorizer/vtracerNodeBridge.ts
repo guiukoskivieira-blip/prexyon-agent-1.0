@@ -9,6 +9,9 @@ import { RasterNode } from '../pdm/types';
 import { buildVectorGroupFromSvg } from './svgParser';
 import { VectorizationResult } from './vtracerBridge';
 import { VTracerOptions } from './vtracerWasmCore';
+import type { VectorizePresetId } from './presets';
+import { getOrDecodeRgbaBuffer } from '../pdm/pngDecoder';
+import { resolveAdaptiveVTracerOptions } from './v2/adaptiveVTracerSelector';
 
 function decodeRasterDataUrl(src: string): Uint8Array {
   const commaIndex = src.indexOf(',');
@@ -32,14 +35,33 @@ function decodeRasterDataUrl(src: string): Uint8Array {
 export const vtracerNodeBridge = {
   async vectorizeRasterNode(
     node: RasterNode,
-    options: VTracerOptions = { mode: 'spline', clustering: 'color-cluster' }
+    options: VTracerOptions = { mode: 'spline', clustering: 'color-cluster' },
+    requestedPreset?: VectorizePresetId
   ): Promise<VectorizationResult> {
     if (!node || !node.src || !node.src.trim()) {
       throw new Error('Não foi possível processar a imagem raster para vetorização.');
     }
     const encodedBytes = decodeRasterDataUrl(node.src);
+    let effectiveOptions = options;
+    let strategyMetadata: VectorizationResult['strategyMetadata'];
+    if (requestedPreset === 'logo') {
+      const decodedRgba = getOrDecodeRgbaBuffer(node);
+      const width = node.naturalWidth;
+      const height = node.naturalHeight;
+      if (decodedRgba && width > 0 && height > 0 && decodedRgba.length === width * height * 4) {
+        const resolution = resolveAdaptiveVTracerOptions(
+          requestedPreset,
+          { data: new Uint8Array(decodedRgba), width, height },
+          options
+        );
+        effectiveOptions = resolution.options;
+        strategyMetadata = resolution.metadata;
+      } else {
+        strategyMetadata = { requestedPreset: 'logo', effectiveStrategy: 'BASELINE_LOGO' };
+      }
+    }
     const startedAt = performance.now();
-    const svgString = convertBuffer(encodedBytes, options);
+    const svgString = convertBuffer(encodedBytes, effectiveOptions);
     const durationMs = Math.round(performance.now() - startedAt);
 
     const vectorGroup = buildVectorGroupFromSvg({
@@ -57,6 +79,7 @@ export const vtracerNodeBridge = {
       ...vectorGroup,
       svgString,
       durationMs,
+      ...(strategyMetadata ? { strategyMetadata } : {}),
     };
   },
 };
