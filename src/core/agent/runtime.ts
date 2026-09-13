@@ -672,6 +672,7 @@ export class AgentRuntime {
           executedTools,
           initialDoc,
           finalDoc: currentDoc,
+          userMessage,
         });
 
         return {

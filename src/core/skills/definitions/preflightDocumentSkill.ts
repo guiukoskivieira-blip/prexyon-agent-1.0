@@ -11,6 +11,7 @@ import { AgentActionPlan, PlannedAction } from '../../agent/planner/types';
 import { ExecutedToolRecord } from '../../agent/types';
 import { ValidationReport } from '../../validation/types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
+import { isMultiIntentRequest } from '../../agent/planner/unitNormalizer';
 
 export interface PreflightDocumentSkillParams {}
 
@@ -67,6 +68,11 @@ export function detectPreflightDocumentSkillFromUserRequest(
   }
 
   const text = message.toLowerCase().trim();
+
+  // Se a solicitação for multi-intenção / composta, delega ao Planner.
+  if (isMultiIntentRequest(text)) {
+    return { isPreflightSkill: false };
+  }
 
   // 1. Identificação de Intenção de Preflight / Inspeção
   const hasPreflightIntent =

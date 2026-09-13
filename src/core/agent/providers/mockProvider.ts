@@ -1,11 +1,13 @@
-/**
- * Prexyon Agent — Mock AI Provider (para testes determinísticos)
- */
-
 import { AIProvider, AIProviderResponse, ChatMessage, AIProviderOptions } from '../types';
 import { ToolDeclaration } from '../../tools/types';
 import { defaultProposalManager } from '../../autofix';
-import { buildActionPlanFromUserRequest, parseDimensionsFromNaturalText, parseMoveCommandFromNaturalText, parseCutContourOffsetFromText } from '../planner';
+import {
+  buildActionPlanFromUserRequest,
+  parseDimensionsFromNaturalText,
+  parseMoveCommandFromNaturalText,
+  parseCutContourOffsetFromText,
+  isMultiIntentRequest,
+} from '../planner';
 
 export interface ScriptedTurn {
   response: AIProviderResponse;
@@ -100,6 +102,55 @@ export function createDeterministicTurnsForRequest(
     nodes.find((n) => n.type === 'raster_image' || (n as any).type === 'raster') ||
     nodes[0];
   const targetNodeId = targetNode?.id || 'node_1';
+
+  // 0.A. Multi-Intent / Composição de Ações planejada deterministicamente pelo PlanBuilder
+  if (plan.steps.length >= 2 || (isMultiIntentRequest(message) && plan.steps.length > 0)) {
+    const turns: ScriptedTurn[] = [];
+    for (const step of plan.steps) {
+      const toolArgs = { ...(step.arguments || {}) };
+      if (['center_node', 'flip_node_horizontal', 'move_node', 'resize_node'].includes(step.tool)) {
+        if (!toolArgs.nodeId && !toolArgs.sourceNodeId && !toolArgs.node_id) {
+          toolArgs.nodeId = targetNodeId;
+          toolArgs.node_id = targetNodeId;
+          toolArgs.sourceNodeId = targetNodeId;
+        }
+      }
+      if (step.tool === 'create_cut_contour') {
+        if (!toolArgs.nodeId && !toolArgs.sourceNodeId) {
+          let vectorTargetId = targetNodeId;
+          if (targetNode?.type === 'raster_image' || (targetNode as any)?.type === 'raster') {
+            const derivedVector = nodes.find(
+              (n) =>
+                (n.type === 'group' || (n as any).type === 'vector_group') &&
+                ((n as any).sourceRasterNodeId === targetNode.id || n.name === `Vetor: ${targetNode.name}`)
+            );
+            if (derivedVector) {
+              vectorTargetId = derivedVector.id;
+            }
+          }
+          toolArgs.sourceNodeId = vectorTargetId;
+        }
+      }
+      turns.push({
+        response: {
+          functionCalls: [
+            {
+              id: `call_${step.tool}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              name: step.tool,
+              args: toolArgs,
+            },
+          ],
+        },
+      });
+    }
+    turns.push({
+      response: {
+        text: plan.explanation || 'Ações executadas com sucesso.',
+        finishReason: 'STOP',
+      },
+    });
+    return turns;
+  }
 
   // 0.0. Comando de Remoção de Fundo Branco / Transparência
   if (

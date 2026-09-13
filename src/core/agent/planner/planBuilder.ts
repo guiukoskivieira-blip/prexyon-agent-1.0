@@ -7,7 +7,12 @@
 
 import { PrexyonDocument } from '../../pdm/types';
 import { AgentActionPlan, PlannedAction, AgentConstraints, ProductionProcess, AgentIntent } from './types';
-import { parseDimensionsFromNaturalText, parseCutContourOffsetFromText, parseMoveCommandFromNaturalText } from './unitNormalizer';
+import {
+  parseDimensionsFromNaturalText,
+  parseCutContourOffsetFromText,
+  parseInnerContoursFromText,
+  parseMoveCommandFromNaturalText,
+} from './unitNormalizer';
 
 /**
  * Constrói um AgentActionPlan determinístico e tipado a partir de intenção em linguagem natural.
@@ -84,30 +89,7 @@ export function buildActionPlanFromUserRequest(
     text.includes('nao crie faca') ||
     text.includes('sem faca') ||
     text.includes('sem contorno de corte') ||
-    (text.includes('sem corte') &&
-      !text.includes('sem corte dentro') &&
-      !text.includes('sem corte interno') &&
-      !text.includes('sem cortes internos') &&
-      !text.includes('sem cortes de dentro') &&
-      !text.includes('sem corte de dentro') &&
-      !text.includes('sem recortes internos') &&
-      !text.includes('sem recortes de dentro') &&
-      !text.includes('sem miolo') &&
-      !text.includes('sem vazado') &&
-      !text.includes('sem vazados') &&
-      !text.includes('sem furos') &&
-      !text.includes('só o corte externo') &&
-      !text.includes('so o corte externo') &&
-      !text.includes('apenas o corte externo') &&
-      !text.includes('só corte externo') &&
-      !text.includes('so corte externo') &&
-      !text.includes('apenas corte externo') &&
-      !text.includes('só o contorno externo') &&
-      !text.includes('so o contorno externo') &&
-      !text.includes('apenas o contorno externo') &&
-      !text.includes('só contorno externo') &&
-      !text.includes('so contorno externo') &&
-      !text.includes('apenas contorno externo'));
+    (text.includes('sem corte') && parseInnerContoursFromText(text));
 
   if (isForbidCut) {
     constraints.forbidCutContour = true;
@@ -385,42 +367,7 @@ export function buildActionPlanFromUserRequest(
   }
 
   // 9. Remoção de Cortes Internos / Ajuste de Faca de Corte
-  const wantsInnerContourRemoval =
-    text.includes('sem os cortes de dentro') ||
-    text.includes('sem cortes de dentro') ||
-    text.includes('sem corte dentro') ||
-    text.includes('sem cortes dentro') ||
-    text.includes('remove os cortes internos') ||
-    text.includes('remover os cortes internos') ||
-    text.includes('sem recortes internos') ||
-    text.includes('sem recorte interno') ||
-    text.includes('sem os recortes de dentro') ||
-    text.includes('sem recortes de dentro') ||
-    text.includes('não corta por dentro') ||
-    text.includes('nao corta por dentro') ||
-    text.includes('deixa só o corte externo') ||
-    text.includes('deixa apenas o corte externo') ||
-    text.includes('só o corte externo') ||
-    text.includes('so o corte externo') ||
-    text.includes('apenas o corte externo') ||
-    text.includes('só corte externo') ||
-    text.includes('so corte externo') ||
-    text.includes('apenas corte externo') ||
-    text.includes('só o contorno externo') ||
-    text.includes('so o contorno externo') ||
-    text.includes('apenas o contorno externo') ||
-    text.includes('só contorno externo') ||
-    text.includes('so contorno externo') ||
-    text.includes('apenas contorno externo') ||
-    text.includes('sem corte interno') ||
-    text.includes('sem cortes internos') ||
-    text.includes('sem corte de dentro') ||
-    text.includes('sem miolo') ||
-    text.includes('sem vazado') ||
-    text.includes('sem vazados') ||
-    text.includes('sem furos internos') ||
-    text.includes('sem furo interno') ||
-    text.includes('sem furos de dentro');
+  const wantsInnerContourRemoval = !parseInnerContoursFromText(text);
 
   const existingCutNode = Object.values(doc.nodes || {}).find(
     (n) => n && n.type === 'cut_contour'

@@ -11,6 +11,11 @@ import { AgentActionPlan, PlannedAction } from '../../agent/planner/types';
 import { ExecutedToolRecord } from '../../agent/types';
 import { ValidationReport, ValidationIssue, ValidationStatus } from '../../validation/types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
+import {
+  parseCutContourOffsetFromText,
+  parseInnerContoursFromText,
+  isMultiIntentRequest,
+} from '../../agent/planner/unitNormalizer';
 
 export interface CuttingWorkflowSkillParams {
   cutOffset_mm?: number;
@@ -195,6 +200,12 @@ export function detectCuttingWorkflowSkillFromUserRequest(
 
   const text = message.toLowerCase().trim();
 
+  // Se a solicitação for multi-intenção / composta (ex: "centraliza e cria faca"),
+  // NÃO intercepta como Skill isolada para não descartar outros passos; delega ao Planner.
+  if (isMultiIntentRequest(text)) {
+    return { isCuttingWorkflowSkill: false };
+  }
+
   // Se o pedido for um workflow completo de adesivo ou dtf uv, não aciona a skill isolada de faca
   if (
     text.includes('virar adesivo') ||
@@ -228,20 +239,10 @@ export function detectCuttingWorkflowSkillFromUserRequest(
     return { isCuttingWorkflowSkill: false };
   }
 
-  // 2. Extração de Parâmetros
-  const matchOffset = text.match(/(?:faca|corte)(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
-  const cutOffset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
-
-  const includeInnerContours = !(
-    text.includes('sem corte dentro') ||
-    text.includes('sem vazado') ||
-    text.includes('sem vazados') ||
-    text.includes('sem corte interno') ||
-    text.includes('sem cortes internos') ||
-    text.includes('somente externo') ||
-    text.includes('sem furo') ||
-    text.includes('sem furos')
-  );
+  // 2. Extração Canônica de Parâmetros (Single Source of Truth)
+  const parsedOffset = parseCutContourOffsetFromText(text);
+  const cutOffset_mm = parsedOffset !== undefined ? parsedOffset : 2.0;
+  const includeInnerContours = parseInnerContoursFromText(text);
 
   const params: CuttingWorkflowSkillParams = {
     cutOffset_mm,

@@ -11,6 +11,7 @@ import { AgentActionPlan, PlannedAction } from '../../agent/planner/types';
 import { ExecutedToolRecord } from '../../agent/types';
 import { ValidationReport, ValidationIssue, ValidationStatus } from '../../validation/types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
+import { isMultiIntentRequest } from '../../agent/planner/unitNormalizer';
 
 export interface VectorizeArtworkSkillParams {
   preset?: 'logo' | 'illustration' | 'detailed';
@@ -155,6 +156,12 @@ export function detectVectorizeArtworkSkillFromUserRequest(
   }
 
   const text = message.toLowerCase().trim();
+
+  // Se a solicitação for multi-intenção / composta (ex: "vetoriza e centraliza"),
+  // NÃO intercepta como Skill isolada; delega ao Planner.
+  if (isMultiIntentRequest(text)) {
+    return { isVectorizeSkill: false };
+  }
 
   // Se o pedido contiver intenção de faca/corte ou workflow completo de adesivo/dtf, não aciona vetorização pura
   if (

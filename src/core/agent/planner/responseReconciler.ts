@@ -216,6 +216,7 @@ export function reconcileAgentResponseWithExecutionEvidence(
     args: any;
     status: 'COMPLETED' | 'FAILED' | 'BLOCKED';
     error?: string;
+    errorCode?: string;
     result: any;
   }[] = [];
 
@@ -237,12 +238,14 @@ export function reconcileAgentResponseWithExecutionEvidence(
 
     if (!isSuccess) {
       previousFailed = true;
-      const errorMsg = (record.result as { error?: { message?: string } })?.error?.message || 'Falha na execução da ferramenta.';
+      const errorMsg = (record.result as { error?: { message?: string; code?: string } })?.error?.message || 'Falha na execução da ferramenta.';
+      const errorCode = (record.result as { error?: { message?: string; code?: string } })?.error?.code;
       toolResults.push({
         toolName: record.toolName,
         args: record.args,
         status: 'FAILED',
         error: errorMsg,
+        errorCode,
         result: record.result,
       });
       continue;
@@ -311,7 +314,7 @@ export function reconcileAgentResponseWithExecutionEvidence(
       reply,
       doc: finalDoc,
       error: {
-        code: 'PLAN_EXECUTION_FAILED',
+        code: failedTools[0]?.errorCode || 'PLAN_EXECUTION_FAILED',
         message: failedTools[0]?.error || 'Falha na execução das etapas.',
       },
     };
@@ -368,7 +371,14 @@ export function reconcileAgentResponseWithExecutionEvidence(
 
   // Caso 3: Todas as ferramentas executadas foram concluídas e verificadas com sucesso!
   let reply = rawReply?.trim();
-  if (!reply) {
+  const isGenericPlaceholder =
+    !reply ||
+    reply.startsWith('Plano estruturado') ||
+    reply.startsWith('Resposta padrão') ||
+    reply === 'Ações executadas com sucesso.' ||
+    reply === 'Solicitação processada.';
+
+  if (isGenericPlaceholder && successTools.length > 0) {
     const lines: string[] = [];
     for (const s of successTools) {
       if (s.toolName === 'resize_node') {
@@ -389,10 +399,19 @@ export function reconcileAgentResponseWithExecutionEvidence(
       } else if (s.toolName === 'create_production_package') {
         lines.push('• **Pacote de Produção** gerado com sucesso.');
       } else if (s.toolName === 'create_cut_contour') {
-        lines.push('• Linha técnica de faca de corte gerada com offset de ' + (s.args?.offset_mm || 2) + ' mm.');
+        const noInner = s.args?.includeInnerContours === false;
+        lines.push('• Linha técnica de faca de corte gerada com offset de ' + (s.args?.offset_mm || 2) + ' mm' + (noInner ? ' (sem corte interno)' : '') + '.');
       } else if (s.toolName === 'update_cut_contour') {
         const noInner = s.args?.includeInnerContours === false;
         lines.push('• Contorno de corte atualizado' + (noInner ? ' (sem cortes internos)' : '') + '.');
+      } else if (s.toolName === 'center_node') {
+        lines.push('• Objeto centralizado na prancheta.');
+      } else if (s.toolName === 'fit_artboard_to_artwork') {
+        lines.push('• Prancheta ajustada aos limites da arte' + (s.args?.margin_mm !== undefined ? ' (' + s.args.margin_mm + ' mm de margem)' : '') + '.');
+      } else if (s.toolName === 'flip_node_horizontal') {
+        lines.push('• Objeto espelhado horizontalmente.');
+      } else if (s.toolName === 'move_node') {
+        lines.push('• Objeto movido para a posição solicitada.');
       } else if (s.toolName === 'vectorize_raster') {
         lines.push('• Imagem raster convertida para vetor.');
       } else if (s.toolName === 'auto_fix_prepress_issues') {

@@ -13,7 +13,11 @@ import { AgentActionPlan, PlannedAction } from '../../agent/planner/types';
 import { ExecutedToolRecord } from '../../agent/types';
 import { ValidationReport, ValidationIssue, ValidationStatus } from '../../validation/types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
-import { parseDimensionsFromNaturalText } from '../../agent/planner/unitNormalizer';
+import {
+  parseDimensionsFromNaturalText,
+  parseCutContourOffsetFromText,
+  parseInnerContoursFromText,
+} from '../../agent/planner/unitNormalizer';
 
 export interface StickerProductionSkillParams {
   targetWidth_mm?: number;
@@ -357,17 +361,9 @@ export function detectStickerSkillFromUserRequest(
 
   // 2. Extração de Parâmetros da Linguagem Natural
   const parsedDims = parseDimensionsFromNaturalText(text);
-  const matchOffset = text.match(/faca(?:\s+de)?\s+(\d+(?:[.,]\d+)?)\s*mm/i);
-  const cutOffset_mm = matchOffset ? parseFloat(matchOffset[1].replace(',', '.')) : 2.0;
-
-  const includeInnerContours = !(
-    text.includes('sem corte dentro') ||
-    text.includes('sem vazado') ||
-    text.includes('sem vazados') ||
-    text.includes('sem corte interno') ||
-    text.includes('sem cortes internos') ||
-    text.includes('somente externo')
-  );
+  const parsedOffset = parseCutContourOffsetFromText(text);
+  const cutOffset_mm = parsedOffset !== undefined ? parsedOffset : 2.0;
+  const includeInnerContours = parseInnerContoursFromText(text);
 
   const removeBackground =
     text.includes('tira o fundo') ||

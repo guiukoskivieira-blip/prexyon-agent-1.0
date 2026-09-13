@@ -119,24 +119,24 @@ export function normalizeActionArguments(_toolName: string, args: Record<string,
 
 /**
  * Extrai o offset numérico em mm da faca de corte a partir de texto em linguagem natural.
- * Preserva valores decimais como 0.8, 1.5, 1.8, 2.5 mm (com vírgula ou ponto).
- * Suporta a palavra 'folga' associada à faca.
+ * Preserva valores decimais como 0.5, 0.8, 1.5, 1.8, 2.25, 2.5 mm (com vírgula ou ponto).
+ * Suporta expressões com 'folga', 'offset', 'margem', 'com Xmm de folga', etc.
  * Ignora solicitações de sangria/bleed para não confundir conceitos.
  */
 export function parseCutContourOffsetFromText(text: string): number | undefined {
   if (!text) return undefined;
   const clean = text.toLowerCase().trim();
 
-  // Expressões de faca, contorno de corte e folga
+  // 1. Expressões de faca, contorno de corte, offset e folga
   const match =
-    clean.match(/(?:faca|contorno(?:\s+de\s+corte)?|corte|offset)(?:[^\d]*?(?:de|com|em|para\s+fora|folga|com\s+folga\s+de))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
+    clean.match(/(?:faca(?:\s+de\s+corte)?|contorno(?:\s+de\s+corte)?|linha\s+de\s+corte|corte|offset)(?:[^\d]*?(?:de|com|em|para\s+fora|folga|com\s+folga\s+de|margem\s+de))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
+    clean.match(/(?:folga|offset|margem)(?:\s+(?:de|da\s+faca\s+de|do\s+corte\s+de|da\s+faca|do\s+corte))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
     clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:de\s+)?(?:folga|offset)(?:\s+da\s+(?:faca|corte))?/i) ||
-    clean.match(/(?:folga|offset)(?:\s+(?:de|da\s+faca\s+de))?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm)?/i) ||
     clean.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm)?\s*(?:de\s+)?(?:offset|faca|contorno)/i);
 
   if (match) {
     const rawVal = parseFloat(match[1].replace(',', '.'));
-    if (Number.isFinite(rawVal) && rawVal > 0) {
+    if (Number.isFinite(rawVal) && rawVal >= 0) {
       const unit = (match[2] || 'mm').toLowerCase();
       if (unit === 'cm') {
         return roundPrecision(rawVal * 10, 2);
@@ -145,6 +145,185 @@ export function parseCutContourOffsetFromText(text: string): number | undefined 
     }
   }
   return undefined;
+}
+
+/**
+ * Analisa se contornos internos devem ser incluídos na faca de corte.
+ * Retorna `false` se o usuário solicitar explicitamente remoção de cortes internos,
+ * sem miolo, sem vazado, apenas contorno externo, etc. Retorna `true` caso contrário.
+ * Single Source of Truth para todas as Skills e Planner.
+ */
+export function parseInnerContoursFromText(text: string): boolean {
+  if (!text) return true;
+  const clean = text.toLowerCase().trim();
+
+  const isOuterOnly =
+    clean.includes('sem os cortes de dentro') ||
+    clean.includes('sem cortes de dentro') ||
+    clean.includes('sem corte de dentro') ||
+    clean.includes('sem corte dentro') ||
+    clean.includes('sem cortes dentro') ||
+    clean.includes('remove os cortes internos') ||
+    clean.includes('remover os cortes internos') ||
+    clean.includes('remove recortes internos') ||
+    clean.includes('remover recortes internos') ||
+    clean.includes('sem recortes internos') ||
+    clean.includes('sem recorte interno') ||
+    clean.includes('sem os recortes de dentro') ||
+    clean.includes('sem recortes de dentro') ||
+    clean.includes('não corta por dentro') ||
+    clean.includes('nao corta por dentro') ||
+    clean.includes('deixa só o corte externo') ||
+    clean.includes('deixa apenas o corte externo') ||
+    clean.includes('só o corte externo') ||
+    clean.includes('so o corte externo') ||
+    clean.includes('apenas o corte externo') ||
+    clean.includes('só corte externo') ||
+    clean.includes('so corte externo') ||
+    clean.includes('apenas corte externo') ||
+    clean.includes('só o contorno externo') ||
+    clean.includes('so o contorno externo') ||
+    clean.includes('apenas o contorno externo') ||
+    clean.includes('só contorno externo') ||
+    clean.includes('so contorno externo') ||
+    clean.includes('apenas contorno externo') ||
+    clean.includes('apenas contorno') ||
+    clean.includes('somente externo') ||
+    clean.includes('somente contorno externo') ||
+    clean.includes('somente o contorno externo') ||
+    clean.includes('sem corte interno') ||
+    clean.includes('sem cortes internos') ||
+    clean.includes('sem miolo') ||
+    clean.includes('sem vazado') ||
+    clean.includes('sem vazados') ||
+    clean.includes('sem furos internos') ||
+    clean.includes('sem furo interno') ||
+    clean.includes('sem furos de dentro') ||
+    clean.includes('sem furo') ||
+    clean.includes('sem furos');
+
+  return !isOuterOnly;
+}
+
+/**
+ * Detecta se uma solicitação em linguagem natural contém múltiplas intenções operacionais
+ * (ex: centralizar + faca, ajustar prancheta + faca, redimensionar + centralizar, etc.).
+ */
+export function isMultiIntentRequest(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const clean = text.toLowerCase().trim();
+
+  let intentCount = 0;
+
+  // 1. Centralização
+  if (
+    clean.includes('centraliza') ||
+    clean.includes('centralizar') ||
+    clean.includes('centralize') ||
+    clean.includes('no centro') ||
+    clean.includes('ao centro') ||
+    clean.includes('centralizado')
+  ) {
+    intentCount++;
+  }
+
+  // 2. Ajuste de Prancheta
+  if (
+    clean.includes('ajusta a prancheta') ||
+    clean.includes('ajustar a prancheta') ||
+    clean.includes('ajustar prancheta') ||
+    clean.includes('ajuste a prancheta') ||
+    clean.includes('fit artboard') ||
+    (clean.includes('prancheta') && (clean.includes('margem') || clean.includes('ajust')))
+  ) {
+    intentCount++;
+  }
+
+  // 3. Faca de corte / Contorno
+  if (
+    clean.includes('faca') ||
+    clean.includes('contorno de corte') ||
+    clean.includes('linha de corte') ||
+    clean.includes('corte')
+  ) {
+    intentCount++;
+  }
+
+  // 4. Espelhamento / Flip
+  if (
+    clean.includes('espelha') ||
+    clean.includes('espelhar') ||
+    clean.includes('espelhe') ||
+    clean.includes('flip horizontal') ||
+    clean.includes('espelhar horizontal')
+  ) {
+    intentCount++;
+  }
+
+  // 5. Movimentação
+  if (
+    clean.includes('mova') ||
+    clean.includes('mover') ||
+    clean.includes('move') ||
+    clean.includes('desloque') ||
+    clean.includes('deslocar') ||
+    clean.includes('posicione') ||
+    clean.includes('posicionar') ||
+    clean.includes('posiciona') ||
+    /\b[xy]\s*[:=]\s*\d+/i.test(clean)
+  ) {
+    intentCount++;
+  }
+
+  // 6. Vetorização isolada
+  if (
+    clean.includes('vetoriz') ||
+    clean.includes('vectoriz') ||
+    clean.includes('converter em vetor') ||
+    clean.includes('converter para vetor') ||
+    clean.includes('transforme em vetor') ||
+    clean.includes('transformar em vetor')
+  ) {
+    intentCount++;
+  }
+
+  // 7. Base Branca / DTF UV
+  if (
+    clean.includes('base branca') ||
+    clean.includes('camada branca') ||
+    clean.includes('white underbase') ||
+    clean.includes('verniz') ||
+    clean.includes('varnish') ||
+    clean.includes('clear')
+  ) {
+    intentCount++;
+  }
+
+  // 8. Sangria / Bleed ou Margem de Segurança solicitada
+  if (
+    clean.includes('sangria') ||
+    clean.includes('bleed') ||
+    clean.includes('margem de segurança') ||
+    clean.includes('margem de seguranca') ||
+    clean.includes('safety margin')
+  ) {
+    intentCount++;
+  }
+
+  // 9. Redimensionamento explícito
+  if (
+    clean.includes('redimension') ||
+    clean.includes('escala') ||
+    clean.includes('aumenta') ||
+    clean.includes('reduz') ||
+    clean.includes('largura de') ||
+    clean.includes('altura de') ||
+    /\d+\s*(?:mm|cm)\s*x\s*\d+\s*(?:mm|cm)/i.test(clean)
+  ) {
+    intentCount++;
+  }
+
+  return intentCount >= 2;
 }
 
 /**
