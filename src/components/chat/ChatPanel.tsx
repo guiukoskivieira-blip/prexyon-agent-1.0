@@ -310,8 +310,23 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         ]);
 
       } else {
-        // 6. Erro amigável retornado pelo backend
-        const errorMsg =
+        // 6. Resposta factual de bloqueio/erro retornada pelo backend/reconciler
+        if (data?.doc && onApplyDoc) {
+          const returnedDoc = mergeAgentResultDocument(doc, data.doc);
+          onApplyDoc(returnedDoc, cleanText);
+        }
+
+        let reviewModel: ProductionReviewModel | undefined;
+        if (Array.isArray(data?.executedTools) && data.executedTools.length > 0) {
+          reviewModel = buildProductionReview({
+            executedTools: data.executedTools,
+            beforeDoc: doc,
+            afterDoc: data.doc ? mergeAgentResultDocument(doc, data.doc) : doc,
+          });
+        }
+
+        const factualMsg =
+          data?.reply ||
           data?.error?.message ||
           'Não foi possível processar a solicitação no momento. Verifique o comando e tente novamente.';
 
@@ -321,8 +336,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           {
             id: errorMsgId,
             role: 'error',
-            text: errorMsg,
+            text: factualMsg,
             timestamp: Date.now(),
+            review: reviewModel,
           },
         ]);
       }

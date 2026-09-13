@@ -25,13 +25,19 @@ import { validateDocumentForPackage } from '../package/packageValidator';
 import { GENERIC_STICKER_PROFILE } from '../profile/genericStickerProfile';
 import { DTF_UV_PROFILE } from '../profile/dtfUvProfile';
 import { generateProposedFixes, defaultProposalManager, buildPreflightPlan } from '../../autofix';
+import { getProductionReadiness } from '../readinessSSOT';
 
+
+import { ValidationReport } from '../../validation/types';
+import { ProposedFix } from '../../autofix/proposalTypes';
 
 export interface BuildReviewParams {
   executedTools?: ExecutedToolRecord[];
   beforeDoc: PrexyonDocument;
   afterDoc: PrexyonDocument;
   customTitle?: string;
+  validationReport?: ValidationReport;
+  proposedFixes?: ProposedFix[];
 }
 
 export function buildProductionReview({
@@ -39,6 +45,8 @@ export function buildProductionReview({
   beforeDoc,
   afterDoc,
   customTitle,
+  validationReport,
+  proposedFixes: explicitProposedFixes,
 }: BuildReviewParams): ProductionReviewModel {
   const timestamp = Date.now();
   const reviewId = `rev_${afterDoc.id}_${timestamp}_${Math.random().toString(36).substring(2, 6)}`;
@@ -263,9 +271,9 @@ export function buildProductionReview({
 
   // 7. Auditoria de Validação Determinística conforme o Profile ativo
   const activeProfile = afterDoc.profileId === 'dtf-uv' ? DTF_UV_PROFILE : GENERIC_STICKER_PROFILE;
-  const validationReport = validateDocumentForPackage(afterDoc, activeProfile);
+  const packageReport = validateDocumentForPackage(afterDoc, activeProfile);
 
-  const blockers: ValidationIssueReview[] = validationReport.blockers.map((msg) => ({
+  const blockers: ValidationIssueReview[] = packageReport.blockers.map((msg) => ({
     title: 'Bloqueio Crítico de Produção',
     message: msg,
     suggestedAction: msg.includes('Faca de corte')
@@ -273,7 +281,7 @@ export function buildProductionReview({
       : 'Corrija as inconsistências nas dimensões ou arte do documento.',
   }));
 
-  const warnings: ValidationIssueReview[] = validationReport.warnings.map((msg) => ({
+  const warnings: ValidationIssueReview[] = packageReport.warnings.map((msg) => ({
     title: 'Aviso Técnico',
     message: msg,
     suggestedAction: msg.includes('DPI')
@@ -332,26 +340,27 @@ export function buildProductionReview({
   }
 
   // 9. Geração e Registro de Propostas Assistidas e Plano de Preflight (Etapas 6.10 e 6.11)
-  const proposedFixes = generateProposedFixes(afterDoc);
-  defaultProposalManager.registerProposals(proposedFixes);
+  const autoProposedFixes = generateProposedFixes(afterDoc);
+  defaultProposalManager.registerProposals(autoProposedFixes);
   const preflightPlan = buildPreflightPlan(afterDoc, undefined, defaultProposalManager);
 
-  // 10. Cálculo Consolidado de Status
-  let status: ReviewStatus = 'READY';
-  let statusLabel = 'Pronto para produção';
-  let statusVariant: ProductionReviewModel['statusVariant'] = 'success';
-
+  // 10. Cálculo Consolidado de Status via SSOT Canônico
   const hasToolFailure = receipts.some((r) => r.status === 'failure');
 
-  if (blockers.length > 0 || hasToolFailure || packageEvidence?.status === 'BLOCKED') {
-    status = 'BLOCKED';
-    statusLabel = 'Correção necessária';
-    statusVariant = 'danger';
-  } else if (warnings.length > 0 || packageEvidence?.status === 'READY_WITH_WARNINGS') {
-    status = 'READY_WITH_WARNINGS';
-    statusLabel = 'Pronto com avisos';
-    statusVariant = 'warning';
-  } else if (receipts.length === 0) {
+  const readiness = getProductionReadiness({
+    doc: afterDoc,
+    validationReport,
+    proposedFixes: explicitProposedFixes,
+    profileId: afterDoc.profileId,
+    hasToolFailure,
+    packageEvidence,
+  });
+
+  let status: ReviewStatus = readiness.status;
+  let statusLabel: string = readiness.statusLabel;
+  let statusVariant: ProductionReviewModel['statusVariant'] = readiness.variant;
+
+  if (receipts.length === 0 && readiness.status === 'READY') {
     status = 'INFO';
     statusLabel = 'Revisão do documento';
     statusVariant = 'info';
@@ -383,10 +392,10 @@ export function buildProductionReview({
     cutContourEvidence,
     packageEvidence,
     autoFixSummary,
-    proposedFixes,
+    proposedFixes: explicitProposedFixes || autoProposedFixes,
     preflightPlan,
     validation: {
-      status: validationReport.status,
+      status: packageReport.status,
       blockers,
       warnings,
     },

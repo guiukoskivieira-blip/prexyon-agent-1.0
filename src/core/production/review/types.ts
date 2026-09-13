@@ -8,8 +8,9 @@
 import { PackageStatus } from '../package/types';
 import { ProposedFix } from '../../autofix/proposalTypes';
 import { PreflightPlan } from '../../autofix/preflightPlanTypes';
+import { CanonicalReadinessStatus } from '../readinessSSOT';
 
-export type ReviewStatus = 'READY' | 'READY_WITH_WARNINGS' | 'BLOCKED' | 'INFO';
+export type ReviewStatus = CanonicalReadinessStatus | 'INFO';
 
 export interface ToolExecutionReceipt {
   /** Identificador único do recibo */

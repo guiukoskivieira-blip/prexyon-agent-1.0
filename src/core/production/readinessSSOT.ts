@@ -30,6 +30,10 @@ export interface ReadinessEvaluationParams {
   proposedFixes?: ProposedFix[] | null;
   profileId?: string;
   hasToolFailure?: boolean;
+  packageEvidence?: {
+    status?: string;
+    [key: string]: any;
+  } | null;
 }
 
 export interface ProductionReadinessResult {
@@ -53,7 +57,14 @@ export interface ProductionReadinessResult {
 export function getProductionReadiness(
   params: ReadinessEvaluationParams
 ): ProductionReadinessResult {
-  const { doc, validationReport, proposedFixes = [], profileId, hasToolFailure = false } = params;
+  const {
+    doc,
+    validationReport,
+    proposedFixes = [],
+    profileId,
+    hasToolFailure = false,
+    packageEvidence,
+  } = params;
 
   // 1. Verificação de Documento Vazio ou Sem Arte
   if (!doc) {
@@ -102,6 +113,14 @@ export function getProductionReadiness(
       profileId: effectiveProfileId as any,
       recommendedDpi: 300,
       criticalDpi: 150,
+      customConfig:
+        effectiveProfileId === 'dtf-uv' && packageEvidence
+          ? ({
+              dtfUv: {
+                whitePolicy: 'REQUIRED',
+              },
+            } as any)
+          : undefined,
     });
 
   const blockers: string[] = [];
@@ -141,9 +160,27 @@ export function getProductionReadiness(
     if (!blockers.includes(msg)) blockers.push(msg);
   }
 
-  // 5. Falha de Execução de Ferramentas
+  // 4b. Verificação de Base Branca Obrigatória para DTF UV
+  if (effectiveProfileId === 'dtf-uv' && graphicNodes.length > 0 && packageEvidence) {
+    const whiteSep = doc.separations?.['WHITE'] || doc.separations?.['white'];
+    const hasWhite = Boolean(
+      whiteSep && (whiteSep.status === 'GENERATED' || (whiteSep as any).valid || whiteSep.maskDataUrl)
+    );
+    if (!hasWhite) {
+      const msg = 'O perfil de produção DTF UV exige a preparação da camada de Base Branca (White Underbase).';
+      if (!blockers.includes(msg)) blockers.push(msg);
+      if (!manualActions.includes(msg)) manualActions.push(msg);
+    }
+  }
+
+  // 5. Falha de Execução de Ferramentas ou Bloqueio de Pacote
   if (hasToolFailure) {
     const msg = 'Houve falha na execução de uma ou mais etapas operacionais.';
+    if (!blockers.includes(msg)) blockers.push(msg);
+  }
+
+  if (packageEvidence && packageEvidence.status === 'BLOCKED') {
+    const msg = 'O pacote de produção gerado está com status bloqueado.';
     if (!blockers.includes(msg)) blockers.push(msg);
   }
 

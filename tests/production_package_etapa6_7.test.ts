@@ -268,7 +268,7 @@ describe('Prexyon Agent — Etapa 6.7 — Pacote Final de Produção para Adesiv
         provider
       );
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.executedTools).toHaveLength(1);
       expect(result.executedTools[0].result.success).toBe(false);
       expect(result.reply).not.toContain('Pacote de produção preparado');

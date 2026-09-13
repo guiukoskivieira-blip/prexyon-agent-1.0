@@ -332,7 +332,7 @@ describe('Prexyon Agent — Etapa 6.5 — Hotfix do fluxo agentic', () => {
         provider
       );
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
       expect(result.executedTools).toHaveLength(1);
       expect(result.executedTools[0].result.success).toBe(false);
       expect(['NODE_NOT_FOUND', 'INVALID_NODE_TYPE', 'RASTER_NOT_VECTORIZED', 'PLAN_VALIDATION_FAILED']).toContain(

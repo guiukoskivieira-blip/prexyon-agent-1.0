@@ -524,14 +524,30 @@ export function validateCutContourIntegrity(
       ? (rawContours as CutContourNode).contours
       : (rawContours as any[]);
 
-  for (let rIdx = 0; rIdx < (rawList || []).length; rIdx++) {
-    const rawContour = (rawList as any)[rIdx];
-    if (rawContour && rawContour.closed === false) {
-      const ring = contours[rIdx] || [];
-      if (ring.length >= 2) {
-        const pFirst = ring[0];
-        const pLast = ring[ring.length - 1];
-        const gap = Math.hypot(pFirst.x - pLast.x, pFirst.y - pLast.y);
+  for (let rIdx = 0; rIdx < contours.length; rIdx++) {
+    const rawContour = rawList ? (rawList as any)[rIdx] : undefined;
+    const isExplicitlyClosed = rawContour?.closed === true || (rawContour && typeof rawContour.isHole === 'boolean');
+    const isExplicitlyOpen = rawContour?.closed === false;
+    const ring = contours[rIdx] || [];
+
+    if (ring.length >= 2) {
+      const pFirst = ring[0];
+      const pLast = ring[ring.length - 1];
+      const gap = Math.hypot(pFirst.x - pLast.x, pFirst.y - pLast.y);
+
+      // Calcula comprimento médio dos segmentos do caminho
+      let totalEdgeLength = 0;
+      for (let i = 0; i < ring.length - 1; i++) {
+        totalEdgeLength += Math.hypot(ring[i + 1].x - ring[i].x, ring[i + 1].y - ring[i].y);
+      }
+      const avgEdgeLength = totalEdgeLength / Math.max(1, ring.length - 1);
+
+      // Detecta abertura geométrica real:
+      // 1. Se o contorno está explicitamente marcado como aberto (closed === false)
+      // 2. Ou se o contorno não é explicitamente fechado e apresenta lacuna de fechamento (gap > 0.5mm e gap < 0.5 * avgEdgeLength)
+      const isUnclosedGap = !isExplicitlyClosed && gap > 0.5 && ring.length >= 3 && gap < 0.5 * avgEdgeLength;
+
+      if (isExplicitlyOpen || isUnclosedGap) {
         if (gap > 0.5) {
           hasOpenContour = true;
           failureReasons.push(

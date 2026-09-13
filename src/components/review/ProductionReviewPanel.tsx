@@ -78,6 +78,20 @@ export const ProductionReviewPanel: React.FC<ProductionReviewPanelProps> = ({
             {review.statusLabel}
           </span>
         );
+      case 'AWAITING_CONFIRMATION':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30">
+            <Info className="w-3.5 h-3.5" />
+            {review.statusLabel}
+          </span>
+        );
+      case 'WAITING_FOR_FILE':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/30">
+            <Info className="w-3.5 h-3.5" />
+            {review.statusLabel}
+          </span>
+        );
       default:
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30">

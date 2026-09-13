@@ -162,6 +162,25 @@ export function validateCutContours(doc: PrexyonDocument, policy?: ValidationPol
       });
     }
 
+    if (!integrity.isValid && !integrity.isDegenerate && !integrity.isSelfIntersecting && !integrity.hasOverlappingSegments) {
+      issues.push({
+        id: `V016:${cutNode.id}:open_contour`,
+        ruleId: 'V016_CUT_CONTOUR_OPEN',
+        severity: 'error',
+        category: 'cut',
+        title: 'Faca de Corte com Contorno Aberto',
+        message:
+          integrity.failureReasons.find((r) => r.includes('aberto')) ||
+          `A faca de corte "${cutNode.name}" possui contornos abertos (gap > 0.5 mm).`,
+        nodeId: cutNode.id,
+        data: {
+          failureReasons: integrity.failureReasons,
+        },
+        fixable: false,
+        suggestedAction: 'Feche o contorno da faca de corte ou reduza o gap entre extremidades para <= 0.5 mm.',
+      });
+    }
+
     // REGRA V011 — Faca de corte válida encontrada (telemetria de produção)
     if (cutNode.visible && integrity.isValid) {
       issues.push({

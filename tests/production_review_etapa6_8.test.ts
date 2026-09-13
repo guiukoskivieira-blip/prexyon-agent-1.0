@@ -228,7 +228,7 @@ describe('Prexyon Agent — Etapa 6.8 — Production Review & Evidência Técnic
       });
 
       expect(review.status).toBe('READY_WITH_WARNINGS');
-      expect(review.statusLabel).toBe('Pronto com avisos');
+      expect(review.statusLabel).toBe('Pronto com Avisos');
       expect(review.validation.blockers).toHaveLength(0);
       expect(review.validation.warnings.length).toBeGreaterThan(0);
       expect(review.validation.warnings[0].suggestedAction).toBeDefined();
@@ -246,7 +246,7 @@ describe('Prexyon Agent — Etapa 6.8 — Production Review & Evidência Técnic
       });
 
       expect(review.status).toBe('BLOCKED');
-      expect(review.statusLabel).toBe('Correção necessária');
+      expect(review.statusLabel).toBe('Produção Bloqueada');
       expect(review.validation.blockers.length).toBeGreaterThan(0);
       expect(review.validation.blockers[0].message).toContain('Faca de corte');
       expect(review.validation.blockers[0].suggestedAction).toContain('Gere a faca de corte');

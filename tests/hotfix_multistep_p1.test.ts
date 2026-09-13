@@ -130,7 +130,7 @@ describe('Hotfix P1 — Multi-Step Live & Visual Status Coherence', () => {
 
     expect(review.validation.blockers.length).toBe(0);
     expect(review.status).toBe('READY');
-    expect(review.statusLabel).toBe('Pronto para produção');
+    expect(review.statusLabel).toBe('Pronto para Produção');
     expect(review.statusVariant).toBe('success');
   });
 });
