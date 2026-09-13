@@ -26,6 +26,7 @@ export async function executeActionPlan(
     registry?: ToolRegistry;
     clientExecutionReceipts?: import('../types').ClientExecutionReceipt[];
     toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
+    requiresProductionReadiness?: boolean;
   }
 ): Promise<PlanExecutionResult> {
   const registry = options?.registry || defaultToolRegistry;
@@ -245,6 +246,7 @@ export async function executeActionPlan(
     initialDoc,
     finalDoc: currentDoc,
     validationReport,
+    requiresProductionReadiness: options?.requiresProductionReadiness,
   });
 
   return {

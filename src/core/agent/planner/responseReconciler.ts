@@ -167,6 +167,7 @@ export interface ReconciliationInput {
   finalDoc: PrexyonDocument;
   validationReport?: ValidationReport;
   userMessage?: string;
+  requiresProductionReadiness?: boolean;
 }
 
 export interface ReconciledResponse {
@@ -177,6 +178,41 @@ export interface ReconciledResponse {
     code: string;
     message: string;
   };
+}
+
+const PRODUCTION_PACKAGE_TOOLS = new Set([
+  'create_production_package',
+  'generate_dtf_uv_production_package',
+  'build_production_package',
+]);
+
+/**
+ * Define se o contrato da solicitação é liberar/concluir produção.
+ * O perfil do documento, isoladamente, nunca transforma uma ação atômica
+ * em workflow de produção.
+ */
+export function requiresProductionReadiness(input: ReconciliationInput): boolean {
+  if (typeof input.requiresProductionReadiness === 'boolean') {
+    return input.requiresProductionReadiness;
+  }
+
+  if (input.plan?.intent === 'PREPARE_FOR_PRODUCTION' || input.plan?.intent === 'GENERATE_PACKAGE') {
+    return true;
+  }
+
+  if (input.plan?.steps?.some((step) => PRODUCTION_PACKAGE_TOOLS.has(step.tool))) {
+    return true;
+  }
+
+  if (input.executedTools?.some((record) => PRODUCTION_PACKAGE_TOOLS.has(record.toolName))) {
+    return true;
+  }
+
+  const userMessage = (input.userMessage || '').toLowerCase();
+  return (
+    /\b(preparar?|prepare|prepara|preparação|preparacao)\b.*\b(produção|producao)\b/.test(userMessage) ||
+    /\b(pronto|pronta)\b.*\b(produção|producao)\b/.test(userMessage)
+  );
 }
 
 /**
@@ -516,7 +552,7 @@ export function reconcileAgentResponseWithExecutionEvidence(
             criticalDpi: 150,
             requireCutContour: finalDoc?.profileId !== 'dtf-uv',
           })
-        )
+        ).filter((proposal) => proposal.issueCode === 'CUT_CONTOUR_OPEN')
       : []);
 
   const packageRecord = executedTools.find(
@@ -533,7 +569,44 @@ export function reconcileAgentResponseWithExecutionEvidence(
     packageEvidence,
   });
 
-  if (readiness.status === 'AWAITING_CONFIRMATION' && plan?.intent !== 'ANALYZE') {
+  const productionWorkflow = requiresProductionReadiness(input);
+
+  if (!productionWorkflow) {
+    reply = neutralizeUnsupportedProductionClaims(reply, readiness.status);
+
+    if (readiness.status === 'AWAITING_CONFIRMATION') {
+      const proposalTitles = effectiveProposedFixes
+        .map((proposal: any) => proposal.title || proposal.description || proposal.type)
+        .filter(Boolean);
+      const proposalNotice = proposalTitles.length > 0
+        ? `\n\n⚠️ A operação foi concluída, mas há correção pendente de confirmação: ${proposalTitles.join('; ')}.`
+        : '\n\n⚠️ A operação foi concluída, mas há uma correção pendente de confirmação do operador.';
+
+      if (!/confirmação|confirmacao|aprovação|aprovacao/i.test(reply)) {
+        reply += proposalNotice;
+      }
+    }
+
+    return {
+      success: true,
+      reply: appendUnsupportedNotice(reply, input),
+      doc: finalDoc,
+    };
+  }
+
+  if (readiness.status === 'WAITING_FOR_FILE') {
+    return {
+      success: false,
+      reply: 'Não foi possível concluir a preparação para produção porque nenhum arquivo gráfico válido foi encontrado.',
+      doc: finalDoc,
+      error: {
+        code: 'WAITING_FOR_FILE',
+        message: 'Aguardando arquivo gráfico para concluir a preparação de produção.',
+      },
+    };
+  }
+
+  if (readiness.status === 'AWAITING_CONFIRMATION') {
     const proposalTitles = effectiveProposedFixes
       .map((p: any) => p.title || p.description || p.type)
       .filter(Boolean);
@@ -577,52 +650,45 @@ export function reconcileAgentResponseWithExecutionEvidence(
     };
   }
 
-  if (readiness.status === 'BLOCKED' && plan?.intent !== 'ANALYZE') {
-    const isProductionWorkflow =
-      Boolean(plan?.process === 'DTF_UV' || plan?.process === 'GENERIC_STICKER' || finalDoc.profileId === 'generic-sticker' || finalDoc.profileId === 'dtf-uv') &&
-      Boolean(
-        reply.includes('Adesivo preparado para produção com sucesso') ||
-        reply.includes('Preparação DTF UV executada com sucesso') ||
-        reply.toLowerCase().includes('pronto para produção') ||
-        reply.toLowerCase().includes('pronta para produção') ||
-        executedTools.some((t) => t.toolName === 'create_cut_contour' || t.toolName === 'create_production_package' || t.toolName === 'generate_dtf_uv_production_package')
+  if (readiness.status === 'BLOCKED') {
+    if (reply.includes('Adesivo preparado para produção com sucesso')) {
+      reply = reply.replace(
+        'Adesivo preparado para produção com sucesso',
+        'Adesivo preparado, mas com pendências impeditivas'
       );
+    } else if (reply.includes('Ações executadas com sucesso:')) {
+      reply = reply.replace(
+        'Ações executadas com sucesso:',
+        'Ações executadas (produção bloqueada por pendências técnicas):'
+      );
+    } else if (reply.includes('Preparação DTF UV executada com sucesso:')) {
+      reply = reply.replace(
+        'Preparação DTF UV executada com sucesso:',
+        'Preparação DTF UV executada (produção bloqueada):'
+      );
+    }
 
-    if (isProductionWorkflow) {
-      if (reply.includes('Adesivo preparado para produção com sucesso')) {
-        reply = reply.replace(
-          'Adesivo preparado para produção com sucesso',
-          'Adesivo preparado, mas com pendências impeditivas'
-        );
-      } else if (reply.includes('Ações executadas com sucesso:')) {
-        reply = reply.replace(
-          'Ações executadas com sucesso:',
-          'Ações executadas (produção bloqueada por pendências técnicas):'
-        );
-      } else if (reply.includes('Preparação DTF UV executada com sucesso:')) {
-        reply = reply.replace(
-          'Preparação DTF UV executada com sucesso:',
-          'Preparação DTF UV executada (produção bloqueada):'
-        );
-      }
+    reply = reply.replace(/pront[oa] para produção/gi, 'com pendências impeditivas');
 
-      if (reply.toLowerCase().includes('pronto para produção') || reply.toLowerCase().includes('pronta para produção')) {
-        reply = reply.replace(/pront[oa] para produção/gi, 'com pendências impeditivas');
-      }
+    if (readiness.blockers.length > 0 && !reply.includes('Pendências Impeditivas') && !reply.includes('bloqueada')) {
+      reply += `\n\n❌ **Pendências Impeditivas:**\n` + readiness.blockers.map((b) => `• ${b}`).join('\n');
+    }
 
-      if (readiness.blockers.length > 0 && !reply.includes('Pendências Impeditivas') && !reply.includes('bloqueada')) {
-        reply += `\n\n❌ **Pendências Impeditivas:**\n` + readiness.blockers.map((b) => `• ${b}`).join('\n');
-      }
+    return {
+      success: false,
+      reply: appendUnsupportedNotice(reply, input),
+      doc: finalDoc,
+      error: {
+        code: 'PRODUCTION_BLOCKED',
+        message: readiness.blockers[0] || 'Produção bloqueada por pendências técnicas.',
+      },
+    };
+  }
 
-      return {
-        success: false,
-        reply: appendUnsupportedNotice(reply, input),
-        doc: finalDoc,
-        error: {
-          code: 'PRODUCTION_BLOCKED',
-          message: readiness.blockers[0] || 'Produção bloqueada por pendências técnicas.',
-        },
-      };
+  if (readiness.status === 'READY_WITH_WARNINGS' && readiness.warnings.length > 0) {
+    const warningBlock = `\n\n⚠️ **Avisos de Produção:**\n${readiness.warnings.map((warning) => `• ${warning}`).join('\n')}`;
+    if (!readiness.warnings.every((warning) => reply.includes(warning))) {
+      reply += warningBlock;
     }
   }
 
@@ -631,6 +697,24 @@ export function reconcileAgentResponseWithExecutionEvidence(
     reply: appendUnsupportedNotice(reply, input),
     doc: finalDoc,
   };
+}
+
+function neutralizeUnsupportedProductionClaims(
+  reply: string,
+  readinessStatus: ReturnType<typeof getProductionReadiness>['status']
+): string {
+  let neutralReply = reply.replace(
+    /Preparação DTF UV executada com sucesso:/gi,
+    'Ação DTF UV executada com sucesso:'
+  );
+
+  if (readinessStatus !== 'READY' && readinessStatus !== 'READY_WITH_WARNINGS') {
+    neutralReply = neutralReply
+      .replace(/Adesivo preparado para produção com sucesso/gi, 'Operação no adesivo executada com sucesso')
+      .replace(/pront[oa] para produção/gi, 'operação concluída');
+  }
+
+  return neutralReply;
 }
 
 function appendUnsupportedNotice(reply: string, input: ReconciliationInput): string {

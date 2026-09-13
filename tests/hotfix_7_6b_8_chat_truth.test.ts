@@ -106,6 +106,7 @@ describe('PRYX — HOTFIX 7.6B.8: OPERATIONAL TRUTH FINAL DO CHAT', () => {
       executedTools,
       initialDoc: doc,
       finalDoc: docWithCut,
+      plan: { intent: 'PREPARE_FOR_PRODUCTION', proposedFixes: proposals } as any,
     });
 
     expect(reconciled.success).toBe(false);
@@ -154,7 +155,7 @@ describe('PRYX — HOTFIX 7.6B.8: OPERATIONAL TRUTH FINAL DO CHAT', () => {
       executedTools,
       initialDoc: doc,
       finalDoc: docWithCut,
-      plan: { proposedFixes: [] } as any,
+      plan: { intent: 'PREPARE_FOR_PRODUCTION', proposedFixes: [] } as any,
     });
 
     expect(reconciled.success).toBe(true);
@@ -179,6 +180,7 @@ describe('PRYX — HOTFIX 7.6B.8: OPERATIONAL TRUTH FINAL DO CHAT', () => {
       executedTools,
       initialDoc: doc,
       finalDoc: doc,
+      plan: { intent: 'PREPARE_FOR_PRODUCTION', proposedFixes: [] } as any,
     });
 
     expect(reconciled.success).toBe(false);
@@ -247,7 +249,7 @@ describe('PRYX — HOTFIX 7.6B.8: OPERATIONAL TRUTH FINAL DO CHAT', () => {
       executedTools,
       initialDoc: doc,
       finalDoc: docWithWhite,
-      plan: { process: 'DTF_UV', proposedFixes: [] } as any,
+      plan: { intent: 'PREPARE_FOR_PRODUCTION', process: 'DTF_UV', proposedFixes: [] } as any,
     });
 
     expect(reconciled.success).toBe(true);

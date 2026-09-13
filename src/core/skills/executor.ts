@@ -121,6 +121,8 @@ export async function executeSkill<TParams = any, TResult = any>(
     registry: options?.registry,
     clientExecutionReceipts: options?.clientExecutionReceipts,
     toolExecutionContext: options?.toolExecutionContext,
+    requiresProductionReadiness:
+      skill.id === 'prepare_sticker_for_production' || skill.id === 'prepare_dtf_uv',
   });
 
   if (!planExecutionResult.success) {
