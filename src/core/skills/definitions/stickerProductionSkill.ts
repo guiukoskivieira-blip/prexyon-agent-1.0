@@ -8,7 +8,7 @@
  */
 
 import { SkillDefinition, SkillPreconditionResult } from '../types';
-import { PrexyonDocument, VectorGroupNode } from '../../pdm/types';
+import { PrexyonDocument, VectorGroupNode, RasterNode } from '../../pdm/types';
 import { AgentActionPlan, PlannedAction } from '../../agent/planner/types';
 import { ExecutedToolRecord } from '../../agent/types';
 import { ValidationReport, ValidationIssue, ValidationStatus } from '../../validation/types';
@@ -175,16 +175,21 @@ export const stickerProductionSkill: SkillDefinition<StickerProductionSkillParam
       stepIds.push(sId);
     }
 
-    // Step 5: vectorize_raster (se for raster ou se houve remoção de fundo/resize)
+    // Step 5: vectorize_raster (apenas se for raster, não houver vetor já disponível e houver raster com src válido)
     const existingVector = Object.values(doc.nodes || {}).find(
-      (n) => n && n.type === 'group' && (n as VectorGroupNode).sourceRasterNodeId === targetNodeId
+      (n) =>
+        n &&
+        (n.type === 'group' || (n as any).type === 'vector_group') &&
+        ((n as VectorGroupNode).sourceRasterNodeId === targetNodeId || (n.name && targetNodeId && n.name.includes(targetNodeId)))
     ) as VectorGroupNode | undefined;
 
+    const rasterNode = isRaster && targetNodeId ? (doc.nodes[targetNodeId] as RasterNode) : undefined;
+    const hasRasterSource = Boolean(rasterNode && rasterNode.src && rasterNode.src.length > 0);
+
     const needsVectorize =
-      isRaster ||
-      removeBackground ||
-      !existingVector ||
-      (p.targetWidth_mm !== undefined && isRaster);
+      isRaster &&
+      !existingVector &&
+      hasRasterSource;
 
     if (needsVectorize && isRaster && targetNodeId) {
       const sId = 'step_vectorize';

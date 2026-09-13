@@ -102,7 +102,9 @@ export function detectClientRasterIntents(message: string): ClientRasterIntents 
     textLower.includes('camada de branco') ||
     textLower.includes('camada branca') ||
     textLower.includes('passa branco') ||
-    textLower.includes('coloca branco');
+    textLower.includes('coloca branco') ||
+    textLower.includes('com branco') ||
+    (textLower.includes('dtf') && textLower.includes('branco'));
 
   const wantsClearArtwork =
     textLower.includes('verniz só na arte') ||

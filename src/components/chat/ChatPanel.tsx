@@ -8,15 +8,14 @@ import {
   CheckCircle2,
   User,
 } from 'lucide-react';
-import { PrexyonDocument, DocumentNode, RasterNode, VectorGroupNode } from '@/core/pdm/types';
+import { PrexyonDocument } from '@/core/pdm/types';
 import { sanitizeDocumentForAgentTransport, mergeAgentResultDocument } from '@/core/pdm/document';
 import { vtracerBridge } from '@/core/vectorizer/vtracerBridge';
-import { getVTracerOptionsForPreset } from '@/core/vectorizer/presets';
 import { materializeAgentExports } from '@/core/agent/clientExportMaterializer';
 import { ProductionReviewModel } from '@/core/production/review/types';
 import { buildProductionReview } from '@/core/production/review/reviewBuilder';
 import { ProductionReviewPanel } from '@/components/review/ProductionReviewPanel';
-import { detectClientRasterIntents } from '@/core/agent/planner/clientRasterClassifier';
+import { runClientPreExecution } from '@/core/agent/clientPreExecution';
 
 export interface ChatMessageItem {
   id: string;
@@ -218,253 +217,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setIsProcessing(true);
 
     try {
-      let activeDoc = doc;
-      const textLower = cleanText.toLowerCase();
-      const clientIntents = detectClientRasterIntents(cleanText);
-      const wantsCutOrVectorize = clientIntents.wantsCutOrVectorize;
-      const wantsRemoveBg = clientIntents.wantsRemoveBg;
-      const wantsWhiteUnderbase = clientIntents.wantsWhiteUnderbase;
-      const wantsClearArtwork = clientIntents.wantsClearArtwork;
-
-      const clientReceipts: import('@/core/agent/types').ClientExecutionReceipt[] = [];
-
-      // Se a intenção demandar remoção de fundo e houver raster com pixels no cliente:
-      if (wantsRemoveBg && activeDoc.nodes) {
-        const nodes = Object.values(activeDoc.nodes) as DocumentNode[];
-        const targetRaster = (selectedNodeId && activeDoc.nodes[selectedNodeId]?.type === 'raster_image'
-          ? activeDoc.nodes[selectedNodeId]
-          : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
-
-        if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {
-          try {
-            const { removeBackgroundTool } = await import('@/core/tools/definitions/removeBackgroundTool');
-            const bgRes = await removeBackgroundTool.execute(
-              { sourceNodeId: targetRaster.id, colorTolerance: 25 },
-              { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
-            );
-            if (bgRes.success && bgRes.doc) {
-              activeDoc = bgRes.doc;
-              clientReceipts.push({
-                action: 'remove_background',
-                status: 'success',
-                sourceNodeId: targetRaster.id,
-                timestamp: Date.now(),
-              });
-            }
-          } catch (bgErr) {
-            console.warn('Remoção de fundo local no navegador falhou:', bgErr);
-          }
-        }
-      }
-
-      // Se a intenção demandar White Underbase para DTF UV e houver raster no cliente:
-      if (wantsWhiteUnderbase && activeDoc.nodes) {
-        try {
-          const { generateWhiteUnderbaseMask } = await import('@/core/dtf/whiteUnderbaseEngine');
-          const whiteRes = generateWhiteUnderbaseMask(activeDoc, { dpi: 300 });
-          if (whiteRes && whiteRes.separation) {
-            activeDoc = {
-              ...activeDoc,
-              separations: {
-                ...(activeDoc.separations || {}),
-                white: whiteRes.separation,
-              },
-            };
-            clientReceipts.push({
-              action: 'generate_white_underbase',
-              status: 'success',
-              separationId: whiteRes.separation.id,
-              timestamp: Date.now(),
-            });
-          }
-        } catch (wErr) {
-          console.warn('Geração local da base branca falhou:', wErr);
-        }
-      }
-
-      // Se a intenção demandar Clear ARTWORK para DTF UV e houver raster no cliente:
-      if (wantsClearArtwork && activeDoc.nodes) {
-        try {
-          const { generateClearSeparationMask } = await import('@/core/dtf/clearSeparationEngine');
-          const clearRes = generateClearSeparationMask(activeDoc, { mode: 'ARTWORK', dpi: 300 });
-          if (clearRes && clearRes.separation) {
-            activeDoc = {
-              ...activeDoc,
-              separations: {
-                ...(activeDoc.separations || {}),
-                clear: clearRes.separation,
-              },
-            };
-            clientReceipts.push({
-              action: 'generate_clear_separation',
-              status: 'success',
-              separationId: clearRes.separation.id,
-              timestamp: Date.now(),
-            });
-          }
-        } catch (cErr) {
-          console.warn('Geração local do verniz ARTWORK falhou:', cErr);
-        }
-      }
-
-      // Se a intenção demandar geometria vetorial (faca/vetorização) e houver imagem raster sem vetor:
-      if (wantsCutOrVectorize && activeDoc.nodes) {
-        const nodes = Object.values(activeDoc.nodes) as DocumentNode[];
-        let targetRaster = (selectedNodeId && activeDoc.nodes[selectedNodeId]?.type === 'raster_image'
-          ? activeDoc.nodes[selectedNodeId]
-          : nodes.find((n) => n && (n.type === 'raster_image' || (n as any).type === 'raster'))) as RasterNode | undefined;
-
-        if (targetRaster && targetRaster.src && targetRaster.src.startsWith('data:')) {
-          // Pre-execução de mutações geométricas antes da vetorização no cliente
-          const cmMatch = textLower.match(/(\d+(?:[.,]\d+)?)\s*(?:cm|centímetros|centimetros)/);
-          const mmMatch = textLower.match(/(\d+(?:[.,]\d+)?)\s*(?:mm|milímetros|milimetros)/);
-          const hasResizeIntent = Boolean(
-            cmMatch ||
-            mmMatch ||
-            textLower.includes('largura') ||
-            textLower.includes('altura') ||
-            textLower.includes('tamanho') ||
-            textLower.includes('redimensiona') ||
-            textLower.includes('deixa com') ||
-            textLower.includes('resize')
-          );
-
-          const hasCenterIntent =
-            textLower.includes('centraliza') ||
-            textLower.includes('centralizar') ||
-            textLower.includes('centro') ||
-            textLower.includes('center');
-
-          const hasFitArtboardIntent =
-            textLower.includes('ajusta a prancheta') ||
-            textLower.includes('ajustar prancheta') ||
-            textLower.includes('fit artboard') ||
-            textLower.includes('fit_artboard');
-
-          if (hasResizeIntent) {
-            let targetWidth_mm: number | undefined = undefined;
-            if (cmMatch) {
-              targetWidth_mm = parseFloat(cmMatch[1].replace(',', '.')) * 10;
-            } else if (mmMatch) {
-              targetWidth_mm = parseFloat(mmMatch[1].replace(',', '.'));
-            }
-            if (targetWidth_mm && targetWidth_mm > 0) {
-              try {
-                const { resizeNodeTool } = await import('@/core/tools/definitions/resizeNodeTool');
-                const rRes = await resizeNodeTool.execute(
-                  { nodeId: targetRaster.id, width_mm: targetWidth_mm, keepAspectRatio: true },
-                  { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
-                );
-                if (rRes.success && rRes.doc) {
-                  activeDoc = rRes.doc;
-                }
-              } catch (rErr) {
-                console.warn('Redimensionamento local pré-vetorização falhou:', rErr);
-              }
-            }
-          }
-
-          if (hasCenterIntent) {
-            try {
-              const { centerNodeTool } = await import('@/core/tools/definitions/centerNodeTool');
-              const cRes = await centerNodeTool.execute(
-                { sourceNodeId: targetRaster.id },
-                { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
-              );
-              if (cRes.success && cRes.doc) {
-                activeDoc = cRes.doc;
-              }
-            } catch (cErr) {
-              console.warn('Centralização local pré-vetorização falhou:', cErr);
-            }
-          }
-
-          if (hasFitArtboardIntent) {
-            try {
-              const { fitArtboardTool } = await import('@/core/tools/definitions/fitArtboardTool');
-              const fRes = await fitArtboardTool.execute(
-                { margin_mm: 5 },
-                { doc: activeDoc, selectedNodeId: selectedNodeId || undefined }
-              );
-              if (fRes.success && fRes.doc) {
-                activeDoc = fRes.doc;
-              }
-            } catch (fErr) {
-              console.warn('Ajuste de prancheta local pré-vetorização falhou:', fErr);
-            }
-          }
-
-          // Atualiza referência ao targetRaster após mutações geométricas prévias
-          targetRaster = (activeDoc.nodes[targetRaster.id] as RasterNode) || targetRaster;
-
-          const currentNodes = Object.values(activeDoc.nodes) as DocumentNode[];
-          const existingGroup = currentNodes.find(
-            (n) =>
-              n &&
-              (n.type === 'group' || (n as any).type === 'vector_group') &&
-              ((n as any).sourceRasterNodeId === targetRaster!.id || n.name === `Vetor: ${targetRaster!.name}`)
-          ) as VectorGroupNode | undefined;
-
-          // Verifica se o vetor existente é compatível com a geometria atual do raster (não-stale)
-          const isVectorFresh =
-            existingGroup &&
-            Math.abs(existingGroup.physicalWidth_mm - targetRaster.physicalWidth_mm) < 0.1 &&
-            Math.abs(existingGroup.physicalHeight_mm - targetRaster.physicalHeight_mm) < 0.1 &&
-            Math.abs((existingGroup.position_mm?.x ?? 0) - (targetRaster.position_mm?.x ?? 0)) < 0.1 &&
-            Math.abs((existingGroup.position_mm?.y ?? 0) - (targetRaster.position_mm?.y ?? 0)) < 0.1;
-
-          if (existingGroup && isVectorFresh) {
-            clientReceipts.push({
-              action: 'vectorize_raster',
-              status: 'success',
-              sourceNodeId: targetRaster.id,
-              resultNodeId: existingGroup.id,
-              timestamp: Date.now(),
-              sourceGeometry: {
-                physicalWidth_mm: targetRaster.physicalWidth_mm,
-                physicalHeight_mm: targetRaster.physicalHeight_mm,
-                x: targetRaster.position_mm?.x ?? 0,
-                y: targetRaster.position_mm?.y ?? 0,
-              },
-            });
-          } else {
-            try {
-              const options = getVTracerOptionsForPreset('logo');
-              const vResult = await vtracerBridge.vectorizeRasterNode(targetRaster, options);
-              const updatedNodes = { ...activeDoc.nodes };
-              // Se havia um vetor stale antigo, remove do documento para evitar duplicidades
-              if (existingGroup && existingGroup.id) {
-                delete updatedNodes[existingGroup.id];
-              }
-              updatedNodes[vResult.groupNode.id] = vResult.groupNode;
-              for (const pNode of vResult.pathNodes) {
-                updatedNodes[pNode.id] = pNode;
-              }
-              const filteredRootIds = activeDoc.rootNodeIds.filter((id) => id !== existingGroup?.id);
-              activeDoc = {
-                ...activeDoc,
-                nodes: updatedNodes,
-                rootNodeIds: [...filteredRootIds, vResult.groupNode.id],
-              };
-              clientReceipts.push({
-                action: 'vectorize_raster',
-                status: 'success',
-                sourceNodeId: targetRaster.id,
-                resultNodeId: vResult.groupNode.id,
-                timestamp: Date.now(),
-                sourceGeometry: {
-                  physicalWidth_mm: targetRaster.physicalWidth_mm,
-                  physicalHeight_mm: targetRaster.physicalHeight_mm,
-                  x: targetRaster.position_mm?.x ?? 0,
-                  y: targetRaster.position_mm?.y ?? 0,
-                },
-              });
-            } catch (vErr) {
-              console.warn('Vetorização local no navegador não pôde ser executada:', vErr);
-            }
-          }
-        }
-      }
+      // 1. Pré-execução técnica no cliente (remoção de fundo, máscaras DTF UV e vetorização VTracer)
+      const { doc: activeDoc, receipts: clientReceipts } = await runClientPreExecution(
+        cleanText,
+        doc,
+        { selectedNodeId, vtracerBridgeInstance: vtracerBridge }
+      );
 
       // 2. Envia para o endpoint backend POST /api/agent/chat com documento sanitizado (sem base64)
       const transportDoc = sanitizeDocumentForAgentTransport(activeDoc);

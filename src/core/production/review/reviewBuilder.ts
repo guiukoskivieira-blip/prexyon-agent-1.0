@@ -132,6 +132,69 @@ export function buildProductionReview({
     }
   }
 
+  // 4.1. Auditoria e evidência de separações técnicas (White, Clear/Varnish)
+  const beforeSeps = beforeDoc.separations || {};
+  const afterSeps = afterDoc.separations || {};
+
+  for (const [role, sep] of Object.entries(afterSeps)) {
+    if (!sep) continue;
+    const beforeSep = beforeSeps[role];
+    const isGenerated = (sep as any).status === 'GENERATED' || Boolean((sep as any).maskDataUrl);
+    const wasGenerated = beforeSep && ((beforeSep as any).status === 'GENERATED' || Boolean((beforeSep as any).maskDataUrl));
+
+    const sepLabel =
+      role === 'white'
+        ? 'Base Branca (White Underbase)'
+        : role === 'clear'
+        ? 'Verniz / Clear (ARTWORK)'
+        : `Separação ${role.toUpperCase()}`;
+
+    if (isGenerated && !wasGenerated) {
+      affectedNodes.push({
+        id: (sep as any).id || `sep_${role}`,
+        name: sepLabel,
+        type: `separation_${role}`,
+        changeType: 'created',
+        details: `Separação técnica criada (DPI: ${(sep as any).dpi || 300}, Policy: ${(sep as any).underbasePolicy || 'FULL_BOUNDS'})`,
+      });
+      beforeAfter.addedNodes.push(sepLabel);
+    } else if (isGenerated && wasGenerated && (sep as any).updatedAt !== (beforeSep as any).updatedAt) {
+      affectedNodes.push({
+        id: (sep as any).id || `sep_${role}`,
+        name: sepLabel,
+        type: `separation_${role}`,
+        changeType: 'modified',
+        details: `Separação técnica atualizada (DPI: ${(sep as any).dpi || 300})`,
+      });
+      beforeAfter.modifiedNodes.push(sepLabel);
+    }
+  }
+
+  for (const [role, beforeSep] of Object.entries(beforeSeps)) {
+    if (!beforeSep) continue;
+    const afterSep = afterSeps[role];
+    const wasGenerated = (beforeSep as any).status === 'GENERATED' || Boolean((beforeSep as any).maskDataUrl);
+    const isGenerated = afterSep && ((afterSep as any).status === 'GENERATED' || Boolean((afterSep as any).maskDataUrl));
+
+    if (wasGenerated && !isGenerated) {
+      const sepLabel =
+        role === 'white'
+          ? 'Base Branca (White Underbase)'
+          : role === 'clear'
+          ? 'Verniz / Clear (ARTWORK)'
+          : `Separação ${role.toUpperCase()}`;
+
+      affectedNodes.push({
+        id: (beforeSep as any).id || `sep_${role}`,
+        name: sepLabel,
+        type: `separation_${role}`,
+        changeType: 'deleted',
+        details: 'Separação técnica removida',
+      });
+      beforeAfter.deletedNodes.push(sepLabel);
+    }
+  }
+
   // 5. Evidência técnica da Faca de Corte
   let cutContourEvidence: CutContourEvidence | undefined;
   const cutNode = Object.values(afterNodes).find(

@@ -44,6 +44,9 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
   const blockersCount = issues.filter((i) => i.severity === 'error').length;
   const warningsCount = issues.filter((i) => i.severity === 'warning').length;
   const pendingProposalsCount = proposedFixes.filter((p) => p.status === 'PENDING').length;
+  const manualActionRequired = issues.some(
+    (i) => (i as any).manualActionRequired === true || (i as any).requiresManualIntervention === true
+  );
 
   const graphicNodes = Object.values(doc?.nodes || {}).filter(
     (n) => n && n.type !== 'technical_guide'
@@ -53,7 +56,7 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
 
   if (!doc || graphicNodes.length === 0 || validationReport?.status === 'waiting_for_file') {
     currentStatus = 'WAITING_FOR_FILE';
-  } else if (blockersCount > 0 || validationReport?.status === 'blocked') {
+  } else if (blockersCount > 0 || validationReport?.status === 'blocked' || manualActionRequired) {
     currentStatus = 'BLOCKED';
   } else if (pendingProposalsCount > 0) {
     currentStatus = 'WAITING_CONFIRMATION';
@@ -113,7 +116,7 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
           {issuesTotalCount > 0 && (
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                blockersCount > 0
+                blockersCount > 0 || manualActionRequired
                   ? 'bg-rose-500/20 text-rose-400'
                   : pendingProposalsCount > 0
                   ? 'bg-amber-500/20 text-amber-300'

@@ -24,29 +24,54 @@ export { validateCutContourIntegrity, calculateClosedPathArea };
 
 export function cleanPolygonRing(pts: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
   if (!pts || pts.length < 3) return [];
-  const cleaned: Array<{ x: number; y: number }> = [];
 
+  // 1. Remove pontos duplicados ou quase idênticos (< 0.002 mm)
+  const noDups: Array<{ x: number; y: number }> = [];
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
-    if (cleaned.length === 0) {
-      cleaned.push(p);
+    if (noDups.length === 0) {
+      noDups.push(p);
       continue;
     }
-    const prev = cleaned[cleaned.length - 1];
+    const prev = noDups[noDups.length - 1];
     if (Math.hypot(p.x - prev.x, p.y - prev.y) > 0.002) {
-      cleaned.push(p);
+      noDups.push(p);
     }
   }
 
-  if (cleaned.length > 2) {
-    const first = cleaned[0];
-    const last = cleaned[cleaned.length - 1];
+  // Remove fechamento duplicado no final
+  if (noDups.length > 2) {
+    const first = noDups[0];
+    const last = noDups[noDups.length - 1];
     if (Math.hypot(first.x - last.x, first.y - last.y) < 0.002) {
-      cleaned.pop();
+      noDups.pop();
     }
   }
 
-  return cleaned.length >= 3 ? cleaned : [];
+  if (noDups.length < 3) return [];
+
+  // 2. Remove pontos colineares redundantes mantendo tolerância de 1e-4 mm
+  const cleaned: Array<{ x: number; y: number }> = [];
+  const n = noDups.length;
+  for (let i = 0; i < n; i++) {
+    const prev = noDups[(i - 1 + n) % n];
+    const curr = noDups[i];
+    const next = noDups[(i + 1) % n];
+
+    // Área do triângulo formado por prev, curr, next (Shoelace)
+    const cross = (curr.x - prev.x) * (next.y - prev.y) - (curr.y - prev.y) * (next.x - prev.x);
+    const d1 = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+    const d2 = Math.hypot(next.x - curr.x, next.y - curr.y);
+    const d3 = Math.hypot(next.x - prev.x, next.y - prev.y);
+
+    // Se a distância perpendicular é desprezível e curr está entre prev e next
+    const isCollinear = Math.abs(cross) / Math.max(d3, 1e-6) < 0.001 && (d1 + d2 - d3) < 0.002;
+    if (!isCollinear) {
+      cleaned.push(curr);
+    }
+  }
+
+  return cleaned.length >= 3 ? cleaned : noDups;
 }
 
 export type CutJoinStyle = 'round' | 'miter' | 'square' | 'bevel';
@@ -188,8 +213,9 @@ export function generateCutContour(
     });
 
     for (const p of subPolys) {
-      if (p.length >= 3) {
-        allPolygons.push(p);
+      const cleaned = cleanPolygonRing(p);
+      if (cleaned.length >= 3) {
+        allPolygons.push(cleaned);
       }
     }
   }
