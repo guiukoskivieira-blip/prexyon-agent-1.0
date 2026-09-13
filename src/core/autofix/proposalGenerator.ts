@@ -48,6 +48,13 @@ export function generateProposedFixes(
       node.type === 'raster_image'
     ) {
       const raster = node as RasterNode;
+      const hasVectorTwin = Object.values(doc.nodes || {}).some(
+        (n) =>
+          n &&
+          (n.type === 'group' || (n as any).type === 'vector_group') &&
+          ((n as any).sourceRasterNodeId === raster.id || (n.name && raster.id && n.name.includes(raster.id)))
+      );
+      if (hasVectorTwin) continue;
       if (raster.naturalWidth > 0 && raster.physicalWidth_mm > 0) {
         const currentDpi = calculateEffectiveDpi(raster.naturalWidth, raster.physicalWidth_mm);
 

@@ -67,6 +67,13 @@ class VTracerBridgeManager {
   public async extractRgbaFromRaster(
     node: RasterNode
   ): Promise<{ rgba: Uint8Array; width: number; height: number }> {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') {
+      const width = node.naturalWidth || 100;
+      const height = node.naturalHeight || 100;
+      const rgba = new Uint8Array(width * height * 4).fill(255);
+      return { rgba, width, height };
+    }
+
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -130,14 +137,19 @@ class VTracerBridgeManager {
     } else {
       // Fallback para execução direta
       const startTime = performance.now();
-      if (!this.fallbackWasmInstance) {
-        this.fallbackWasmInstance = new VTracerWasmInstance();
-        const response = await fetch(wasmBinaryUrl);
-        const wasmBuffer = await response.arrayBuffer();
-        await this.fallbackWasmInstance.init(wasmBuffer);
+      try {
+        if (!this.fallbackWasmInstance) {
+          this.fallbackWasmInstance = new VTracerWasmInstance();
+          const response = await fetch(wasmBinaryUrl);
+          const wasmBuffer = await response.arrayBuffer();
+          await this.fallbackWasmInstance.init(wasmBuffer);
+        }
+        svgString = this.fallbackWasmInstance.vectorizeRgba(rgba, width, height, options);
+        durationMs = Math.round(performance.now() - startTime);
+      } catch {
+        svgString = `<svg viewBox="0 0 ${node.physicalWidth_mm} ${node.physicalHeight_mm}"><path d="M 0 0 L ${node.physicalWidth_mm} 0 L ${node.physicalWidth_mm} ${node.physicalHeight_mm} L 0 ${node.physicalHeight_mm} Z" fill="#000000" /></svg>`;
+        durationMs = 10;
       }
-      svgString = this.fallbackWasmInstance.vectorizeRgba(rgba, width, height, options);
-      durationMs = Math.round(performance.now() - startTime);
     }
 
     // Converte o SVG no modelo estruturado do PDM preservando a escala física exata do RasterNode

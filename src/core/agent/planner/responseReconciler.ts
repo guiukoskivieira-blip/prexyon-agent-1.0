@@ -14,6 +14,8 @@ import { AgentActionPlan } from './types';
 
 import { validateCutContourIntegrity } from '../../geometry/vectorPathIntegrity';
 import { getProductionReadiness } from '../../production/readinessSSOT';
+import { generateProposedFixes } from '../../autofix/proposalGenerator';
+import { detectPrepressIssues } from '../../autofix/issueDetector';
 
 /**
  * Verifica determinística e fisicamente se uma ferramenta gerou a mutação esperada no PDM.
@@ -144,7 +146,7 @@ export function verifyMutationEvidence(
     const appliedFixes = execResult?.data?.appliedFixes;
     const appliedCount = Array.isArray(appliedFixes) ? appliedFixes.length : 0;
     const readiness = getProductionReadiness({ doc: nextDoc });
-    const hasRemainingBlockers = readiness.blockers.length > 0 || readiness.manualActions.length > 0;
+    const hasRemainingBlockers = readiness.blockers.length > 0;
 
     if (appliedCount === 0 && hasRemainingBlockers) {
       return {
@@ -189,7 +191,13 @@ export function reconcileAgentResponseWithExecutionEvidence(
     executedTools = [],
     initialDoc,
     finalDoc,
-    validationReport = validateProductionDocument(finalDoc),
+    validationReport = input.validationReport ||
+      validateProductionDocument(finalDoc, {
+        profileId: (finalDoc?.profileId || 'generic-sticker') as any,
+        recommendedDpi: 300,
+        criticalDpi: 150,
+        requireCutContour: finalDoc?.profileId !== 'dtf-uv',
+      }),
   } = input;
 
   // 1. Se não foram executadas ferramentas
@@ -323,9 +331,16 @@ export function reconcileAgentResponseWithExecutionEvidence(
     const isRawReplyHonest =
       Boolean(rawReply) &&
       (rawReply.toLowerCase().includes('não foi possível') ||
+        rawReply.toLowerCase().includes('não consegui') ||
         rawReply.toLowerCase().includes('falha') ||
         rawReply.toLowerCase().includes('não existe') ||
         rawReply.toLowerCase().includes('não encontrado') ||
+        rawReply.toLowerCase().includes('não permitid') ||
+        rawReply.toLowerCase().includes('não é permitid') ||
+        rawReply.toLowerCase().includes('não está disponível') ||
+        rawReply.toLowerCase().includes('não disponível') ||
+        rawReply.toLowerCase().includes('indisponível') ||
+        rawReply.toLowerCase().includes('não suportad') ||
         rawReply.toLowerCase().includes('erro') ||
         rawReply.toLowerCase().includes('rejeitada') ||
         rawReply.toLowerCase().includes('bloqueada')) &&
@@ -490,15 +505,124 @@ export function reconcileAgentResponseWithExecutionEvidence(
     }
   }
 
+  const effectiveProposedFixes =
+    (input.plan as any)?.proposedFixes ||
+    (finalDoc
+      ? generateProposedFixes(
+          finalDoc,
+          detectPrepressIssues(finalDoc, undefined, {
+            profileId: (finalDoc?.profileId || 'generic-sticker') as any,
+            recommendedDpi: 300,
+            criticalDpi: 150,
+            requireCutContour: finalDoc?.profileId !== 'dtf-uv',
+          })
+        )
+      : []);
+
+  const packageRecord = executedTools.find(
+    (t) =>
+      t.toolName === 'create_production_package' ||
+      t.toolName === 'generate_dtf_uv_production_package'
+  );
+  const packageEvidence = (packageRecord?.result as any)?.data?.package || (packageRecord?.result as any)?.data;
+
   const readiness = getProductionReadiness({
     doc: finalDoc,
     validationReport,
-    proposedFixes: (input.plan as any)?.proposedFixes,
+    proposedFixes: effectiveProposedFixes,
+    packageEvidence,
   });
 
-  if (readiness.status === 'BLOCKED') {
+  if (readiness.status === 'AWAITING_CONFIRMATION' && plan?.intent !== 'ANALYZE') {
+    const proposalTitles = effectiveProposedFixes
+      .map((p: any) => p.title || p.description || p.type)
+      .filter(Boolean);
+    const proposalList =
+      proposalTitles.length > 0
+        ? `\n\n⚠️ **Aprovação Necessária:**\n${proposalTitles
+            .map((t: string) => `• Proposta de correção técnica: **${t}**`)
+            .join('\n')}\nRevise e aprove a correção no painel lateral de Produção para liberar o arquivo.`
+        : '\n\n⚠️ **Aprovação Necessária:** Existem propostas de ajuste técnico pendentes de confirmação do operador.';
+
+    if (reply.includes('Adesivo preparado para produção com sucesso')) {
+      reply = reply.replace(
+        'Adesivo preparado para produção com sucesso',
+        'Adesivo preparado com proposta(s) de correção pendente(s) de aprovação'
+      );
+    } else if (reply.includes('Ações executadas com sucesso:')) {
+      reply = reply.replace('Ações executadas com sucesso:', 'Ações executadas (aguardando aprovação técnica):');
+    } else if (reply.includes('Preparação DTF UV executada com sucesso:')) {
+      reply = reply.replace(
+        'Preparação DTF UV executada com sucesso:',
+        'Preparação DTF UV executada (aguardando aprovação técnica):'
+      );
+    }
+
     if (reply.toLowerCase().includes('pronto para produção') || reply.toLowerCase().includes('pronta para produção')) {
-      reply = reply.replace(/pront[oa] para produção/gi, 'com pendências impeditivas');
+      reply = reply.replace(/pront[oa] para produção/gi, 'aguardando aprovação técnica');
+    }
+
+    if (!reply.includes('Aprovação Necessária') && !reply.includes('proposta de correção') && !reply.includes('aguardando')) {
+      reply += proposalList;
+    }
+
+    return {
+      success: false,
+      reply: appendUnsupportedNotice(reply, input),
+      doc: finalDoc,
+      error: {
+        code: 'AWAITING_CONFIRMATION',
+        message: 'Ajustes técnicos pendentes de confirmação do operador.',
+      },
+    };
+  }
+
+  if (readiness.status === 'BLOCKED' && plan?.intent !== 'ANALYZE') {
+    const isProductionWorkflow =
+      Boolean(plan?.process === 'DTF_UV' || plan?.process === 'GENERIC_STICKER' || finalDoc.profileId === 'generic-sticker' || finalDoc.profileId === 'dtf-uv') &&
+      Boolean(
+        reply.includes('Adesivo preparado para produção com sucesso') ||
+        reply.includes('Preparação DTF UV executada com sucesso') ||
+        reply.toLowerCase().includes('pronto para produção') ||
+        reply.toLowerCase().includes('pronta para produção') ||
+        executedTools.some((t) => t.toolName === 'create_cut_contour' || t.toolName === 'create_production_package' || t.toolName === 'generate_dtf_uv_production_package')
+      );
+
+    if (isProductionWorkflow) {
+      if (reply.includes('Adesivo preparado para produção com sucesso')) {
+        reply = reply.replace(
+          'Adesivo preparado para produção com sucesso',
+          'Adesivo preparado, mas com pendências impeditivas'
+        );
+      } else if (reply.includes('Ações executadas com sucesso:')) {
+        reply = reply.replace(
+          'Ações executadas com sucesso:',
+          'Ações executadas (produção bloqueada por pendências técnicas):'
+        );
+      } else if (reply.includes('Preparação DTF UV executada com sucesso:')) {
+        reply = reply.replace(
+          'Preparação DTF UV executada com sucesso:',
+          'Preparação DTF UV executada (produção bloqueada):'
+        );
+      }
+
+      if (reply.toLowerCase().includes('pronto para produção') || reply.toLowerCase().includes('pronta para produção')) {
+        reply = reply.replace(/pront[oa] para produção/gi, 'com pendências impeditivas');
+      }
+
+      if (readiness.blockers.length > 0 && !reply.includes('Pendências Impeditivas') && !reply.includes('bloqueada')) {
+        reply += `\n\n❌ **Pendências Impeditivas:**\n` + readiness.blockers.map((b) => `• ${b}`).join('\n');
+      }
+
+      return {
+        success: false,
+        reply: appendUnsupportedNotice(reply, input),
+        doc: finalDoc,
+        error: {
+          code: 'PRODUCTION_BLOCKED',
+          message: readiness.blockers[0] || 'Produção bloqueada por pendências técnicas.',
+        },
+      };
     }
   }
 

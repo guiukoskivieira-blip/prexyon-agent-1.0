@@ -139,6 +139,7 @@ export async function processAgentChatRequest(
     executedTools: result.executedTools,
     initialDoc: doc,
     finalDoc,
+    userMessage: req.message,
   });
 
   console.log(`[AgentRequest] completed in ${Date.now() - reqStartTime}ms`);

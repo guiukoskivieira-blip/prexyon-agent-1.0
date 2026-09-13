@@ -675,13 +675,26 @@ export class AgentRuntime {
           userMessage,
         });
 
+        const isHonestErrorTurn =
+          executedTools.length > 0 &&
+          executedTools.every((t) => t.result?.success === false) &&
+          (rawReply.toLowerCase().includes('não foi possível') ||
+            rawReply.toLowerCase().includes('não consegui') ||
+            rawReply.toLowerCase().includes('não existe') ||
+            rawReply.toLowerCase().includes('não está disponível') ||
+            rawReply.toLowerCase().includes('não é permitid') ||
+            rawReply.toLowerCase().includes('não permitid'));
+
+        const runtimeSuccess = isHonestErrorTurn ? true : reconciled.success;
+
         return {
-          success: true,
+          success: runtimeSuccess,
           reply: reconciled.reply,
           executedTools,
           doc: currentDoc,
           iterations: iteration,
-          status: 'completed',
+          status: runtimeSuccess ? 'completed' : 'error',
+          error: runtimeSuccess ? undefined : reconciled.error,
         };
       }
 

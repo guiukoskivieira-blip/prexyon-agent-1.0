@@ -254,11 +254,13 @@ export async function executeActionPlan(
     stepResults,
     reply: reconciled.reply,
     executedTools,
-    ...(reconciled.success ? {} : {
-      error: {
-        code: 'PLAN_EXECUTION_FAILED',
-        message: stepResults.find((s) => s.status === 'FAILED')?.error || reconciled.error?.message || 'Uma ou mais etapas do plano falharam.',
-      },
-    }),
+    ...(reconciled.success
+      ? {}
+      : {
+          error: reconciled.error || {
+            code: 'PLAN_EXECUTION_FAILED',
+            message: stepResults.find((s) => s.status === 'FAILED')?.error || 'Uma ou mais etapas do plano falharam.',
+          },
+        }),
   };
 }

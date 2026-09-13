@@ -105,8 +105,8 @@ export function detectPrepressIssues(
   for (const cut of cutContours) {
     const sourceNode = doc.nodes[cut.sourceNodeId];
     if (sourceNode && sourceNode.type === 'group') {
-      const srcPos = sourceNode.position_mm;
-      const cutPos = cut.position_mm;
+      const srcPos = sourceNode.position_mm || { x: 0, y: 0 };
+      const cutPos = cut.position_mm || { x: 0, y: 0 };
       const deltaX = Math.abs(srcPos.x - cutPos.x);
       const deltaY = Math.abs(srcPos.y - cutPos.y);
 

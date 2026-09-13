@@ -113,6 +113,7 @@ export function getProductionReadiness(
       profileId: effectiveProfileId as any,
       recommendedDpi: 300,
       criticalDpi: 150,
+      requireCutContour: effectiveProfileId === 'generic-sticker',
       customConfig:
         effectiveProfileId === 'dtf-uv' && packageEvidence
           ? ({
@@ -162,14 +163,19 @@ export function getProductionReadiness(
 
   // 4b. Verificação de Base Branca Obrigatória para DTF UV
   if (effectiveProfileId === 'dtf-uv' && graphicNodes.length > 0 && packageEvidence) {
-    const whiteSep = doc.separations?.['WHITE'] || doc.separations?.['white'];
-    const hasWhite = Boolean(
-      whiteSep && (whiteSep.status === 'GENERATED' || (whiteSep as any).valid || whiteSep.maskDataUrl)
-    );
-    if (!hasWhite) {
-      const msg = 'O perfil de produção DTF UV exige a preparação da camada de Base Branca (White Underbase).';
-      if (!blockers.includes(msg)) blockers.push(msg);
-      if (!manualActions.includes(msg)) manualActions.push(msg);
+    const isRipControlled =
+      (doc as any)?.activeProfile?.rules?.whiteUnderbasePolicy === 'RIP_CONTROLLED' ||
+      (doc as any)?.activeProfile?.dtfUvConfig?.whitePolicy === 'RIP_CONTROLLED';
+    if (!isRipControlled) {
+      const whiteSep = doc.separations?.['WHITE'] || doc.separations?.['white'];
+      const hasWhite = Boolean(
+        whiteSep && (whiteSep.status === 'GENERATED' || (whiteSep as any).valid || whiteSep.maskDataUrl)
+      );
+      if (!hasWhite) {
+        const msg = 'O perfil de produção DTF UV exige a preparação da camada de Base Branca (White Underbase).';
+        if (!blockers.includes(msg)) blockers.push(msg);
+        if (!manualActions.includes(msg)) manualActions.push(msg);
+      }
     }
   }
 

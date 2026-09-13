@@ -288,7 +288,8 @@ export function generateCutContour(
     contours.push({
       points_mm: cleanedPts,
       isHole,
-    });
+      isClosed: true,
+    } as any);
   }
 
   if (contours.length === 0) {
