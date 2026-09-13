@@ -41,11 +41,21 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'issues' | 'review'>('chat');
 
+  const packageEvidence = packageResult
+    ? {
+        status: packageResult.status,
+        blockers: packageResult.validation?.blockers || [],
+        warnings: packageResult.validation?.warnings || [],
+      }
+    : undefined;
+
   // Determina o status canônico via SSOT
   const readiness = getProductionReadiness({
     doc,
     validationReport,
     proposedFixes,
+    packageEvidence,
+    profileId: doc?.profileId,
   });
 
   const blockersCount = readiness.blockers.length;
@@ -148,6 +158,7 @@ export const ProductionWorkspace: React.FC<ProductionWorkspaceProps> = ({
             <ProductionReviewView
               doc={doc}
               validationReport={validationReport}
+              proposedFixes={proposedFixes}
               packageResult={packageResult}
               isGeneratingPackage={isGeneratingPackage}
               onGeneratePackage={onGeneratePackage}

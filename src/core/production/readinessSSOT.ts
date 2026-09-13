@@ -186,7 +186,11 @@ export function getProductionReadiness(
 
   // 6. Propostas Pendentes de Confirmação
   const pendingFixes = (proposedFixes || []).filter(
-    (p) => (p.status as any) === 'PENDING' || (p.status as any) === 'proposed'
+    (p) =>
+      p.status === 'PENDING' ||
+      (p.status as any) === 'proposed' ||
+      p.status === undefined ||
+      (p as any).needsConfirmation
   );
   const pendingConfirmationsCount = pendingFixes.length;
 

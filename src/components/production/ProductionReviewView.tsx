@@ -7,17 +7,20 @@ import {
   Download,
   ShieldAlert,
   Sparkles,
+  Info,
+  HelpCircle,
 } from 'lucide-react';
 import { ValidationReport } from '@/core/validation/types';
 import { ProductionPackage, ProductionArtifact } from '@/core/production/package/types';
 import { downloadProductionArtifact } from '@/core/export/exportEngine';
-
 import { PrexyonDocument } from '@/core/pdm/types';
-import { Info, HelpCircle } from 'lucide-react';
+import { ProposedFix } from '@/core/autofix/proposalTypes';
+import { getProductionReadiness } from '@/core/production/readinessSSOT';
 
 export interface ProductionReviewViewProps {
   doc?: PrexyonDocument;
   validationReport?: ValidationReport | null;
+  proposedFixes?: ProposedFix[];
   packageResult?: ProductionPackage | null;
   isGeneratingPackage?: boolean;
   onGeneratePackage?: () => void;
@@ -27,14 +30,28 @@ export interface ProductionReviewViewProps {
 export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
   doc,
   validationReport,
+  proposedFixes = [],
   packageResult,
   isGeneratingPackage = false,
   onGeneratePackage,
 }) => {
-  const issues = validationReport?.issues || [];
-  const blockers = issues.filter((i) => i.severity === 'error');
-  const isBlocked = blockers.length > 0;
+  const packageEvidence = packageResult
+    ? {
+        status: packageResult.status,
+        blockers: packageResult.validation?.blockers || [],
+        warnings: packageResult.validation?.warnings || [],
+      }
+    : undefined;
 
+  const readiness = getProductionReadiness({
+    doc,
+    validationReport,
+    proposedFixes,
+    packageEvidence,
+    profileId: doc?.profileId,
+  });
+
+  const issues = validationReport?.issues || [];
   const resolutionIssue = issues.find((i) => i.category === 'resolution');
   const geometryIssue = issues.find((i) => i.category === 'geometry');
   const areaIssue = issues.find((i) => i.category === 'dimensions' || i.category === 'bleed');
@@ -48,16 +65,18 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
   const hasWhite = Boolean(
     doc?.separations?.white?.status === 'GENERATED' ||
     (doc?.separations as any)?.WHITE?.status === 'GENERATED' ||
+    (doc?.separations as any)?.WHITE?.valid ||
     doc?.separations?.white?.maskDataUrl ||
     (doc?.separations as any)?.WHITE?.maskDataUrl
   );
   const hasClear = Boolean(
     doc?.separations?.clear?.status === 'GENERATED' ||
     (doc?.separations as any)?.CLEAR?.status === 'GENERATED' ||
+    (doc?.separations as any)?.CLEAR?.valid ||
     doc?.separations?.clear?.maskDataUrl ||
     (doc?.separations as any)?.CLEAR?.maskDataUrl
   );
-  const isEmpty = !doc || graphicNodes.length === 0 || validationReport?.status === 'waiting_for_file';
+  const isEmpty = readiness.status === 'WAITING_FOR_FILE';
 
   const handleDownloadArtifact = (art: ProductionArtifact) => {
     downloadProductionArtifact(art);
@@ -254,8 +273,8 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
         </div>
       </div>
 
-      {/* Alerta de Bloqueio ou Chamada para Pacote */}
-      {isEmpty ? (
+      {/* Alerta de Prontidão e Bloqueio ou Chamada para Pacote via SSOT */}
+      {readiness.status === 'WAITING_FOR_FILE' ? (
         <div className="p-3.5 rounded-xl bg-surface-subtle/40 border border-surface-border space-y-2">
           <div className="flex items-center gap-2 text-slate-400 font-semibold">
             <HelpCircle className="w-4 h-4 text-slate-400 shrink-0" />
@@ -265,30 +284,61 @@ export const ProductionReviewView: React.FC<ProductionReviewViewProps> = ({
             Importe uma imagem ou vetor na prancheta para habilitar a geração do pacote de produção técnica.
           </p>
         </div>
-      ) : isBlocked ? (
+      ) : readiness.status === 'BLOCKED' ? (
         <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2">
           <div className="flex items-center gap-2 text-rose-300 font-semibold">
             <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>Geração de pacote bloqueada</span>
+            <span>Produção Bloqueada</span>
           </div>
           <p className="text-slate-300 text-xs">
-            Existem {blockers.length} problema(s) impeditivo(s) que precisam ser resolvidos antes de exportar o arquivo para as máquinas.
+            Existem {readiness.blockers.length} problema(s) impeditivo(s) que precisam ser resolvidos antes de exportar o arquivo para as máquinas:
+          </p>
+          <ul className="text-[11px] text-rose-300/90 list-disc pl-4 space-y-1">
+            {readiness.blockers.map((b, idx) => (
+              <li key={idx}>{b}</li>
+            ))}
+          </ul>
+        </div>
+      ) : readiness.status === 'AWAITING_CONFIRMATION' ? (
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+          <div className="flex items-center gap-2 text-amber-300 font-semibold">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Aguardando Confirmação</span>
+          </div>
+          <p className="text-slate-300 text-xs">
+            Existem {readiness.pendingConfirmationsCount} proposta(s) de ajuste técnico aguardando sua revisão e aprovação antes de liberar a produção.
           </p>
         </div>
       ) : (
-        <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 space-y-3">
-          <div className="flex items-center gap-2 text-indigo-300 font-semibold">
-            <FileArchive className="w-4 h-4 text-indigo-400 shrink-0" />
-            <span>Pronto para Gerar Pacote de Produção</span>
+        <div
+          className={`p-3.5 rounded-xl ${
+            readiness.status === 'READY_WITH_WARNINGS'
+              ? 'bg-amber-500/10 border border-amber-500/30'
+              : 'bg-indigo-500/10 border border-indigo-500/30'
+          } space-y-3`}
+        >
+          <div
+            className={`flex items-center gap-2 font-semibold ${
+              readiness.status === 'READY_WITH_WARNINGS' ? 'text-amber-300' : 'text-indigo-300'
+            }`}
+          >
+            <FileArchive className="w-4 h-4" />
+            <span>
+              {readiness.status === 'READY_WITH_WARNINGS'
+                ? 'Pronto com Avisos'
+                : 'Pronto para Produção'}
+            </span>
           </div>
           <p className="text-slate-300 text-xs">
-            O pacote inclui o arquivo de impressão rasterizado em alta resolução, separações técnicas e manifesto JSON.
+            {readiness.status === 'READY_WITH_WARNINGS'
+              ? 'O pacote técnico pode ser gerado, mas possui avisos de qualidade que devem ser verificados.'
+              : 'O documento está em total conformidade técnica para geração do pacote de produção.'}
           </p>
 
           <button
             type="button"
             onClick={onGeneratePackage}
-            disabled={isGeneratingPackage || isBlocked || isEmpty}
+            disabled={isGeneratingPackage || !readiness.isReady}
             className="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Sparkles className="w-4 h-4" />

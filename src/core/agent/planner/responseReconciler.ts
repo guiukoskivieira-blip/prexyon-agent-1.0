@@ -140,6 +140,18 @@ export function verifyMutationEvidence(
         };
       }
     }
+  } else if (toolName === 'auto_fix_prepress_issues') {
+    const appliedFixes = execResult?.data?.appliedFixes;
+    const appliedCount = Array.isArray(appliedFixes) ? appliedFixes.length : 0;
+    const readiness = getProductionReadiness({ doc: nextDoc });
+    const hasRemainingBlockers = readiness.blockers.length > 0 || readiness.manualActions.length > 0;
+
+    if (appliedCount === 0 && hasRemainingBlockers) {
+      return {
+        verified: false,
+        error: `Não foi possível corrigir automaticamente todos os problemas detectados (${readiness.blockers.join('; ')}). A geometria ou parâmetros ainda exigem intervenção/correção manual.`,
+      };
+    }
   }
 
   return { verified: true };
