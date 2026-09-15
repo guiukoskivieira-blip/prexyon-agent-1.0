@@ -365,12 +365,44 @@ describe('PRYX ETAPA 8.4 — Golden Vector Regression Harness', () => {
     expect(comparison.diffs.byteIdentical).toBe(true);
   });
 
+  it('validates 10-logo-colorida in real manifest as humanApproved: true and matching exact metrics', () => {
+    const manifestPath = path.resolve(__dirname, 'vector-golden/manifest.json');
+    const manifest = loadGoldenManifest(manifestPath);
+
+    const logo3 = manifest.cases.find((c) => c.caseId === '10-logo-colorida');
+    expect(logo3).toBeDefined();
+    expect(logo3!.humanApproved).toBe(true);
+    expect(logo3!.backendUsed).toBe('DIRECT_VECTO');
+    expect(logo3!.stats.paths).toBe(16);
+    expect(logo3!.stats.holes).toBe(15);
+
+    const approvedSvgPath = path.resolve(__dirname, 'vector-golden', logo3!.approvedSvgPath);
+    expect(fs.existsSync(approvedSvgPath)).toBe(true);
+    const approvedSvg = fs.readFileSync(approvedSvgPath, 'utf-8');
+
+    const calculatedStats = analyzeSvgStats(approvedSvg);
+    expect(calculatedStats.paths).toBe(logo3!.stats.paths);
+    expect(calculatedStats.subpaths).toBe(logo3!.stats.subpaths);
+    expect(calculatedStats.anchors).toBe(logo3!.stats.anchors);
+    expect(calculatedStats.holes).toBe(logo3!.stats.holes);
+
+    const comparison = compareCandidateToGolden(
+      approvedSvg,
+      'DIRECT_VECTO',
+      logo3!,
+      approvedSvg
+    );
+
+    expect(comparison.verdict).toBe('PASS');
+    expect(comparison.diffs.byteIdentical).toBe(true);
+  });
+
   it('executes cumulative regression across all human-approved golden cases', () => {
     const manifestPath = path.resolve(__dirname, 'vector-golden/manifest.json');
     const manifest = loadGoldenManifest(manifestPath);
 
     const approvedCases = manifest.cases.filter((c) => c.humanApproved === true);
-    expect(approvedCases.length).toBe(2); // Logo 1 (08-logo-simples) + Logo 2 (09-logo-lettering)
+    expect(approvedCases.length).toBe(3); // Logo 1 (08-logo-simples) + Logo 2 (09-logo-lettering) + Logo 3 (10-logo-colorida)
 
     for (const goldenCase of approvedCases) {
       const svgPath = path.resolve(__dirname, 'vector-golden', goldenCase.approvedSvgPath);

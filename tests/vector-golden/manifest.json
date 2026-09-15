@@ -177,6 +177,30 @@
         "svgSize": 8919
       },
       "notes": "Approved during ETAPA 8.8D Human Gate in CorelDRAW. Typographic Lettering Recovery V1: APPROVED, Accent Color Recovery: APPROVED, V8.8B Sharp Cusp: HUMAN_REJECTED, V8.8C Raster-Constrained Cusp: HUMAN_REJECTED. V8.8A selected as final approved reference for category TYPOGRAPHIC_LETTERING_WITH_ACCENT."
+    },
+    {
+      "caseId": "10-logo-colorida",
+      "displayName": "Logo Colorida (Multicolor Flat Logo)",
+      "category": "MULTICOLOR_FLAT_LOGO",
+      "inputHash": "533935AC550B3A873FBD048AC21235F91150BCF6DB1BE6BCBE2DC45ECF03025C",
+      "inputFile": "cases\\10-logo-colorida\\original.jpg",
+      "approvedSvgPath": "cases\\10-logo-colorida\\approved.svg",
+      "approvedAt": "2026-09-15T15:07:02.135Z",
+      "humanApproved": true,
+      "route": "ROUTE_UNCERTAIN",
+      "preferredBackend": "DIRECT_VECTO",
+      "backendUsed": "DIRECT_VECTO",
+      "wramp": 13.38,
+      "cpoly": 61,
+      "stats": {
+        "paths": 16,
+        "subpaths": 31,
+        "anchors": 498,
+        "holes": 15,
+        "compoundPaths": 6,
+        "svgSize": 14701
+      },
+      "notes": "Approved during ETAPA 8.9C / 8.9D Human Gate in CorelDRAW. Multicolor Baseline: APPROVED, Topological Micro-Region Absorption V8.9C: APPROVED (11 spurious boundary micro-regions topologically absorbed into owner contours, eliminating seams, gaps, bubbles and independent spurious paths). 7 legitimate graphic colors preserved. Verified professional ground truth for category MULTICOLOR_FLAT_LOGO."
     }
   ]
 }

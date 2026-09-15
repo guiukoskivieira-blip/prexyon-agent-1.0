@@ -12,3 +12,6 @@ export * from './curveRefinement';
 export * from './professionalCurveReconstruction';
 export * from './conservativeCurvaturePolish';
 export * from './typographicLetteringRecovery';
+export * from './multicolorRegionCleanup';
+export * from './multicolorBoundaryReassignment';
+export * from './multicolorTopologicalAbsorption';
