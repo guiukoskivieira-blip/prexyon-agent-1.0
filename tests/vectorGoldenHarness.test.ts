@@ -328,5 +328,69 @@ describe('PRYX ETAPA 8.4 — Golden Vector Regression Harness', () => {
     expect(comparison.verdict).toBe('PASS');
     expect(comparison.diffs.byteIdentical).toBe(true);
   });
+
+  it('validates 09-logo-lettering in real manifest as humanApproved: true and matching exact metrics', () => {
+    const manifestPath = path.resolve(__dirname, 'vector-golden/manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+
+    const manifest = loadGoldenManifest(manifestPath);
+    const logo2 = manifest.cases.find((c) => c.caseId === '09-logo-lettering');
+    expect(logo2).toBeDefined();
+    expect(logo2!.humanApproved).toBe(true);
+    expect(logo2!.backendUsed).toBe('DIRECT_VECTO');
+    expect(logo2!.stats.paths).toBe(9);
+    expect(logo2!.stats.subpaths).toBe(16);
+    expect(logo2!.stats.anchors).toBe(265);
+    expect(logo2!.stats.holes).toBe(7);
+    expect(logo2!.stats.svgSize).toBe(8919);
+
+    const approvedSvgPath = path.resolve(__dirname, 'vector-golden', logo2!.approvedSvgPath);
+    expect(fs.existsSync(approvedSvgPath)).toBe(true);
+    const approvedSvg = fs.readFileSync(approvedSvgPath, 'utf-8');
+
+    const calculatedStats = analyzeSvgStats(approvedSvg);
+    expect(calculatedStats.paths).toBe(logo2!.stats.paths);
+    expect(calculatedStats.subpaths).toBe(logo2!.stats.subpaths);
+    expect(calculatedStats.anchors).toBe(logo2!.stats.anchors);
+    expect(calculatedStats.holes).toBe(logo2!.stats.holes);
+
+    const comparison = compareCandidateToGolden(
+      approvedSvg,
+      'DIRECT_VECTO',
+      logo2!,
+      approvedSvg
+    );
+
+    expect(comparison.verdict).toBe('PASS');
+    expect(comparison.diffs.byteIdentical).toBe(true);
+  });
+
+  it('executes cumulative regression across all human-approved golden cases', () => {
+    const manifestPath = path.resolve(__dirname, 'vector-golden/manifest.json');
+    const manifest = loadGoldenManifest(manifestPath);
+
+    const approvedCases = manifest.cases.filter((c) => c.humanApproved === true);
+    expect(approvedCases.length).toBe(2); // Logo 1 (08-logo-simples) + Logo 2 (09-logo-lettering)
+
+    for (const goldenCase of approvedCases) {
+      const svgPath = path.resolve(__dirname, 'vector-golden', goldenCase.approvedSvgPath);
+      expect(fs.existsSync(svgPath)).toBe(true);
+      const svg = fs.readFileSync(svgPath, 'utf-8');
+
+      const comparison = compareCandidateToGolden(
+        svg,
+        goldenCase.backendUsed,
+        goldenCase,
+        svg
+      );
+
+      expect(comparison.verdict).toBe('PASS');
+      expect(comparison.diffs.byteIdentical).toBe(true);
+      expect(comparison.diffs.pathDelta).toBe(0);
+      expect(comparison.diffs.anchorDelta).toBe(0);
+      expect(comparison.diffs.holeDelta).toBe(0);
+    }
+  });
 });
+
 

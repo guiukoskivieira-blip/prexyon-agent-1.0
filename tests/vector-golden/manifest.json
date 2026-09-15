@@ -155,6 +155,28 @@
         "svgSize": 9448
       },
       "notes": "Approved during ETAPA 8.6D Human Gate in CorelDRAW. Palette Recovery: APPROVED, Professional Curve Reconstruction V8.6B: APPROVED, V8.6C Conservative Polish: KEEP_V86B. Result confirmed as professional reference for category FLAT_LOGO / FLAT_SYMBOL."
+    },
+    {
+      "caseId": "09-logo-lettering",
+      "displayName": "Logo Lettering (Typographic Lettering with Accent)",
+      "inputHash": "F3A27BCF05CFAAA0E02BD0D1175057B235E3B78A633430F9E1D3F47F05D15059",
+      "inputFile": "cases\\09-logo-lettering\\original.jpg",
+      "approvedSvgPath": "cases\\09-logo-lettering\\approved.svg",
+      "approvedAt": "2026-09-15T11:31:00.000Z",
+      "humanApproved": true,
+      "route": "DIRECT_VECTO",
+      "backendUsed": "DIRECT_VECTO",
+      "wramp": 12.4,
+      "cpoly": 25,
+      "stats": {
+        "paths": 9,
+        "subpaths": 16,
+        "anchors": 265,
+        "holes": 7,
+        "compoundPaths": 7,
+        "svgSize": 8919
+      },
+      "notes": "Approved during ETAPA 8.8D Human Gate in CorelDRAW. Typographic Lettering Recovery V1: APPROVED, Accent Color Recovery: APPROVED, V8.8B Sharp Cusp: HUMAN_REJECTED, V8.8C Raster-Constrained Cusp: HUMAN_REJECTED. V8.8A selected as final approved reference for category TYPOGRAPHIC_LETTERING_WITH_ACCENT."
     }
   ]
 }

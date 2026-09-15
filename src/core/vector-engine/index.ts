@@ -11,3 +11,4 @@ export * from './flatLogoRecovery';
 export * from './curveRefinement';
 export * from './professionalCurveReconstruction';
 export * from './conservativeCurvaturePolish';
+export * from './typographicLetteringRecovery';
