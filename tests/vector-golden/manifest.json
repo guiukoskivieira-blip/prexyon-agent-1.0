@@ -133,6 +133,28 @@
         "svgSize": 256598
       },
       "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    },
+    {
+      "caseId": "08-logo-simples",
+      "displayName": "Logo Simples (Flat Logo 1)",
+      "inputHash": "45A98C375CBA4C5F38AB68809A931710C4C4C695958DCA76A5DC3AFD037C4784",
+      "inputFile": "cases\\08-logo-simples\\original.jpg",
+      "approvedSvgPath": "cases\\08-logo-simples\\approved.svg",
+      "approvedAt": "2026-09-15T10:33:00.000Z",
+      "humanApproved": true,
+      "route": "DIRECT_VECTO",
+      "backendUsed": "DIRECT_VECTO",
+      "wramp": 5.64,
+      "cpoly": 18,
+      "stats": {
+        "paths": 18,
+        "subpaths": 35,
+        "anchors": 274,
+        "holes": 17,
+        "compoundPaths": 17,
+        "svgSize": 9448
+      },
+      "notes": "Approved during ETAPA 8.6D Human Gate in CorelDRAW. Palette Recovery: APPROVED, Professional Curve Reconstruction V8.6B: APPROVED, V8.6C Conservative Polish: KEEP_V86B. Result confirmed as professional reference for category FLAT_LOGO / FLAT_SYMBOL."
     }
   ]
 }

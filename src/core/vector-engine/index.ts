@@ -7,3 +7,7 @@ export * from './vectorEngine';
 export * from './nodeVectoExecutor';
 export * from './pdmVectorEngineBridge';
 export * from './goldenHarness';
+export * from './flatLogoRecovery';
+export * from './curveRefinement';
+export * from './professionalCurveReconstruction';
+export * from './conservativeCurvaturePolish';

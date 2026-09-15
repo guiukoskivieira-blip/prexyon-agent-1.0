@@ -292,4 +292,41 @@ describe('PRYX ETAPA 8.4 — Golden Vector Regression Harness', () => {
     expect(fs.existsSync(path.join(reviewCaseDir, 'original.png'))).toBe(true);
     expect(fs.existsSync(path.join(reviewCaseDir, 'diff-report.json'))).toBe(true);
   });
+
+  it('validates 08-logo-simples in real manifest as humanApproved: true and matching exact metrics', () => {
+    const manifestPath = path.resolve(__dirname, 'vector-golden/manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+
+    const manifest = loadGoldenManifest(manifestPath);
+    const logo1 = manifest.cases.find((c) => c.caseId === '08-logo-simples');
+    expect(logo1).toBeDefined();
+    expect(logo1!.humanApproved).toBe(true);
+    expect(logo1!.backendUsed).toBe('DIRECT_VECTO');
+    expect(logo1!.stats.paths).toBe(18);
+    expect(logo1!.stats.subpaths).toBe(35);
+    expect(logo1!.stats.anchors).toBe(274);
+    expect(logo1!.stats.holes).toBe(17);
+    expect(logo1!.stats.svgSize).toBe(9448);
+
+    const approvedSvgPath = path.resolve(__dirname, 'vector-golden', logo1!.approvedSvgPath);
+    expect(fs.existsSync(approvedSvgPath)).toBe(true);
+    const approvedSvg = fs.readFileSync(approvedSvgPath, 'utf-8');
+
+    const calculatedStats = analyzeSvgStats(approvedSvg);
+    expect(calculatedStats.paths).toBe(logo1!.stats.paths);
+    expect(calculatedStats.subpaths).toBe(logo1!.stats.subpaths);
+    expect(calculatedStats.anchors).toBe(logo1!.stats.anchors);
+    expect(calculatedStats.holes).toBe(logo1!.stats.holes);
+
+    const comparison = compareCandidateToGolden(
+      approvedSvg,
+      'DIRECT_VECTO',
+      logo1!,
+      approvedSvg
+    );
+
+    expect(comparison.verdict).toBe('PASS');
+    expect(comparison.diffs.byteIdentical).toBe(true);
+  });
 });
+
