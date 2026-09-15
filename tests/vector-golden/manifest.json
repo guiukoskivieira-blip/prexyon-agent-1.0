@@ -1,0 +1,138 @@
+{
+  "version": "1.0.0",
+  "description": "PRYX Vector Engine Golden Cases - Human Ground Truth Repository",
+  "cases": [
+    {
+      "caseId": "01-berryvibe",
+      "displayName": "Berryvibe / Blueberry",
+      "inputHash": "3F31A14593D422B951323C29FEC00B9550070C836DB18C4E84E7BCAF400FB51A",
+      "inputFile": "cases\\01-berryvibe\\original.png",
+      "approvedSvgPath": "cases\\01-berryvibe\\approved.svg",
+      "approvedAt": null,
+      "humanApproved": false,
+      "route": "REGION_GRAPH",
+      "backendUsed": "REGION_GRAPH",
+      "wramp": 9.992221682061254,
+      "cpoly": 86,
+      "stats": {
+        "paths": 27,
+        "subpaths": 52,
+        "anchors": 840,
+        "holes": 25,
+        "compoundPaths": 5,
+        "svgSize": 27224
+      },
+      "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    },
+    {
+      "caseId": "03-black-face",
+      "displayName": "Black Face",
+      "inputHash": "60C8001EEE5AEE475011433BC4EC1ABDE277EB180FB0BBEA12389BAAAAA8B7A1",
+      "inputFile": "cases\\03-black-face\\original.png",
+      "approvedSvgPath": "cases\\03-black-face\\approved.svg",
+      "approvedAt": null,
+      "humanApproved": false,
+      "route": "DIRECT_VECTO",
+      "backendUsed": "DIRECT_VECTO",
+      "wramp": 5.295375435106912,
+      "cpoly": 0,
+      "stats": {
+        "paths": 23,
+        "subpaths": 40,
+        "anchors": 1472,
+        "holes": 17,
+        "compoundPaths": 4,
+        "svgSize": 42385
+      },
+      "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    },
+    {
+      "caseId": "04-neuza",
+      "displayName": "Neuza (logo media 1)",
+      "inputHash": "5DFC9302D1725FE793C888CD912CBC7BF736B88AE2B45A02DCFE9AB45324B45D",
+      "inputFile": "cases\\04-neuza\\original.jpg",
+      "approvedSvgPath": "cases\\04-neuza\\approved.svg",
+      "approvedAt": null,
+      "humanApproved": false,
+      "route": "REGION_GRAPH",
+      "backendUsed": "REGION_GRAPH",
+      "wramp": 14.770833333333334,
+      "cpoly": 2717,
+      "stats": {
+        "paths": 52,
+        "subpaths": 84,
+        "anchors": 8086,
+        "holes": 32,
+        "compoundPaths": 9,
+        "svgSize": 211268
+      },
+      "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    },
+    {
+      "caseId": "05-gela-tony",
+      "displayName": "Gela Tony (logo media 2)",
+      "inputHash": "DA575AEEE4D90FCA6AA545B4B95C59C6898A9475E47D81ED4A82EF5C24CD8A09",
+      "inputFile": "cases\\05-gela-tony\\original.jpg",
+      "approvedSvgPath": "cases\\05-gela-tony\\approved.svg",
+      "approvedAt": null,
+      "humanApproved": false,
+      "route": "REGION_GRAPH",
+      "backendUsed": "REGION_GRAPH",
+      "wramp": 14.73501918724786,
+      "cpoly": 3361,
+      "stats": {
+        "paths": 29,
+        "subpaths": 52,
+        "anchors": 7216,
+        "holes": 23,
+        "compoundPaths": 6,
+        "svgSize": 190457
+      },
+      "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    },
+    {
+      "caseId": "06-velvette",
+      "displayName": "Velvette (logo escrita 1)",
+      "inputHash": "FE04D80317F095B41C084F9F47E2793694E7BD744749B963DA33E7DD30065BC5",
+      "inputFile": "cases\\06-velvette\\original.jpg",
+      "approvedSvgPath": "cases\\06-velvette\\approved.svg",
+      "approvedAt": null,
+      "humanApproved": false,
+      "route": "ROUTE_UNCERTAIN",
+      "backendUsed": "DIRECT_VECTO",
+      "wramp": 13.91713747645951,
+      "cpoly": 9,
+      "stats": {
+        "paths": 14522,
+        "subpaths": 16155,
+        "anchors": 133232,
+        "holes": 1633,
+        "compoundPaths": 121,
+        "svgSize": 4111314
+      },
+      "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    },
+    {
+      "caseId": "07-urban-bite",
+      "displayName": "Urban Bite (logo complexa 3)",
+      "inputHash": "7A512D6940E9EDDBCB88C2BBA2A68180CEBF0A9EE0E4F2E10E48B392119F669C",
+      "inputFile": "cases\\07-urban-bite\\original.jpg",
+      "approvedSvgPath": "cases\\07-urban-bite\\approved.svg",
+      "approvedAt": null,
+      "humanApproved": false,
+      "route": "REGION_GRAPH",
+      "backendUsed": "REGION_GRAPH",
+      "wramp": 13.998012086513995,
+      "cpoly": 178,
+      "stats": {
+        "paths": 70,
+        "subpaths": 136,
+        "anchors": 9510,
+        "holes": 66,
+        "compoundPaths": 14,
+        "svgSize": 256598
+      },
+      "notes": "Generated during ETAPA 8.3 Real Vector Human Gate. Pending CorelDRAW human sign-off."
+    }
+  ]
+}

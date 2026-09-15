@@ -6,3 +6,4 @@ export * from './regionGraphV61';
 export * from './vectorEngine';
 export * from './nodeVectoExecutor';
 export * from './pdmVectorEngineBridge';
+export * from './goldenHarness';
