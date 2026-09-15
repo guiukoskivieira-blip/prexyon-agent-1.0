@@ -15,3 +15,5 @@ export * from './typographicLetteringRecovery';
 export * from './multicolorRegionCleanup';
 export * from './multicolorBoundaryReassignment';
 export * from './multicolorTopologicalAbsorption';
+export * from './generalizedAntialiasAbsorption';
+export * from './generalizedBoundaryReconstruction';

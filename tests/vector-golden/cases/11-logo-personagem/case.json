@@ -1,0 +1,24 @@
+{
+  "caseId": "11-logo-personagem",
+  "displayName": "Logo Personagem (Character / Illustrated Flat Art)",
+  "category": "CHARACTER_ILLUSTRATED_LOGO",
+  "inputHash": "635B37658B4E8657D160AD28266360864A13707FDFCEA01555C40495ED173764",
+  "inputFile": "cases\\11-logo-personagem\\original.jpg",
+  "approvedSvgPath": "cases\\11-logo-personagem\\approved.svg",
+  "approvedAt": "2026-09-15T15:33:00.000Z",
+  "humanApproved": true,
+  "route": "ROUTE_UNCERTAIN",
+  "preferredBackend": "DIRECT_VECTO",
+  "backendUsed": "DIRECT_VECTO",
+  "wramp": 19.46,
+  "cpoly": 16,
+  "stats": {
+    "paths": 62,
+    "subpaths": 112,
+    "anchors": 1600,
+    "holes": 50,
+    "compoundPaths": 6,
+    "svgSize": 54951
+  },
+  "notes": "Approved during ETAPA 8.10B / 8.10C Human Gate in CorelDRAW. Generalized Antialias Region Absorption: APPROVED, Generalized Boundary Reconstruction & Same-Owner Dissolve: APPROVED (390 internal seams dissolved, 452 paths reduced to 62 unified contours, 5338 anchors reduced to 1808 regularized Bézier anchors, 325 cusps & 139 corners protected, 0 coverage lost, 0 gaps). Verified professional ground truth for category CHARACTER_ILLUSTRATED_LOGO."
+}
