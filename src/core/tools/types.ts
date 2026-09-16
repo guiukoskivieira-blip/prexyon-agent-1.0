@@ -30,6 +30,8 @@ export interface ToolSuccessResult<T = any> {
   success: true;
   data: T;
   doc?: PrexyonDocument;
+  selectedNodeId?: string | null;
+  selectedNodeIds?: string[];
   message?: string;
   reply?: string;
 }

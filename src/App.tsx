@@ -202,6 +202,7 @@ export const App: React.FC = () => {
           <CanvasViewport
             doc={doc}
             selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
             previewNode={previewNode}
             zoom={zoom}
             comparisonMode={comparisonMode}
@@ -209,6 +210,7 @@ export const App: React.FC = () => {
             onZoomChange={setZoom}
             onCursorMove={setCursorMm}
             onSelectNode={actions.setSelectedNodeId}
+            onSelectNodes={actions.setSelectedNodeIds}
             onNodeTransformed={handleNodeTransformed}
             onImportFile={actions.importFile}
           />

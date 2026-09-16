@@ -249,6 +249,20 @@ export async function executeActionPlan(
     requiresProductionReadiness: options?.requiresProductionReadiness,
   });
 
+  // Extrai seleção de ferramentas de seleção executadas (ex: select_by_fill_color)
+  const lastSelectTool = executedTools
+    .slice()
+    .reverse()
+    .find((t) => (t.result as any)?.selectedNodeIds || (t.result as any)?.data?.matchedNodeIds);
+
+  const finalSelectedNodeIds: string[] | undefined = lastSelectTool
+    ? ((lastSelectTool.result as any)?.selectedNodeIds || (lastSelectTool.result as any)?.data?.matchedNodeIds)
+    : undefined;
+
+  const finalSelectedNodeId: string | null | undefined = lastSelectTool
+    ? ((lastSelectTool.result as any)?.selectedNodeId ?? finalSelectedNodeIds?.[0] ?? null)
+    : undefined;
+
   return {
     success: reconciled.success,
     doc: currentDoc,
@@ -256,6 +270,8 @@ export async function executeActionPlan(
     stepResults,
     reply: reconciled.reply,
     executedTools,
+    selectedNodeId: finalSelectedNodeId,
+    selectedNodeIds: finalSelectedNodeIds,
     ...(reconciled.success
       ? {}
       : {

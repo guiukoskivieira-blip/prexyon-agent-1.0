@@ -154,6 +154,18 @@ export function verifyMutationEvidence(
         error: `Não foi possível corrigir automaticamente todos os problemas detectados (${readiness.blockers.join('; ')}). A geometria ou parâmetros ainda exigem intervenção/correção manual.`,
       };
     }
+  } else if (toolName === 'select_by_fill_color') {
+    const matchedCount = (execResult as any)?.data?.matchedCount;
+    const matchedNodeIds = (execResult as any)?.data?.matchedNodeIds;
+    if (matchedCount > 0 && Array.isArray(matchedNodeIds)) {
+      const anyMissing = matchedNodeIds.some((id: string) => !nextDoc.nodes[id]);
+      if (anyMissing) {
+        return {
+          verified: false,
+          error: 'Um ou mais objetos identificados para seleção não existem no documento.',
+        };
+      }
+    }
   }
 
   return { verified: true };

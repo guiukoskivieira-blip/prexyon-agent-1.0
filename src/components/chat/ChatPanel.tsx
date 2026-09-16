@@ -283,14 +283,70 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         }
 
         // 3.1. Se ferramentas de seleção foram executadas, atualiza a seleção na UI
+        let selectionError: string | null = null;
+        let appliedSelection = false;
+
         if (Array.isArray(data.executedTools)) {
           for (const exec of data.executedTools) {
-            if (exec.name === 'select_by_fill_color' && exec.result?.success && exec.result?.data?.matchedNodeIds?.length > 0) {
-              const matched: string[] = exec.result.data.matchedNodeIds;
-              if (onSelectNodes) onSelectNodes(matched);
-              if (onHighlightNode && matched[0]) onHighlightNode(matched[0]);
+            const toolName = exec.toolName || (exec as any).name;
+            if (toolName === 'select_by_fill_color' && exec.result?.success) {
+              const matched: string[] =
+                exec.result?.data?.matchedNodeIds ||
+                (exec.result as any)?.selectedNodeIds ||
+                [];
+              try {
+                if (matched.length > 0) {
+                  if (onSelectNodes) {
+                    onSelectNodes(matched);
+                  } else if (onHighlightNode) {
+                    onHighlightNode(matched[0]);
+                  } else {
+                    throw new Error('Nenhum handler de seleção disponível.');
+                  }
+                } else {
+                  if (onSelectNodes) onSelectNodes([]);
+                  if (onHighlightNode) onHighlightNode(null);
+                }
+                appliedSelection = true;
+              } catch (selErr) {
+                selectionError = selErr instanceof Error ? selErr.message : 'Falha ao aplicar seleção no editor.';
+              }
             }
           }
+        }
+
+        if (!appliedSelection && Array.isArray((data as any).selectedNodeIds)) {
+          const matched: string[] = (data as any).selectedNodeIds;
+          try {
+            if (matched.length > 0) {
+              if (onSelectNodes) {
+                onSelectNodes(matched);
+              } else if (onHighlightNode) {
+                onHighlightNode(matched[0]);
+              }
+            } else {
+              if (onSelectNodes) onSelectNodes([]);
+              if (onHighlightNode) onHighlightNode(null);
+            }
+          } catch (selErr) {
+            selectionError = selErr instanceof Error ? selErr.message : 'Falha ao aplicar seleção no editor.';
+          }
+        }
+
+        if (selectionError) {
+          const errorMsgId = `sel_err_${Date.now()}`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: errorMsgId,
+              role: 'error',
+              text: `Não foi possível aplicar a seleção no editor: ${selectionError}`,
+              timestamp: Date.now(),
+            },
+          ]);
+          if (addToast) addToast('error', 'Falha ao selecionar objetos na interface.');
+          setIsProcessing(false);
+          return;
         }
 
         // 4. Exportações validadas no servidor são materializadas pelo motor real do navegador.

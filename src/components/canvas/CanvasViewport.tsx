@@ -8,6 +8,7 @@ import { Upload } from 'lucide-react';
 interface CanvasViewportProps {
   doc: PrexyonDocument;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
   zoom: number;
   comparisonMode?: 'default' | 'overlay' | 'vector_only' | 'raster_only';
   overlayOpacity?: number;
@@ -15,6 +16,7 @@ interface CanvasViewportProps {
   onZoomChange: (newZoom: number) => void;
   onCursorMove: (cursorMm: { x: number; y: number } | null) => void;
   onSelectNode: (nodeId: string | null) => void;
+  onSelectNodes?: (nodeIds: string[]) => void;
   onNodeTransformed: (payload: NodeTransformPayload) => void;
   onImportFile: (file: File) => void;
 }
@@ -22,6 +24,7 @@ interface CanvasViewportProps {
 export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   doc,
   selectedNodeId,
+  selectedNodeIds = [],
   zoom,
   comparisonMode = 'default',
   overlayOpacity = 0.6,
@@ -29,6 +32,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   onZoomChange,
   onCursorMove,
   onSelectNode,
+  onSelectNodes,
   onNodeTransformed,
   onImportFile,
 }) => {
@@ -46,6 +50,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     onZoomChange,
     onCursorMove,
     onSelectNode,
+    onSelectNodes,
     onNodeTransformed,
   });
 
@@ -54,15 +59,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       onZoomChange,
       onCursorMove,
       onSelectNode,
+      onSelectNodes,
       onNodeTransformed,
     };
     if (fabricAdapterRef.current) {
       fabricAdapterRef.current.setCallbacks({
         onSelectNode,
+        onSelectNodes,
         onNodeTransformed,
       });
     }
-  }, [onZoomChange, onCursorMove, onSelectNode, onNodeTransformed]);
+  }, [onZoomChange, onCursorMove, onSelectNode, onSelectNodes, onNodeTransformed]);
 
   // 1. Inicialização do Fabric.js Canvas — EXECUTA EXATAMENTE UMA VEZ NO MOUNT
   useEffect(() => {
@@ -82,10 +89,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     });
 
     fabricCanvasRef.current = canvas;
+    if (typeof window !== 'undefined') {
+      (window as any).__fabricCanvas = canvas;
+    }
 
     // Instancia o FabricAdapter desacoplado
     const adapter = new FabricAdapter(canvas, {
       onSelectNode: (nodeId) => callbacksRef.current.onSelectNode(nodeId),
+      onSelectNodes: (nodeIds) => callbacksRef.current.onSelectNodes?.(nodeIds),
       onNodeTransformed: (payload) => callbacksRef.current.onNodeTransformed(payload),
     });
     fabricAdapterRef.current = adapter;
@@ -257,7 +268,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     resizeObserver.observe(container);
 
     // Primeira sincronização com o documento PDM
-    adapter.syncWithDocument(doc, selectedNodeId);
+    adapter.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode, selectedNodeIds);
 
     return () => {
       resizeObserver.disconnect();
@@ -344,12 +355,12 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     canvas.requestRenderAll();
   }, [doc.dimensions.width_mm, doc.dimensions.height_mm, doc.productionSettings]);
 
-  // 3. Sincroniza nós do PDM com o Fabric sempre que doc, selectedNodeId, comparisonMode ou previewNode mudar
+  // 3. Sincroniza nós do PDM com o Fabric sempre que doc, selectedNodeId, selectedNodeIds, comparisonMode ou previewNode mudar
   useEffect(() => {
     if (fabricAdapterRef.current) {
-      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode);
+      fabricAdapterRef.current.syncWithDocument(doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode, selectedNodeIds);
     }
-  }, [doc, selectedNodeId, comparisonMode, overlayOpacity, previewNode]);
+  }, [doc, selectedNodeId, selectedNodeIds, comparisonMode, overlayOpacity, previewNode]);
 
   // 4. Sincroniza o zoom quando alterado via botões externos do Header
   useEffect(() => {

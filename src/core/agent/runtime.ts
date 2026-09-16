@@ -501,6 +501,8 @@ export class AgentRuntime {
             reply: planExecResult.reply,
             executedTools: planExecResult.executedTools,
             doc: planExecResult.doc,
+            selectedNodeId: planExecResult.selectedNodeId,
+            selectedNodeIds: planExecResult.selectedNodeIds,
             iterations: 1,
             status: planExecResult.success ? 'completed' : 'error',
             error: planExecResult.error,
@@ -528,6 +530,8 @@ export class AgentRuntime {
                 reply: planExecResult.reply,
                 executedTools: planExecResult.executedTools,
                 doc: planExecResult.doc,
+                selectedNodeId: planExecResult.selectedNodeId,
+                selectedNodeIds: planExecResult.selectedNodeIds,
                 iterations: 1,
                 status: planExecResult.success ? 'completed' : 'error',
                 error: planExecResult.error,
@@ -743,11 +747,24 @@ export class AgentRuntime {
 
         const runtimeSuccess = isHonestErrorTurn ? true : reconciled.success;
 
+        const lastSelectTool = executedTools
+          .slice()
+          .reverse()
+          .find((t) => (t.result as any)?.selectedNodeIds || (t.result as any)?.data?.matchedNodeIds);
+        const finalSelectedNodeIds: string[] | undefined = lastSelectTool
+          ? ((lastSelectTool.result as any)?.selectedNodeIds || (lastSelectTool.result as any)?.data?.matchedNodeIds)
+          : undefined;
+        const finalSelectedNodeId: string | null | undefined = lastSelectTool
+          ? ((lastSelectTool.result as any)?.selectedNodeId ?? finalSelectedNodeIds?.[0] ?? null)
+          : undefined;
+
         return {
           success: runtimeSuccess,
           reply: reconciled.reply,
           executedTools,
           doc: currentDoc,
+          selectedNodeId: finalSelectedNodeId,
+          selectedNodeIds: finalSelectedNodeIds,
           iterations: iteration,
           status: runtimeSuccess ? 'completed' : 'error',
           error: runtimeSuccess ? undefined : reconciled.error,

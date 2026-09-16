@@ -97,6 +97,8 @@ export interface PlanExecutionResult {
   stepResults: ActionStepExecutionResult[];
   reply: string;
   executedTools: ExecutedToolRecord[];
+  selectedNodeId?: string | null;
+  selectedNodeIds?: string[];
   error?: {
     code: string;
     message: string;

@@ -101,12 +101,16 @@ export const selectByFillColorTool: ToolDefinition<SelectByFillColorArgs, Select
     return {
       success: true,
       doc,
+      selectedNodeId: matchedNodeIds[0] ?? null,
+      selectedNodeIds: matchedNodeIds,
       data: {
         colorHex: targetHex,
         matchedCount: matchedNodeIds.length,
         matchedNodeIds,
       },
-      message: `Encontrados ${matchedNodeIds.length} objeto(s) com preenchimento ${targetHex}.`,
+      message: matchedNodeIds.length > 0
+        ? `Encontrados ${matchedNodeIds.length} objeto(s) com preenchimento ${targetHex}.`
+        : `Nenhum objeto encontrado com preenchimento ${targetHex}.`,
     };
   },
 };

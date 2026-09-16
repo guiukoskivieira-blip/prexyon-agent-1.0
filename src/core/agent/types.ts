@@ -77,6 +77,8 @@ export interface AgentRunResult {
   reply: string;
   executedTools: ExecutedToolRecord[];
   doc?: PrexyonDocument;
+  selectedNodeId?: string | null;
+  selectedNodeIds?: string[];
   iterations: number;
   status: 'completed' | 'error' | 'max_iterations_reached';
   error?: {

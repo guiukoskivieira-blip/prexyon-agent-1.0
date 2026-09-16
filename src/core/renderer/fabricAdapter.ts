@@ -30,6 +30,7 @@ export interface NodeTransformPayload {
 
 export interface FabricAdapterCallbacks {
   onSelectNode: (nodeId: string | null) => void;
+  onSelectNodes?: (nodeIds: string[]) => void;
   onNodeTransformed: (payload: NodeTransformPayload) => void;
 }
 
@@ -66,8 +67,41 @@ export class FabricAdapter {
     const handleSelectionChange = () => {
       if (this.isInternalSyncing || this.isDisposed) return;
       const activeObj = this.canvas.getActiveObject();
+      if (!activeObj) {
+        this.callbacks.onSelectNode(null);
+        this.callbacks.onSelectNodes?.([]);
+        return;
+      }
+
+      // Se for ActiveSelection com múltiplos objetos
+      if (
+        activeObj.type === 'activeSelection' ||
+        (activeObj as any).type === 'ActiveSelection' ||
+        typeof (activeObj as fabric.Group).getObjects === 'function'
+      ) {
+        const objects =
+          typeof (activeObj as fabric.Group).getObjects === 'function'
+            ? (activeObj as fabric.Group).getObjects()
+            : [];
+        const nodeIds = objects
+          .map((o) => (o as unknown as { pdmNodeId?: string })?.pdmNodeId)
+          .filter((id): id is string => typeof id === 'string' && !!id);
+
+        if (nodeIds.length > 1) {
+          this.callbacks.onSelectNodes?.(nodeIds);
+          this.callbacks.onSelectNode(nodeIds[0]);
+          return;
+        } else if (nodeIds.length === 1) {
+          this.callbacks.onSelectNode(nodeIds[0]);
+          this.callbacks.onSelectNodes?.(nodeIds);
+          return;
+        }
+      }
+
+      // Objeto individual simples
       const nodeId = (activeObj as unknown as { pdmNodeId?: string })?.pdmNodeId;
       this.callbacks.onSelectNode(nodeId ?? null);
+      this.callbacks.onSelectNodes?.(nodeId ? [nodeId] : []);
     };
 
     this.canvas.on('selection:created', handleSelectionChange);
@@ -75,6 +109,7 @@ export class FabricAdapter {
     this.canvas.on('selection:cleared', () => {
       if (this.isInternalSyncing || this.isDisposed) return;
       this.callbacks.onSelectNode(null);
+      this.callbacks.onSelectNodes?.([]);
     });
 
     this.canvas.on('object:moving', (e) => {
@@ -181,7 +216,8 @@ export class FabricAdapter {
     selectedNodeId: string | null,
     comparisonMode: 'default' | 'overlay' | 'vector_only' | 'raster_only' = 'default',
     overlayOpacity: number = 0.6,
-    previewNode?: DocumentNode | null
+    previewNode?: DocumentNode | null,
+    selectedNodeIds: string[] = []
   ): void {
     if (this.isDisposed) return;
 
@@ -228,12 +264,62 @@ export class FabricAdapter {
       // 3. Reconciliação do Canvas: expurga qualquer objeto órfão ou duplicado
       this.reconcileCanvasObjects(doc);
 
-      // 4. Sincroniza a seleção
-      if (selectedNodeId) {
-        const targetObj = this.objectMap.get(selectedNodeId);
+      // 4. Sincroniza a seleção (única ou múltipla)
+      const targetIds =
+        selectedNodeIds && selectedNodeIds.length > 0
+          ? selectedNodeIds
+          : selectedNodeId
+          ? [selectedNodeId]
+          : [];
+
+      if (targetIds.length > 1) {
+        const targetObjects = targetIds
+          .map((id) => this.objectMap.get(id))
+          .filter((obj): obj is fabric.FabricObject => !!obj);
+
+        if (targetObjects.length > 1) {
+          const currentActive = this.canvas.getActiveObject();
+          let isSame = false;
+          if (
+            currentActive &&
+            typeof (currentActive as fabric.Group).getObjects === 'function'
+          ) {
+            const currentObjs = (currentActive as fabric.Group).getObjects();
+            if (
+              currentObjs.length === targetObjects.length &&
+              targetObjects.every((obj) => currentObjs.includes(obj))
+            ) {
+              isSame = true;
+            }
+          }
+
+          if (!isSame) {
+            const activeSelection = new fabric.ActiveSelection(targetObjects, {
+              canvas: this.canvas,
+            });
+            this.canvas.setActiveObject(activeSelection);
+            activeSelection.setCoords();
+          }
+        } else if (targetObjects.length === 1) {
+          if (this.canvas.getActiveObject() !== targetObjects[0]) {
+            this.canvas.setActiveObject(targetObjects[0]);
+            targetObjects[0].setCoords();
+          }
+        } else {
+          if (this.canvas.getActiveObject()) {
+            this.canvas.discardActiveObject();
+          }
+        }
+      } else if (targetIds.length === 1) {
+        const targetObj = this.objectMap.get(targetIds[0]);
         if (targetObj) {
           if (this.canvas.getActiveObject() !== targetObj) {
             this.canvas.setActiveObject(targetObj);
+            targetObj.setCoords();
+          }
+        } else {
+          if (this.canvas.getActiveObject()) {
+            this.canvas.discardActiveObject();
           }
         }
       } else {
