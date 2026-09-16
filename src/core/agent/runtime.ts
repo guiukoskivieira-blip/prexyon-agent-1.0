@@ -367,11 +367,16 @@ export class AgentRuntime {
         const basePrompt = options?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT;
         const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
 
-        let plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
-          systemPrompt,
-          temperature: options?.temperature,
-          model: options?.model,
-        });
+        let plan: import('./planner').AgentActionPlan | null = null;
+        try {
+          plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
+            systemPrompt,
+            temperature: options?.temperature,
+            model: options?.model,
+          });
+        } catch (providerErr: any) {
+          console.warn('[AgentRuntime] generateActionPlan falhou no provedor:', providerErr?.message || providerErr);
+        }
 
         const { buildActionPlanFromUserRequest } = await import('./planner/planBuilder');
         const deterministicPlan = buildActionPlanFromUserRequest(userMessage, currentDoc, options?.selectedNodeId);
@@ -399,6 +404,11 @@ export class AgentRuntime {
                     matchStep.arguments.width_mm = detStep.arguments.width_mm;
                     matchStep.arguments.keepAspectRatio = detStep.arguments.keepAspectRatio ?? true;
                   }
+                } else if (detStep.tool === 'select_by_fill_color') {
+                  matchStep.arguments.colorHex = detStep.arguments.colorHex || matchStep.arguments.colorHex;
+                } else if (detStep.tool === 'replace_fill_color') {
+                  matchStep.arguments.fromColorHex = detStep.arguments.fromColorHex || matchStep.arguments.fromColorHex;
+                  matchStep.arguments.toColorHex = detStep.arguments.toColorHex || matchStep.arguments.toColorHex;
                 } else {
                   matchStep.arguments = { ...detStep.arguments, ...matchStep.arguments };
                 }
@@ -407,6 +417,22 @@ export class AgentRuntime {
                 }
               } else {
                 plan.steps.push(detStep);
+              }
+            }
+
+            // Normaliza steps de select_by_fill_color se o LLM gerou sem colorHex
+            for (const step of plan.steps) {
+              if (step.tool === 'select_by_fill_color') {
+                const hasColor = step.arguments?.colorHex || step.arguments?.color || step.arguments?.fillColor;
+                if (!hasColor) {
+                  const rep = deterministicPlan.steps.find((s) => s.tool === 'replace_fill_color');
+                  const sel = deterministicPlan.steps.find((s) => s.tool === 'select_by_fill_color');
+                  if (rep?.arguments?.fromColorHex) {
+                    step.arguments = { ...step.arguments, colorHex: rep.arguments.fromColorHex };
+                  } else if (sel?.arguments?.colorHex) {
+                    step.arguments = { ...step.arguments, colorHex: sel.arguments.colorHex };
+                  }
+                }
               }
             }
           }
@@ -482,6 +508,36 @@ export class AgentRuntime {
         }
       } catch (err: any) {
         console.warn('[AgentRuntime] generateActionPlan falhou:', err?.message || err);
+        try {
+          const { buildActionPlanFromUserRequest } = await import('./planner/planBuilder');
+          const fallbackPlan = buildActionPlanFromUserRequest(userMessage, currentDoc, options?.selectedNodeId);
+          if (fallbackPlan && fallbackPlan.steps && fallbackPlan.steps.length > 0 && fallbackPlan.intent !== 'ASK_USER') {
+            console.log('[AgentRuntime] Resgatando execução com deterministic fallback plan');
+            const validation = validateActionPlan(fallbackPlan, currentDoc, options?.selectedNodeId, this.registry);
+            if (validation.valid && validation.resolvedPlan) {
+              const planExecResult = await executeActionPlan(validation.resolvedPlan, currentDoc, {
+                registry: this.registry,
+                clientExecutionReceipts: options?.clientExecutionReceipts,
+                toolExecutionContext: {
+                  ...options?.toolExecutionContext,
+                  selectedNodeId: options?.selectedNodeId,
+                },
+              });
+              return {
+                success: planExecResult.success,
+                reply: planExecResult.reply,
+                executedTools: planExecResult.executedTools,
+                doc: planExecResult.doc,
+                iterations: 1,
+                status: planExecResult.success ? 'completed' : 'error',
+                error: planExecResult.error,
+              };
+            }
+          }
+        } catch (fallbackErr) {
+          console.error('[AgentRuntime] Fallback execution failed:', fallbackErr);
+        }
+
         const isTimeout = err?.name === 'TimeoutError' || err?.code === 'PROVIDER_TIMEOUT' || err?.message?.includes('Timeout');
         return {
           success: false,

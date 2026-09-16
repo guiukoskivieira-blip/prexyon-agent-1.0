@@ -114,6 +114,33 @@ export function normalizeActionArguments(_toolName: string, args: Record<string,
     if (mm !== null) normalized.offset_mm = mm;
   }
 
+  // Normalização de argumentos de ferramentas vetoriais (HOTFIX 8.30.8)
+  if (_toolName === 'select_by_fill_color') {
+    const rawColor = normalized.colorHex ?? normalized.color ?? normalized.fillColor ?? normalized.fill ?? normalized.hex;
+    if (rawColor && typeof rawColor === 'string' && rawColor.trim()) {
+      normalized.colorHex = rawColor.trim();
+    }
+  } else if (_toolName === 'replace_fill_color') {
+    const rawTo = normalized.toColorHex ?? normalized.toColor ?? normalized.to ?? normalized.nextFill ?? normalized.color;
+    if (rawTo && typeof rawTo === 'string' && rawTo.trim()) {
+      normalized.toColorHex = rawTo.trim();
+    }
+    const rawFrom = normalized.fromColorHex ?? normalized.fromColor ?? normalized.from ?? normalized.prevFill;
+    if (rawFrom && typeof rawFrom === 'string' && rawFrom.trim()) {
+      normalized.fromColorHex = rawFrom.trim();
+    }
+  } else if (_toolName === 'ungroup_selected_node') {
+    const rawId = normalized.groupId ?? normalized.nodeId ?? normalized.id;
+    if (rawId && typeof rawId === 'string' && rawId.trim()) {
+      normalized.groupId = rawId.trim();
+    }
+  } else if (_toolName === 'group_selected_nodes' || _toolName === 'delete_selected_nodes') {
+    const rawIds = normalized.nodeIds ?? normalized.nodes;
+    if (rawIds && Array.isArray(rawIds)) {
+      normalized.nodeIds = rawIds;
+    }
+  }
+
   return normalized;
 }
 

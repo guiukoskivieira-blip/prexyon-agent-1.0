@@ -13,6 +13,11 @@ import {
   UngroupNodeCommand,
   DeleteMultipleNodesCommand,
 } from '../../commands/types';
+import {
+  resolveDocumentFillsForColorFamily,
+  getCanonicalHexForColorName,
+  normalizeColorWord,
+} from '../../agent/vectorColorResolver';
 
 // ==========================================
 // 1. SELECT BY FILL COLOR
@@ -35,17 +40,50 @@ export const selectByFillColorTool: ToolDefinition<SelectByFillColorArgs, Select
   parameters: {
     type: 'object',
     properties: {
-      colorHex: { type: 'string', description: 'Cor em formato hexadecimal (ex: #ffffff, #ff313d, #000000).' },
+      colorHex: { type: 'string', description: 'Cor em formato hexadecimal (ex: #ffffff, #ff313d, #000000) ou nome da cor.' },
       targetGroupId: { type: 'string', description: 'ID opcional do grupo para restringir a busca.' },
       exactMatch: { type: 'boolean', description: 'Se true (padrão), compara valor exato ignorando maiúsculas.' },
     },
     required: ['colorHex'],
   },
   async execute(args, context) {
-    const targetHex = args.colorHex.trim().toLowerCase();
     const doc = context.doc;
-    const matchedNodeIds: string[] = [];
 
+    // Normalização defensiva de argumentos (HOTFIX 8.30.8)
+    const rawColor =
+      args?.colorHex ??
+      (args as any)?.color ??
+      (args as any)?.fillColor ??
+      (args as any)?.fill ??
+      (args as any)?.hex;
+
+    if (!rawColor || typeof rawColor !== 'string' || !rawColor.trim()) {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_TOOL_ARGUMENT',
+          message: 'A ferramenta "select_by_fill_color" requer o argumento obrigatório "colorHex" não vazio.',
+        },
+      };
+    }
+
+    let targetHex = rawColor.trim().toLowerCase();
+    // Se o argumento for um nome de cor natural (ex: "vermelho", "red", "azul") ou hex sem '#'
+    if (!targetHex.startsWith('#')) {
+      const family = normalizeColorWord(targetHex);
+      if (family) {
+        const resolved = resolveDocumentFillsForColorFamily(doc, family);
+        if (resolved.length > 0) {
+          targetHex = resolved[0];
+        } else {
+          targetHex = getCanonicalHexForColorName(family);
+        }
+      } else if (/^[0-9a-f]{6}$/i.test(targetHex)) {
+        targetHex = `#${targetHex}`;
+      }
+    }
+
+    const matchedNodeIds: string[] = [];
     const nodesToCheck: string[] = args.targetGroupId
       ? (doc.nodes[args.targetGroupId] as VectorGroupNode)?.childrenIds || []
       : Object.keys(doc.nodes);
@@ -64,11 +102,11 @@ export const selectByFillColorTool: ToolDefinition<SelectByFillColorArgs, Select
       success: true,
       doc,
       data: {
-        colorHex: args.colorHex,
+        colorHex: targetHex,
         matchedCount: matchedNodeIds.length,
         matchedNodeIds,
       },
-      message: `Encontrados ${matchedNodeIds.length} objeto(s) com preenchimento ${args.colorHex}.`,
+      message: `Encontrados ${matchedNodeIds.length} objeto(s) com preenchimento ${targetHex}.`,
     };
   },
 };
@@ -102,17 +140,74 @@ export const replaceFillColorTool: ToolDefinition<ReplaceFillColorArgs, ReplaceF
   },
   async execute(args, context): Promise<ToolResult<ReplaceFillColorResultData>> {
     const doc = context.doc;
+
+    // Normalização defensiva de toColorHex (HOTFIX 8.30.8)
+    const rawToColor =
+      args?.toColorHex ??
+      (args as any)?.toColor ??
+      (args as any)?.to ??
+      (args as any)?.nextFill ??
+      (args as any)?.color;
+
+    if (!rawToColor || typeof rawToColor !== 'string' || !rawToColor.trim()) {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_TOOL_ARGUMENT',
+          message: 'A ferramenta "replace_fill_color" requer o argumento obrigatório "toColorHex" não vazio.',
+        },
+      };
+    }
+
+    let toColorHex = rawToColor.trim().toLowerCase();
+    if (!toColorHex.startsWith('#')) {
+      const family = normalizeColorWord(toColorHex);
+      toColorHex = family ? getCanonicalHexForColorName(family) : (toColorHex.startsWith('#') ? toColorHex : `#${toColorHex}`);
+    }
+
+    // Normalização defensiva de fromColorHex
+    const rawFromColor =
+      args?.fromColorHex ??
+      (args as any)?.fromColor ??
+      (args as any)?.from ??
+      (args as any)?.prevFill;
+
+    let fromColorHex = rawFromColor && typeof rawFromColor === 'string' && rawFromColor.trim()
+      ? rawFromColor.trim().toLowerCase()
+      : undefined;
+
+    if (fromColorHex && !fromColorHex.startsWith('#')) {
+      const srcFamily = normalizeColorWord(fromColorHex);
+      if (srcFamily) {
+        const resolved = resolveDocumentFillsForColorFamily(doc, srcFamily);
+        if (resolved.length > 0) {
+          fromColorHex = resolved[0];
+        } else {
+          fromColorHex = getCanonicalHexForColorName(srcFamily);
+        }
+      } else if (/^[0-9a-f]{6}$/i.test(fromColorHex)) {
+        fromColorHex = `#${fromColorHex}`;
+      }
+    }
+
     const targetIds: string[] = [];
 
-    if (args.nodeIds && args.nodeIds.length > 0) {
+    if (args.nodeIds && Array.isArray(args.nodeIds) && args.nodeIds.length > 0) {
       targetIds.push(...args.nodeIds);
-    } else if (args.fromColorHex) {
-      const fromHex = args.fromColorHex.trim().toLowerCase();
+    } else if (fromColorHex) {
       for (const [id, node] of Object.entries(doc.nodes)) {
-        if (node.type === 'vector_path' && (node as VectorPathNode).fill?.trim().toLowerCase() === fromHex) {
+        if (node.type === 'vector_path' && (node as VectorPathNode).fill?.trim().toLowerCase() === fromColorHex) {
           targetIds.push(id);
         }
       }
+    } else {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_TOOL_ARGUMENT',
+          message: 'A ferramenta "replace_fill_color" requer "nodeIds" ou "fromColorHex".',
+        },
+      };
     }
 
     if (targetIds.length === 0) {
@@ -133,7 +228,7 @@ export const replaceFillColorTool: ToolDefinition<ReplaceFillColorArgs, ReplaceF
         affectedNodes.push({
           nodeId: id,
           prevFill: node.fill,
-          nextFill: args.toColorHex,
+          nextFill: toColorHex,
         });
       }
     }
@@ -156,9 +251,9 @@ export const replaceFillColorTool: ToolDefinition<ReplaceFillColorArgs, ReplaceF
       data: {
         modifiedCount: affectedNodes.length,
         affectedNodeIds: affectedNodes.map((a) => a.nodeId),
-        toColorHex: args.toColorHex,
+        toColorHex,
       },
-      message: `Cor de preenchimento alterada para ${args.toColorHex} em ${affectedNodes.length} objeto(s).`,
+      message: `Cor de preenchimento alterada para ${toColorHex} em ${affectedNodes.length} objeto(s).`,
     };
   },
 };
@@ -188,14 +283,25 @@ export const ungroupSelectedNodeTool: ToolDefinition<UngroupSelectedNodeArgs, Un
   },
   async execute(args, context): Promise<ToolResult<UngroupSelectedNodeResultData>> {
     const doc = context.doc;
-    const groupNode = doc.nodes[args.groupId] as VectorGroupNode | undefined;
+    const rawGroupId = args?.groupId ?? (args as any)?.nodeId ?? (args as any)?.id;
+    if (!rawGroupId || typeof rawGroupId !== 'string' || !rawGroupId.trim()) {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_TOOL_ARGUMENT',
+          message: 'A ferramenta "ungroup_selected_node" requer o argumento obrigatório "groupId" não vazio.',
+        },
+      };
+    }
+    const groupId = rawGroupId.trim();
+    const groupNode = doc.nodes[groupId] as VectorGroupNode | undefined;
 
     if (!groupNode || groupNode.type !== 'group') {
       return {
         success: false,
         error: {
           code: 'NODE_NOT_FOUND',
-          message: `Grupo "${args.groupId}" não encontrado no documento.`,
+          message: `Grupo "${groupId}" não encontrado no documento.`,
         },
       };
     }
@@ -220,7 +326,7 @@ export const ungroupSelectedNodeTool: ToolDefinition<UngroupSelectedNodeArgs, Un
       success: true,
       doc: finalDoc,
       data: {
-        groupId: args.groupId,
+        groupId,
         ungroupedCount: childNodes.length,
         ungroupedNodeIds: childNodes.map((c) => c.id),
       },
@@ -256,17 +362,18 @@ export const groupSelectedNodesTool: ToolDefinition<GroupSelectedNodesArgs, Grou
   },
   async execute(args, context): Promise<ToolResult<GroupSelectedNodesResultData>> {
     const doc = context.doc;
-    if (!args.nodeIds || args.nodeIds.length === 0) {
+    const nodeIds = args?.nodeIds ?? (args as any)?.nodes;
+    if (!nodeIds || !Array.isArray(nodeIds) || nodeIds.length === 0) {
       return {
         success: false,
         error: {
-          code: 'INVALID_ARGUMENTS',
-          message: 'Lista de nós vazia para agrupamento.',
+          code: 'INVALID_TOOL_ARGUMENT',
+          message: 'A ferramenta "group_selected_nodes" requer o argumento "nodeIds" com ao menos um ID.',
         },
       };
     }
 
-    const command = new GroupNodesCommand(args.nodeIds, args.groupName || 'Novo Grupo');
+    const command = new GroupNodesCommand(nodeIds, args.groupName || 'Novo Grupo');
     let finalDoc = doc;
     if (context.historyManager) {
       const res = context.historyManager.executeCommand(command, doc);
@@ -283,10 +390,10 @@ export const groupSelectedNodesTool: ToolDefinition<GroupSelectedNodesArgs, Grou
       doc: finalDoc,
       data: {
         groupId: command.groupNodeId || '',
-        groupedCount: args.nodeIds.length,
-        groupedNodeIds: args.nodeIds,
+        groupedCount: nodeIds.length,
+        groupedNodeIds: nodeIds,
       },
-      message: `${args.nodeIds.length} objeto(s) agrupados com sucesso sob o grupo "${args.groupName || 'Novo Grupo'}".`,
+      message: `${nodeIds.length} objeto(s) agrupados com sucesso sob o grupo "${args.groupName || 'Novo Grupo'}".`,
     };
   },
 };
@@ -315,18 +422,19 @@ export const deleteSelectedNodesTool: ToolDefinition<DeleteSelectedNodesArgs, De
   },
   async execute(args, context): Promise<ToolResult<DeleteSelectedNodesResultData>> {
     const doc = context.doc;
-    if (!args.nodeIds || args.nodeIds.length === 0) {
+    const nodeIds = args?.nodeIds ?? (args as any)?.nodes;
+    if (!nodeIds || !Array.isArray(nodeIds) || nodeIds.length === 0) {
       return {
         success: false,
         error: {
-          code: 'INVALID_ARGUMENTS',
-          message: 'Nenhum nó fornecido para exclusão.',
+          code: 'INVALID_TOOL_ARGUMENT',
+          message: 'A ferramenta "delete_selected_nodes" requer o argumento "nodeIds" com ao menos um ID.',
         },
       };
     }
 
     const deletedNodes: DocumentNode[] = [];
-    for (const id of args.nodeIds) {
+    for (const id of nodeIds) {
       const node = doc.nodes[id];
       if (node) deletedNodes.push(node);
     }

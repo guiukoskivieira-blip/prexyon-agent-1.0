@@ -84,6 +84,31 @@ export function validateActionPlan(
       if (h !== undefined && (typeof h !== 'number' || h <= 0)) {
         errors.push(`Ação "${stepId}" (resize_node) possui altura inválida: ${h}.`);
       }
+    } else if (rawStep.tool === 'select_by_fill_color') {
+      const colorHex = actionWithTarget.arguments.colorHex;
+      if (!colorHex || typeof colorHex !== 'string' || !colorHex.trim()) {
+        errors.push(`Ação "${stepId}" (select_by_fill_color) requer argumento "colorHex" não vazio.`);
+      }
+    } else if (rawStep.tool === 'replace_fill_color') {
+      const toColor = actionWithTarget.arguments.toColorHex;
+      if (!toColor || typeof toColor !== 'string' || !toColor.trim()) {
+        errors.push(`Ação "${stepId}" (replace_fill_color) requer argumento "toColorHex" não vazio.`);
+      }
+      const hasFrom = Boolean(actionWithTarget.arguments.fromColorHex);
+      const hasNodes = Array.isArray(actionWithTarget.arguments.nodeIds) && actionWithTarget.arguments.nodeIds.length > 0;
+      if (!hasFrom && !hasNodes) {
+        errors.push(`Ação "${stepId}" (replace_fill_color) requer "fromColorHex" ou "nodeIds".`);
+      }
+    } else if (rawStep.tool === 'ungroup_selected_node') {
+      const groupId = actionWithTarget.arguments.groupId;
+      if (!groupId || typeof groupId !== 'string' || !groupId.trim()) {
+        errors.push(`Ação "${stepId}" (ungroup_selected_node) requer "groupId" não vazio.`);
+      }
+    } else if (rawStep.tool === 'group_selected_nodes' || rawStep.tool === 'delete_selected_nodes') {
+      const nodeIds = actionWithTarget.arguments.nodeIds;
+      if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
+        errors.push(`Ação "${stepId}" (${rawStep.tool}) requer "nodeIds" contendo ao menos um ID.`);
+      }
     }
 
     // E. Avaliação pelo Policy Gate
