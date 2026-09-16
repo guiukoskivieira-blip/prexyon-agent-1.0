@@ -12,11 +12,13 @@ import {
   FolderTree,
   Compass,
   FileText,
+  FolderOpen,
 } from 'lucide-react';
 import {
   PrexyonDocument,
   DocumentNode,
   RasterNode,
+  VectorPathNode,
   VectorGroupNode,
   CutContourNode,
 } from '@/core/pdm/types';
@@ -25,23 +27,57 @@ import { calculateEffectiveDpi, roundPrecision } from '@/core/pdm/units';
 export interface DocumentLayersPanelProps {
   doc: PrexyonDocument;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
   onSelectNode: (nodeId: string | null) => void;
+  onSelectNodes?: (nodeIds: string[]) => void;
   onToggleVisibility: (nodeId: string) => void;
   onToggleLock: (nodeId: string) => void;
   onDeleteNode?: (nodeId: string) => void;
+  onUngroupNode?: (nodeId: string) => void;
+  onUpdateFill?: (nodeId: string, fillHex: string | null) => void;
 }
 
 export const DocumentLayersPanel: React.FC<DocumentLayersPanelProps> = ({
   doc,
   selectedNodeId,
+  selectedNodeIds = [],
   onSelectNode,
+  onSelectNodes,
   onToggleVisibility,
   onToggleLock,
   onDeleteNode,
+  onUngroupNode,
+  onUpdateFill,
 }) => {
   const nodeList = Object.values(doc.nodes || {}).filter(Boolean);
 
-  const selectedNode = selectedNodeId ? doc.nodes[selectedNodeId] : null;
+  const activeNodeId = selectedNodeId || (selectedNodeIds.length === 1 ? selectedNodeIds[0] : null);
+  const selectedNode = activeNodeId ? doc.nodes[activeNodeId] : null;
+
+  const [hexInput, setHexInput] = React.useState<string>('');
+
+  React.useEffect(() => {
+    if (selectedNode && selectedNode.type === 'vector_path') {
+      setHexInput((selectedNode as VectorPathNode).fill?.toUpperCase() || '');
+    }
+  }, [selectedNode]);
+
+  const handleCommitHex = (nodeId: string, value: string) => {
+    if (!onUpdateFill) return;
+    const clean = value.trim();
+    if (!clean || clean.toLowerCase() === 'none') {
+      onUpdateFill(nodeId, null);
+      return;
+    }
+    const withHash = clean.startsWith('#') ? clean : `#${clean}`;
+    if (/^#[0-9A-Fa-f]{6}$/i.test(withHash)) {
+      onUpdateFill(nodeId, withHash.toLowerCase());
+      setHexInput(withHash.toUpperCase());
+    } else {
+      // Reverte para o valor atual do nó
+      setHexInput((selectedNode as VectorPathNode)?.fill?.toUpperCase() || '');
+    }
+  };
 
   const getNodeIcon = (node: DocumentNode) => {
     switch (node.type) {
@@ -134,12 +170,29 @@ export const DocumentLayersPanel: React.FC<DocumentLayersPanelProps> = ({
           </div>
         ) : (
           [...nodeList].reverse().map((node) => {
-            const isSelected = node.id === selectedNodeId;
+            const isSelected = selectedNodeIds.length > 0 ? selectedNodeIds.includes(node.id) : node.id === selectedNodeId;
 
             return (
               <div
                 key={node.id}
-                onClick={() => onSelectNode(isSelected ? null : node.id)}
+                onClick={(e) => {
+                  if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                    if (onSelectNodes) {
+                      const currentIds = selectedNodeIds.length > 0 ? selectedNodeIds : (selectedNodeId ? [selectedNodeId] : []);
+                      if (currentIds.includes(node.id)) {
+                        const nextIds = currentIds.filter((id) => id !== node.id);
+                        onSelectNodes(nextIds);
+                      } else {
+                        const nextIds = [...currentIds, node.id];
+                        onSelectNodes(nextIds);
+                      }
+                    } else {
+                      onSelectNode(isSelected ? null : node.id);
+                    }
+                  } else {
+                    onSelectNode(node.id);
+                  }
+                }}
                 className={`group flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer transition-all border ${
                   isSelected
                     ? 'bg-indigo-600/15 border-indigo-500/40 text-slate-100 shadow-sm'
@@ -178,6 +231,20 @@ export const DocumentLayersPanel: React.FC<DocumentLayersPanelProps> = ({
                       <EyeOff className="w-3.5 h-3.5" />
                     )}
                   </button>
+
+                  {node.type === 'group' && onUngroupNode && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUngroupNode(node.id);
+                      }}
+                      className="p-1 text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/20 rounded transition-colors"
+                      title="Desagrupar grupo"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -230,6 +297,72 @@ export const DocumentLayersPanel: React.FC<DocumentLayersPanelProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+            {selectedNode.type === 'vector_path' && (
+              <>
+                <div className="col-span-2 pt-1 border-t border-surface-border/50">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
+                    Preenchimento
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {/* Swatch & Native Color Picker */}
+                    <div className="relative w-7 h-7 rounded border border-surface-border bg-surface-base shrink-0 overflow-hidden flex items-center justify-center shadow-inner">
+                      <div
+                        className="w-full h-full"
+                        style={{
+                          backgroundColor:
+                            (selectedNode as VectorPathNode).fill && (selectedNode as VectorPathNode).fill !== 'none'
+                              ? (selectedNode as VectorPathNode).fill!
+                              : 'transparent',
+                        }}
+                      />
+                      <input
+                        type="color"
+                        value={
+                          (selectedNode as VectorPathNode).fill && /^#[0-9A-Fa-f]{6}$/i.test((selectedNode as VectorPathNode).fill!)
+                            ? (selectedNode as VectorPathNode).fill!
+                            : '#000000'
+                        }
+                        onChange={(e) => onUpdateFill?.(selectedNode.id, e.target.value)}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        title="Escolher cor de preenchimento"
+                      />
+                    </div>
+
+                    {/* Editable HEX text input */}
+                    <div className="flex-1 flex items-center relative">
+                      <input
+                        type="text"
+                        data-testid="fill-hex-input"
+                        value={hexInput}
+                        onChange={(e) => setHexInput(e.target.value)}
+                        onBlur={() => handleCommitHex(selectedNode.id, hexInput)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleCommitHex(selectedNode.id, hexInput);
+                          }
+                        }}
+                        placeholder="#RRGGBB"
+                        className="w-full uppercase font-mono text-xs px-2.5 py-1.5 rounded bg-surface-base border border-surface-border text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  Largura:{' '}
+                  <span className="text-slate-200 font-mono">
+                    {roundPrecision((selectedNode as VectorPathNode).physicalWidth_mm, 1)} mm
+                  </span>
+                </div>
+                <div>
+                  Altura:{' '}
+                  <span className="text-slate-200 font-mono">
+                    {roundPrecision((selectedNode as VectorPathNode).physicalHeight_mm, 1)} mm
+                  </span>
+                </div>
+              </>
+            )}
+
             {selectedNode.type === 'raster_image' && (
               <>
                 <div>
@@ -271,6 +404,19 @@ export const DocumentLayersPanel: React.FC<DocumentLayersPanelProps> = ({
                     {roundPrecision((selectedNode as VectorGroupNode).physicalWidth_mm, 1)} mm
                   </span>
                 </div>
+                {onUngroupNode && (
+                  <div className="col-span-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => onUngroupNode(selectedNode.id)}
+                      className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-indigo-500/40 hover:border-indigo-400 rounded-md text-xs font-medium transition-all shadow-sm active:scale-[0.98]"
+                      title="Desagrupar elementos do grupo"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      <span>Desagrupar</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
 

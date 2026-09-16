@@ -19,6 +19,7 @@ export const App: React.FC = () => {
   const {
     doc,
     selectedNodeId,
+    selectedNodeIds = [],
     previewNode,
     comparisonMode,
     overlayOpacity,
@@ -151,6 +152,9 @@ export const App: React.FC = () => {
     }
   }, [doc, actions]);
 
+  const canUngroup = !!(selectedNodeId && doc.nodes[selectedNodeId]?.type === 'group');
+  const canGroup = (selectedNodeIds?.length || 0) >= 2;
+
   return (
     <>
       <AppLayout
@@ -166,7 +170,7 @@ export const App: React.FC = () => {
             canRedo={canRedo}
             onUndo={actions.undo}
             onRedo={actions.redo}
-            onImportFile={actions.importRasterFile}
+            onImportFile={actions.importFile}
             onArchitecturalTest={actions.triggerArchitecturalRebuild}
             onOpenExport={() => setIsExportModalOpen(true)}
             profileId={doc.profileId}
@@ -174,16 +178,24 @@ export const App: React.FC = () => {
             onCenterNode={() => actions.executeAgentTool('center_node', {})}
             onFitArtboard={() => actions.executeAgentTool('fit_artboard_to_artwork', { margin_mm: 5.0 })}
             onFlipNode={() => actions.executeAgentTool('flip_node_horizontal', {})}
+            canUngroup={canUngroup}
+            onUngroup={() => actions.ungroupSelectedNode()}
+            canGroup={canGroup}
+            onGroup={() => actions.groupSelectedNodes(selectedNodeIds)}
           />
         }
         documentPanel={
           <DocumentLayersPanel
             doc={doc}
             selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
             onSelectNode={actions.setSelectedNodeId}
+            onSelectNodes={actions.setSelectedNodeIds}
             onToggleVisibility={actions.toggleNodeVisibility}
             onToggleLock={actions.toggleNodeLock}
             onDeleteNode={actions.deleteNode}
+            onUngroupNode={actions.ungroupSelectedNode}
+            onUpdateFill={actions.setNodeFill}
           />
         }
         canvasViewport={
@@ -198,7 +210,7 @@ export const App: React.FC = () => {
             onCursorMove={setCursorMm}
             onSelectNode={actions.setSelectedNodeId}
             onNodeTransformed={handleNodeTransformed}
-            onImportFile={actions.importRasterFile}
+            onImportFile={actions.importFile}
           />
         }
         productionWorkspace={
@@ -212,9 +224,12 @@ export const App: React.FC = () => {
               <ChatPanel
                 doc={doc}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
                 onApplyDoc={actions.applyAgentDocumentChange}
                 addToast={actions.addToast}
                 onHighlightNode={actions.setSelectedNodeId}
+                onSelectNodes={actions.setSelectedNodeIds}
+                onUndo={actions.undo}
               />
             }
             onApplyProposal={handleApplyProposal}

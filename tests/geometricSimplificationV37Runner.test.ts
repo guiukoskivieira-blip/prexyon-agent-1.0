@@ -1,0 +1,1 @@
+import {it,expect}from'vitest';import{runV37}from'../scratch/run-v37-simplification';it('runs V3.7 on V3.6 contours',async()=>expect((await runV37()).multi.simplifiedPointCount).toBeGreaterThan(0),30000);

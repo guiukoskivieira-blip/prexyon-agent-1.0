@@ -8,7 +8,7 @@ import {
 } from '../pdm/types';
 import { roundPrecision } from '../pdm/units';
 import { ExportOptions, ExportResult } from './types';
-import { calculateExportDimensions, generateExportFileName } from './geometry';
+import { calculateExportDimensions, generateExportFileName, getPathDataBounds, translatePathData } from './geometry';
 
 /**
  * Exporta o documento PDM para um arquivo SVG de produção com escala física e unidades em milímetros.
@@ -66,13 +66,32 @@ export function exportDocumentToSvg(
         if (!child || child.type !== 'vector_path' || !child.visible) continue;
 
         const fillAttr = child.fill ? `fill="${child.fill}"` : 'fill="none"';
+        const fillRule = child.metadata?.rule || (child as any).fillRule;
+        const fillRuleAttr = fillRule ? ` fill-rule="${fillRule}"` : '';
         const strokeAttr = child.stroke ? `stroke="${child.stroke}"` : 'stroke="none"';
         const strokeWidthAttr = child.stroke && child.strokeWidth_mm > 0 ? `stroke-width="${child.strokeWidth_mm}"` : '';
 
-        svgContent += `    <path d="${child.d}" ${fillAttr} ${strokeAttr} ${strokeWidthAttr} />\n`;
+        svgContent += `    <path d="${child.d}" ${fillAttr}${fillRuleAttr} ${strokeAttr} ${strokeWidthAttr} />\n`;
       }
 
       svgContent += `  </g>\n`;
+    } else if (node.type === 'vector_path') {
+      const pathNode = node as VectorPathNode;
+      const pathBounds = getPathDataBounds(pathNode.d);
+      const deltaX = pathNode.position_mm.x - pathBounds.minX;
+      const deltaY = pathNode.position_mm.y - pathBounds.minY;
+      const posX = roundPrecision(deltaX + offsetX_mm, 3);
+      const posY = roundPrecision(deltaY + offsetY_mm, 3);
+      const finalD = translatePathData(pathNode.d, posX, posY);
+      const fillAttr = pathNode.fill ? `fill="${pathNode.fill}"` : 'fill="none"';
+      const fillRule = pathNode.metadata?.rule || (pathNode as any).fillRule;
+      const fillRuleAttr = fillRule ? ` fill-rule="${fillRule}"` : '';
+      const strokeAttr = pathNode.stroke ? `stroke="${pathNode.stroke}"` : 'stroke="none"';
+      const strokeWidthAttr = pathNode.stroke && pathNode.strokeWidth_mm > 0 ? `stroke-width="${pathNode.strokeWidth_mm}"` : '';
+      const opacityAttr = pathNode.opacity !== undefined && pathNode.opacity < 1 ? `opacity="${pathNode.opacity}"` : '';
+
+      svgContent += `  <!-- Vector Path: ${pathNode.name} -->\n`;
+      svgContent += `  <path d="${finalD}" ${fillAttr}${fillRuleAttr} ${strokeAttr} ${strokeWidthAttr} ${opacityAttr} />\n`;
     } else if (node.type === 'cut_contour') {
       if (options.includeCutContour) {
         const cut = node as CutContourNode;
@@ -115,18 +134,26 @@ export function exportDocumentToSvg(
     }
   }
 
+  let bodyContent = svgContent.trimEnd();
+
+  if (options.includeClipBoundary) {
+    bodyContent = [
+      `  <defs>`,
+      `    <clipPath id="export-boundary-clip">`,
+      `      <rect x="0" y="0" width="${width_mm}" height="${height_mm}" />`,
+      `    </clipPath>`,
+      `  </defs>`,
+      `  <g clip-path="url(#export-boundary-clip)">`,
+      bodyContent,
+      `  </g>`,
+    ].join('\n');
+  }
+
   const finalSvg = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"`,
     `     width="${width_mm}mm" height="${height_mm}mm" viewBox="0 0 ${width_mm} ${height_mm}">`,
-    `  <defs>`,
-    `    <clipPath id="export-boundary-clip">`,
-    `      <rect x="0" y="0" width="${width_mm}" height="${height_mm}" />`,
-    `    </clipPath>`,
-    `  </defs>`,
-    `  <g clip-path="url(#export-boundary-clip)">`,
-    svgContent.trimEnd(),
-    `  </g>`,
+    bodyContent,
     `</svg>`,
   ].join('\n');
 

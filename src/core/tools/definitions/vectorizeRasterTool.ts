@@ -3,15 +3,18 @@ import { RasterNode } from '../../pdm/types';
 import { VectorizePresetId, getVTracerOptionsForPreset, VECTORIZE_PRESETS } from '../../vectorizer/presets';
 import { VTracerOptions } from '../../vectorizer/vtracerWasmCore';
 import { vtracerBridge } from '../../vectorizer/vtracerBridge';
+import { buildVectorGroupFromSvg } from '../../vectorizer/svgParser';
 import { VectorizeCommand } from '../../commands/types';
 import { vectorizeRasterToPdmWithEngine, type PdmVectorEngineOptions } from '../../vector-engine/pdmVectorEngineBridge';
 import type { VectorEngineEvidence } from '../../vector-engine/types';
+import { getVectorizationProvider } from '../../vectorizer/providers';
 
 export interface VectorizeRasterArgs {
   nodeId: string;
   preset?: VectorizePresetId;
   options?: VTracerOptions;
-  engine?: 'vtracer' | 'vector_engine_v1';
+  engine?: 'vtracer' | 'vector_engine_v1' | 'vectorizer_ai';
+  provider?: 'vtracer' | 'vector_engine_v1' | 'vectorizer_ai';
   engineOptions?: PdmVectorEngineOptions;
 }
 
@@ -22,17 +25,29 @@ export interface VectorizeRasterResultData {
   pathCount: number;
   durationMs: number;
   preset: string;
-  engine?: 'vtracer' | 'vector_engine_v1';
+  engine?: 'vtracer' | 'vector_engine_v1' | 'vectorizer_ai';
+  provider?: string;
   evidence?: VectorEngineEvidence;
+  creditsCharged?: number;
+  creditsCalculated?: number;
   dimensions_mm: {
     width_mm: number;
     height_mm: number;
   };
 }
 
+function decodeDataUrlToBuffer(src: string): Buffer {
+  const commaIndex = src.indexOf(',');
+  if (!src.startsWith('data:') || commaIndex < 0) {
+    throw new Error('A imagem raster precisa estar incorporada como Data URL.');
+  }
+  const payload = src.slice(commaIndex + 1);
+  return Buffer.from(payload, 'base64');
+}
+
 export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeRasterResultData> = {
   name: 'vectorize_raster',
-  description: 'Vetoriza uma imagem raster (PNG/JPG) utilizando o motor VTracer WASM ou Vector Engine V1 e cria um grupo de caminhos vetoriais no PDM.',
+  description: 'Vetoriza uma imagem raster (PNG/JPG) utilizando o motor configurado (VTracer, Vector Engine ou Vectorizer.AI) e cria um grupo de caminhos vetoriais no PDM.',
   parameters: {
     type: 'object',
     properties: {
@@ -52,9 +67,14 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
       },
       engine: {
         type: 'string',
-        description: 'Motor de vetorização a utilizar ("vtracer" legado ou "vector_engine_v1" roteado).',
-        enum: ['vtracer', 'vector_engine_v1'],
+        description: 'Motor de vetorização a utilizar ("vtracer", "vector_engine_v1" ou "vectorizer_ai").',
+        enum: ['vtracer', 'vector_engine_v1', 'vectorizer_ai'],
         default: 'vtracer',
+      },
+      provider: {
+        type: 'string',
+        description: 'Provedor de vetorização explícito ("vtracer", "vector_engine_v1" ou "vectorizer_ai").',
+        enum: ['vtracer', 'vector_engine_v1', 'vectorizer_ai'],
       },
     },
     required: ['nodeId'],
@@ -94,26 +114,85 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
     }
 
     const rasterNode = targetNode as RasterNode;
-    const engineMode = args.engine ?? 'vtracer';
+    const selectedProvider = args.provider || args.engine || 'vtracer';
     const presetId = args.preset || 'logo';
     const bridge = context.vtracerBridge || vtracerBridge;
 
-    if (args.preset && !VECTORIZE_PRESETS[args.preset] && engineMode === 'vtracer') {
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ARGUMENTS',
-          message: `Preset inválido "${args.preset}". Os presets válidos são: ${Object.keys(VECTORIZE_PRESETS).join(', ')}.`,
-        },
-      };
-    }
-
     try {
-      if (engineMode === 'vector_engine_v1') {
-        // Fluxo Vector Engine V1 Roteado (Feature Extraction -> Router V1.2 -> Direct Vecto / Region Graph -> Vecto -> SVG Parser -> PDM)
-        const extractor = 'extractRgbaFromRaster' in bridge && typeof (bridge as any).extractRgbaFromRaster === 'function'
-          ? (bridge as any).extractRgbaFromRaster.bind(bridge)
-          : vtracerBridge.extractRgbaFromRaster.bind(vtracerBridge);
+      // 1. Provedor Vectorizer.AI Oficial (Desacoplado)
+      if (selectedProvider === 'vectorizer_ai') {
+        const provider = getVectorizationProvider('vectorizer_ai');
+        const imgBuffer = decodeDataUrlToBuffer(rasterNode.src);
+
+        const providerRes = await provider.vectorize(
+          {
+            imageBuffer: imgBuffer,
+            filename: `${rasterNode.name || 'image'}.png`,
+            naturalWidth: rasterNode.naturalWidth,
+            naturalHeight: rasterNode.naturalHeight,
+          },
+          {
+            mode: 'test',
+            documentId: doc.id,
+            preset: presetId,
+          }
+        );
+
+        const vectorGroup = buildVectorGroupFromSvg({
+          svgString: providerRes.pryxValidatedSvg,
+          sourceRasterNodeId: rasterNode.id,
+          name: `Vetor: ${rasterNode.name}`,
+          physicalWidth_mm: rasterNode.physicalWidth_mm,
+          physicalHeight_mm: rasterNode.physicalHeight_mm,
+          position_mm: { x: rasterNode.position_mm.x, y: rasterNode.position_mm.y },
+          vectorizationTimeMs: providerRes.durationMs,
+          preset: 'vectorizer_ai',
+        });
+
+        const cmd = new VectorizeCommand(vectorGroup.groupNode, vectorGroup.pathNodes, rasterNode.id);
+
+        let nextDoc = doc;
+        if (historyManager) {
+          const res = historyManager.executeCommand(cmd, doc);
+          nextDoc = res.doc;
+        } else {
+          const res = cmd.execute(doc);
+          nextDoc = res.doc;
+        }
+
+        if (setDoc) {
+          setDoc(nextDoc);
+        }
+
+        return {
+          success: true,
+          doc: nextDoc,
+          message: `Imagem "${rasterNode.name}" vetorizada com sucesso via Vectorizer.AI (${vectorGroup.pathNodes.length} caminhos em ${providerRes.durationMs} ms).`,
+          data: {
+            rasterNodeId: rasterNode.id,
+            groupNodeId: vectorGroup.groupNode.id,
+            groupName: vectorGroup.groupNode.name,
+            pathCount: vectorGroup.pathNodes.length,
+            durationMs: providerRes.durationMs,
+            preset: 'vectorizer_ai',
+            engine: 'vectorizer_ai',
+            provider: 'vectorizer_ai',
+            creditsCharged: providerRes.creditsCharged,
+            creditsCalculated: providerRes.creditsCalculated,
+            dimensions_mm: {
+              width_mm: vectorGroup.groupNode.physicalWidth_mm,
+              height_mm: vectorGroup.groupNode.physicalHeight_mm,
+            },
+          },
+        };
+      }
+
+      // 2. Fluxo Vector Engine V1 Roteado (Preservado)
+      if (selectedProvider === 'vector_engine_v1') {
+        const extractor =
+          'extractRgbaFromRaster' in bridge && typeof (bridge as any).extractRgbaFromRaster === 'function'
+            ? (bridge as any).extractRgbaFromRaster.bind(bridge)
+            : vtracerBridge.extractRgbaFromRaster.bind(vtracerBridge);
         const { rgba, width, height } = await extractor(rasterNode);
         const enginePdmResult = await vectorizeRasterToPdmWithEngine(
           { width, height, data: rgba },
@@ -152,6 +231,7 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
             durationMs: enginePdmResult.durationMs,
             preset: enginePdmResult.evidence.backendUsed,
             engine: 'vector_engine_v1',
+            provider: 'vector_engine_v1',
             evidence: enginePdmResult.evidence,
             dimensions_mm: {
               width_mm: enginePdmResult.groupNode.physicalWidth_mm,
@@ -161,7 +241,7 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
         };
       }
 
-      // Fluxo Legado VTracer WASM Preservado 100%
+      // 3. Fluxo Legado VTracer WASM Preservado 100%
       const vtracerOptions = args.options || getVTracerOptionsForPreset(presetId);
       const result = await bridge.vectorizeRasterNode(rasterNode, vtracerOptions, presetId);
 
@@ -194,6 +274,7 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
           durationMs: result.durationMs,
           preset: presetId,
           engine: 'vtracer',
+          provider: 'vtracer',
           dimensions_mm: {
             width_mm: result.groupNode.physicalWidth_mm,
             height_mm: result.groupNode.physicalHeight_mm,
@@ -213,4 +294,3 @@ export const vectorizeRasterTool: ToolDefinition<VectorizeRasterArgs, VectorizeR
     }
   },
 };
-

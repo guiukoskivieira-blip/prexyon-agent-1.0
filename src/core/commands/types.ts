@@ -30,6 +30,9 @@ import {
   updateBleedSettings,
   updateSafetyMarginSettings,
   updateTechnicalGuideNode,
+  ungroupNode,
+  groupNodes,
+  updateNodeStyle,
 } from '../pdm/document';
 
 export interface CommandResult {
@@ -1201,5 +1204,245 @@ export class SimplifyVectorPathCommand implements DocumentCommand {
     };
   }
 }
+
+/**
+ * Comando de Importação de PDF Vetorial
+ * Reversível: ao desfazer, remove o grupo e todos os nós importados.
+ */
+export class ImportVectorPdfCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string = 'Importar PDF Vetorial';
+  readonly timestamp: number;
+
+  constructor(
+    public readonly groupNode?: VectorGroupNode,
+    public readonly pathNodes: VectorPathNode[] = [],
+    public readonly prevDimensions?: DocumentDimensions
+  ) {
+    this.id = `cmd_pdf_import_${Date.now()}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    if (this.groupNode) {
+      newDoc = addVectorGroup(newDoc, this.groupNode, this.pathNodes);
+      return { doc: newDoc, selectedNodeId: this.groupNode.id };
+    } else {
+      for (const p of this.pathNodes) {
+        newDoc = addNode(newDoc, p);
+      }
+      return { doc: newDoc, selectedNodeId: this.pathNodes[0]?.id ?? null };
+    }
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    if (this.groupNode) {
+      newDoc = removeNode(newDoc, this.groupNode.id);
+    } else {
+      for (const p of this.pathNodes) {
+        newDoc = removeNode(newDoc, p.id);
+      }
+    }
+    if (this.prevDimensions) {
+      newDoc.dimensions = this.prevDimensions;
+    }
+    return { doc: newDoc, selectedNodeId: newDoc.rootNodeIds[0] ?? null };
+  }
+}
+
+/**
+ * Comando de Alteração de Cor de Preenchimento (Fill)
+ * Reversível: ao desfazer, restaura as cores anteriores de cada nó afetado.
+ */
+export class ChangeFillColorCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string = 'Alterar Cor de Preenchimento';
+  readonly timestamp: number;
+
+  constructor(
+    public readonly affectedNodes: Array<{ nodeId: string; prevFill: string | null; nextFill: string | null }>
+  ) {
+    this.id = `cmd_fill_${Date.now()}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    for (const item of this.affectedNodes) {
+      newDoc = updateNodeStyle(newDoc, item.nodeId, { fill: item.nextFill });
+    }
+    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    for (const item of this.affectedNodes) {
+      newDoc = updateNodeStyle(newDoc, item.nodeId, { fill: item.prevFill });
+    }
+    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+  }
+}
+
+/**
+ * Comando de Alteração de Cor de Traço (Stroke)
+ * Reversível: ao desfazer, restaura os traços anteriores de cada nó afetado.
+ */
+export class ChangeStrokeColorCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string = 'Alterar Cor de Traço';
+  readonly timestamp: number;
+
+  constructor(
+    public readonly affectedNodes: Array<{ nodeId: string; prevStroke: string | null; nextStroke: string | null }>
+  ) {
+    this.id = `cmd_stroke_${Date.now()}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    for (const item of this.affectedNodes) {
+      newDoc = updateNodeStyle(newDoc, item.nodeId, { stroke: item.nextStroke });
+    }
+    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    for (const item of this.affectedNodes) {
+      newDoc = updateNodeStyle(newDoc, item.nodeId, { stroke: item.prevStroke });
+    }
+    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+  }
+}
+
+/**
+ * Comando de Desagrupamento (Ungroup)
+ * Reversível: ao desfazer, recria o grupo exatamente na mesma posição e hierarquia.
+ */
+export class UngroupNodeCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string = 'Desagrupar';
+  readonly timestamp: number;
+
+  constructor(
+    public readonly groupNode: VectorGroupNode,
+    public readonly childNodes: VectorPathNode[]
+  ) {
+    this.id = `cmd_ungroup_${groupNode.id}_${Date.now()}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const { doc: newDoc, ungroupedNodeIds } = ungroupNode(doc, this.groupNode.id);
+    return {
+      doc: newDoc,
+      selectedNodeId: ungroupedNodeIds[0] ?? null,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    // Remove os nós filhos da raiz e restaura o grupo
+    const newNodes = { ...doc.nodes, [this.groupNode.id]: this.groupNode };
+    for (const child of this.childNodes) {
+      newNodes[child.id] = { ...child, parentId: this.groupNode.id };
+    }
+
+    const firstChildIndex = Math.min(
+      ...this.groupNode.childrenIds.map((id) => doc.rootNodeIds.indexOf(id)).filter((idx) => idx !== -1)
+    );
+    const filteredRootIds = doc.rootNodeIds.filter((id) => !this.groupNode.childrenIds.includes(id));
+
+    if (firstChildIndex !== -1 && firstChildIndex < filteredRootIds.length) {
+      filteredRootIds.splice(firstChildIndex, 0, this.groupNode.id);
+    } else {
+      filteredRootIds.push(this.groupNode.id);
+    }
+
+    return {
+      doc: {
+        ...doc,
+        nodes: newNodes,
+        rootNodeIds: filteredRootIds,
+        updatedAt: new Date().toISOString(),
+      },
+      selectedNodeId: this.groupNode.id,
+    };
+  }
+}
+
+/**
+ * Comando de Agrupamento (Group)
+ * Reversível: ao desfazer, desagrupa os nós.
+ */
+export class GroupNodesCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string = 'Agrupar Objetos';
+  readonly timestamp: number;
+  public groupNodeId?: string;
+
+  constructor(
+    public readonly nodeIds: string[],
+    public readonly groupName: string = 'Grupo Vetorial'
+  ) {
+    this.id = `cmd_group_${Date.now()}`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    const { doc: newDoc, groupNode } = groupNodes(doc, this.nodeIds, this.groupName);
+    this.groupNodeId = groupNode.id;
+    return {
+      doc: newDoc,
+      selectedNodeId: groupNode.id,
+    };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    if (!this.groupNodeId) return { doc };
+    const { doc: newDoc } = ungroupNode(doc, this.groupNodeId);
+    return {
+      doc: newDoc,
+      selectedNodeId: this.nodeIds[0] ?? null,
+    };
+  }
+}
+
+/**
+ * Comando de Exclusão de Múltiplos Nós
+ * Reversível: ao desfazer, restaura todos os nós excluídos.
+ */
+export class DeleteMultipleNodesCommand implements DocumentCommand {
+  readonly id: string;
+  readonly name: string;
+  readonly timestamp: number;
+
+  constructor(
+    public readonly deletedNodes: DocumentNode[]
+  ) {
+    this.id = `cmd_del_multi_${Date.now()}`;
+    this.name = `Excluir ${deletedNodes.length} Objeto(s)`;
+    this.timestamp = Date.now();
+  }
+
+  execute(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    for (const node of this.deletedNodes) {
+      newDoc = removeNode(newDoc, node.id);
+    }
+    return { doc: newDoc, selectedNodeId: null };
+  }
+
+  undo(doc: PrexyonDocument): CommandResult {
+    let newDoc = { ...doc };
+    for (const node of this.deletedNodes) {
+      newDoc = addNode(newDoc, node);
+    }
+    return { doc: newDoc, selectedNodeId: this.deletedNodes[0]?.id ?? null };
+  }
+}
+
 
 

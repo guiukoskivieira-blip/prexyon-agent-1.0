@@ -64,9 +64,11 @@ import {
   applyPositionDelta,
 } from '../core/geometry/keyboardMovement';
 import { HistoryManager } from '../core/history/historyManager';
+import { PdfVectorImporter } from '../core/pdf/pdfVectorImporter';
 import {
   VectorizeCommand,
   ImportRasterCommand,
+  ImportVectorPdfCommand,
   DeleteNodeCommand,
   TransformNodeCommand,
   UpdateDimensionsCommand,
@@ -84,6 +86,9 @@ import {
   UpdateBleedSettingsCommand,
   UpdateSafetyMarginCommand,
   ApplyAgentDocumentChangeCommand,
+  UngroupNodeCommand,
+  GroupNodesCommand,
+  ChangeFillColorCommand,
 } from '../core/commands/types';
 
 export interface ToastMessage {
@@ -98,7 +103,18 @@ export function useEditorStore() {
   const [doc, setDoc] = useState<PrexyonDocument>(() =>
     createDocument({ width_mm: 100, height_mm: 100 })
   );
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeIdState] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+
+  const setSelectedNodeId = useCallback((id: string | null) => {
+    setSelectedNodeIdState(id);
+    setSelectedNodeIds(id ? [id] : []);
+  }, []);
+
+  const setSelectedNodeIdsAction = useCallback((ids: string[]) => {
+    setSelectedNodeIds(ids);
+    setSelectedNodeIdState(ids[0] ?? null);
+  }, []);
   const [previewNode, setPreviewNode] = useState<DocumentNode | null>(null);
   const [keepAspectRatio, setKeepAspectRatio] = useState<boolean>(true);
   const [isVectorizing, setIsVectorizing] = useState<boolean>(false);
@@ -228,6 +244,80 @@ export function useEditorStore() {
       }
     },
     [doc, addToast]
+  );
+
+  /**
+   * Importa e decodifica um arquivo PDF vetorial diretamente para o PDM sem rasterização com suporte a Undo/Redo.
+   */
+  const importVectorPdfFile = useCallback(
+    async (file: File) => {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = new Uint8Array(arrayBuffer);
+
+        const importName = file.name.replace(/\.[^/.]+$/, '') || 'PDF Vetorial Importado';
+        const { doc: intermediateDoc, rootGroupId, importedPathNodeIds, report } =
+          await PdfVectorImporter.importFromBufferAsync(doc, buffer, {
+            groupOnImport: true,
+            importName,
+            fitArtboardToPdf: false,
+          });
+
+        let command: ImportVectorPdfCommand;
+        if (rootGroupId) {
+          const groupNode = intermediateDoc.nodes[rootGroupId] as VectorGroupNode;
+          const pathNodes = importedPathNodeIds.map((id) => intermediateDoc.nodes[id] as VectorPathNode);
+          command = new ImportVectorPdfCommand(groupNode, pathNodes);
+        } else {
+          const pathNodes = importedPathNodeIds.map((id) => intermediateDoc.nodes[id] as VectorPathNode);
+          command = new ImportVectorPdfCommand(undefined, pathNodes);
+        }
+
+        const res = historyManagerRef.current.executeCommand(command, doc);
+        setDoc(res.doc);
+        if (res.selectedNodeId !== undefined) {
+          setSelectedNodeId(res.selectedNodeId);
+        }
+        setHistoryVersion((v) => v + 1);
+
+        addToast(
+          'success',
+          `PDF vetorial "${file.name}" importado (${report.totalObjects} objetos, ${report.colors.length} cores).`
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Falha ao importar PDF vetorial.';
+        addToast('error', msg);
+      }
+    },
+    [doc, addToast]
+  );
+
+  /**
+   * Router unificado de importação: roteia por formato (MIME type / extensão)
+   * PNG/JPG -> fluxo raster
+   * PDF -> fluxo vetorial PDF
+   */
+  const importFile = useCallback(
+    async (file: File) => {
+      if (!file) return;
+      const lowerName = file.name.toLowerCase();
+      const isPdf = file.type === 'application/pdf' || lowerName.endsWith('.pdf');
+      const isRaster =
+        file.type === 'image/png' ||
+        file.type === 'image/jpeg' ||
+        lowerName.endsWith('.png') ||
+        lowerName.endsWith('.jpg') ||
+        lowerName.endsWith('.jpeg');
+
+      if (isPdf) {
+        await importVectorPdfFile(file);
+      } else if (isRaster) {
+        await importRasterFile(file);
+      } else {
+        addToast('error', `Formato não suportado: "${file.name}". Utilize arquivos PNG, JPG ou PDF.`);
+      }
+    },
+    [importVectorPdfFile, importRasterFile, addToast]
   );
 
   /**
@@ -744,6 +834,109 @@ export function useEditorStore() {
       addToast('info', `${nodeToDelete.name} removido do documento.`);
     },
     [doc, selectedNodeId, addToast]
+  );
+
+  /**
+   * Desagrupa o nó selecionado (ou grupo especificado) promovendo todos os seus filhos a nós raiz.
+   */
+  const ungroupSelectedNode = useCallback(
+    (targetGroupId?: string) => {
+      const idToUngroup = targetGroupId || selectedNodeId;
+      if (!idToUngroup) {
+        addToast('info', 'Selecione um grupo vetorial para desagrupar.');
+        return;
+      }
+      const targetNode = doc.nodes[idToUngroup];
+      if (!targetNode || targetNode.type !== 'group') {
+        addToast('error', 'O elemento selecionado não é um grupo vetorial.');
+        return;
+      }
+
+      const groupNode = targetNode as VectorGroupNode;
+      const childNodes = (groupNode.childrenIds || [])
+        .map((childId) => doc.nodes[childId] as VectorPathNode)
+        .filter(Boolean);
+
+      const cmd = new UngroupNodeCommand(groupNode, childNodes);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      if (res.selectedNodeId !== undefined) {
+        setSelectedNodeId(res.selectedNodeId);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('info', `Grupo "${groupNode.name}" desagrupado (${childNodes.length} elementos).`);
+    },
+    [doc, selectedNodeId, addToast]
+  );
+
+  /**
+   * Agrupa uma lista de nós compatíveis sob um novo VectorGroupNode.
+   */
+  const groupSelectedNodes = useCallback(
+    (nodeIds?: string[], groupName?: string) => {
+      const targetIds = nodeIds || (selectedNodeId ? [selectedNodeId] : []);
+      if (targetIds.length < 2) {
+        addToast('info', 'Selecione pelo menos 2 elementos para agrupar.');
+        return;
+      }
+
+      const cmd = new GroupNodesCommand(targetIds, groupName || 'Grupo Vetorial');
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      if (res.selectedNodeId !== undefined) {
+        setSelectedNodeId(res.selectedNodeId);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('success', `${targetIds.length} elementos agrupados com sucesso.`);
+    },
+    [doc, selectedNodeId, addToast]
+  );
+
+  /**
+   * Altera a cor de preenchimento de um nó vetorial registrando no histórico via Command Pattern.
+   */
+  const setNodeFill = useCallback(
+    (nodeId: string, nextFill: string | null) => {
+      const targetNode = doc.nodes[nodeId] as VectorPathNode | undefined;
+      if (!targetNode || targetNode.type !== 'vector_path') {
+        addToast('error', 'Selecione um objeto vetorial para alterar o preenchimento.');
+        return;
+      }
+
+      // Normaliza hex ou none
+      let normalizedFill: string | null = null;
+      if (nextFill && nextFill.trim() !== '' && nextFill.trim().toLowerCase() !== 'none') {
+        let cleanHex = nextFill.trim();
+        if (!cleanHex.startsWith('#')) cleanHex = `#${cleanHex}`;
+        if (!/^#[0-9A-Fa-f]{6}$/i.test(cleanHex)) {
+          addToast('error', `Formato hexadecimal inválido: "${nextFill}". Use formato #RRGGBB.`);
+          return;
+        }
+        normalizedFill = cleanHex.toLowerCase();
+      }
+
+      if (targetNode.fill?.toLowerCase() === normalizedFill) {
+        return;
+      }
+
+      const affectedNodes = [
+        {
+          nodeId,
+          prevFill: targetNode.fill,
+          nextFill: normalizedFill,
+        },
+      ];
+
+      const cmd = new ChangeFillColorCommand(affectedNodes);
+      const res = historyManagerRef.current.executeCommand(cmd, doc);
+      setDoc(res.doc);
+      if (res.selectedNodeId !== undefined) {
+        setSelectedNodeId(res.selectedNodeId);
+      }
+      setHistoryVersion((v) => v + 1);
+      addToast('info', `Preenchimento alterado para ${normalizedFill || 'nenhum'}.`);
+    },
+    [doc, addToast]
   );
 
   /**
@@ -1399,6 +1592,14 @@ export function useEditorStore() {
           e.preventDefault();
           redo();
           return;
+        } else if (e.key === 'g' || e.key === 'G') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            ungroupSelectedNode();
+          } else {
+            groupSelectedNodes();
+          }
+          return;
         }
       }
 
@@ -1596,7 +1797,9 @@ export function useEditorStore() {
 
   const actions = useMemo(
     () => ({
+      importFile,
       importRasterFile,
+      importVectorPdfFile,
       vectorizeRasterNode,
       transformNode,
       setVectorizePreset,
@@ -1641,11 +1844,17 @@ export function useEditorStore() {
       removeToast,
       setDoc,
       setProfileId,
+      ungroupSelectedNode,
+      groupSelectedNodes,
+      setNodeFill,
+      setSelectedNodeIds: setSelectedNodeIdsAction,
       executeAgentTool,
       applyAgentDocumentChange,
     }),
     [
+      importFile,
       importRasterFile,
+      importVectorPdfFile,
       vectorizeRasterNode,
       transformNode,
       setVectorizePreset,
@@ -1664,7 +1873,11 @@ export function useEditorStore() {
       toggleNodeVisibility,
       toggleNodeLock,
       deleteNode,
+      ungroupSelectedNode,
+      groupSelectedNodes,
+      setNodeFill,
       setSelectedNodeId,
+      setSelectedNodeIdsAction,
       setKeepAspectRatio,
       createCutContour,
       centerCutContour,
@@ -1698,6 +1911,7 @@ export function useEditorStore() {
   return {
     doc,
     selectedNodeId,
+    selectedNodeIds,
     selectedNode,
     previewNode,
     keepAspectRatio,

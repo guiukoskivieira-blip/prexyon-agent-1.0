@@ -42,6 +42,9 @@ export interface ExportOptions {
 
   /** Delimitação da área de exportação: 'ARTWORK_BOUNDS' (área da arte/objeto) ou 'ARTBOARD_BOUNDS' (prancheta inteira) */
   exportArea?: ExportArea;
+
+  /** Se true, adiciona um clipPath delimitador na borda do documento/sangria (default: false) */
+  includeClipBoundary?: boolean;
 }
 
 export interface ExportResult {

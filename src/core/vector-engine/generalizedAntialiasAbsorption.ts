@@ -1,10 +1,10 @@
 /**
- * PRYX ETAPA 8.10A — Generalized Antialias Region Absorption
+ * PRYX ETAPA 8.11A — Generalized Antialias Region Absorption
  * 
  * General-purpose antialiasing and JPEG compression halo absorption engine.
  * Classifies intermediate boundary transition colors via CIELAB perceptual distance,
- * mixture lineage, and spatial adjacency, reallocating them to their legitimate
- * dominant graphic owner masses without creating gaps or losing graphic coverage.
+ * convex mixture line segment projection, and spatial adjacency, reallocating them
+ * to their legitimate dominant graphic owner masses without creating gaps or losing graphic coverage.
  */
 
 import { RgbaRaster } from './types';
@@ -16,6 +16,12 @@ export interface AntialiasAbsorptionOptions {
    * Default: 28.0
    */
   maxDeltaEThreshold?: number;
+
+  /**
+   * Maximum orthogonal distance in CIELAB space to the linear mixture line between two dominant colors.
+   * Default: 18.0
+   */
+  maxMixtureDistanceThreshold?: number;
 
   /**
    * Minimum confidence score required to absorb an intermediate color into a dominant owner (0.0 to 1.0).
@@ -97,6 +103,32 @@ function deltaE(lab1: { L: number; a: number; b: number }, lab2: { L: number; a:
   return Math.hypot(lab1.L - lab2.L, lab1.a - lab2.a, lab1.b - lab2.b);
 }
 
+function distToSegment(
+  c: { L: number; a: number; b: number },
+  p1: { L: number; a: number; b: number },
+  p2: { L: number; a: number; b: number }
+): { dist: number; t: number } {
+  const vx = p2.L - p1.L;
+  const vy = p2.a - p1.a;
+  const vz = p2.b - p1.b;
+  const lenSq = vx * vx + vy * vy + vz * vz;
+  if (lenSq === 0) return { dist: Math.hypot(c.L - p1.L, c.a - p1.a, c.b - p1.b), t: 0 };
+
+  const wx = c.L - p1.L;
+  const wy = c.a - p1.a;
+  const wz = c.b - p1.b;
+  const t = Math.max(0, Math.min(1, (wx * vx + wy * vy + wz * vz) / lenSq));
+
+  const projL = p1.L + t * vx;
+  const proja = p1.a + t * vy;
+  const projb = p1.b + t * vz;
+
+  return {
+    dist: Math.hypot(c.L - projL, c.a - proja, c.b - projb),
+    t,
+  };
+}
+
 /**
  * Executes generalized antialias region absorption on an SVG.
  */
@@ -106,6 +138,7 @@ export function absorbGeneralizedAntialiasRegions(
   options: AntialiasAbsorptionOptions = {}
 ): GeneralizedAntialiasAbsorptionResult {
   const maxDeltaE = options.maxDeltaEThreshold ?? 28.0;
+  const maxMixDist = options.maxMixtureDistanceThreshold ?? 18.0;
   const confThreshold = options.confidenceThreshold ?? 0.65;
 
   const pathRegex = /<path([^>]+)\/>|<path([^>]+)>[\s\S]*?<\/path>/gi;
@@ -197,12 +230,24 @@ export function absorbGeneralizedAntialiasRegions(
       }
     }
 
-    if (matchedDominant && stat.maxArea < colorStats.get(matchedDominant)!.maxArea) {
-      // Derivative of existing dominant color
+    // Check convex mixture line to background or between dominant colors
+    let isMixtureWithDom = false;
+    if (!matchedDominant) {
+      for (const dom of dominantColors) {
+        const domRgb = hexToRgb(dom);
+        const domLab = rgbToLab(domRgb.r, domRgb.g, domRgb.b);
+        const { dist, t } = distToSegment(cLab, bgLab, domLab);
+        if (dist <= maxMixDist && t > 0.05 && t < 0.95) {
+          matchedDominant = dom;
+          isMixtureWithDom = true;
+          break;
+        }
+      }
+    }
+
+    if (matchedDominant && (stat.maxArea < (colorStats.get(matchedDominant)?.maxArea || Infinity) || isMixtureWithDom)) {
       candidateColors.push(color);
     } else {
-      // Check if there is another unassigned color that is a closer parent
-      // If this color has large distinct mass or no parent yet, it is a dominant color
       dominantColors.push(color);
     }
   }
@@ -238,15 +283,30 @@ export function absorbGeneralizedAntialiasRegions(
       }
     }
 
-    // Also check distance to background
+    // Check distance to background and mixture line
     const dEToBg = deltaE(candLab, bgLab);
     const separationRatio = closestDom ? minDE / Math.min(secondMinDE, dEToBg) : 1.0;
 
-    // Check if candColor is in the perceptual mixture cone between closestDom and bg
-    const isDerivative = minDE <= maxDeltaE && separationRatio < 0.60;
+    let isMixture = separationRatio < 0.60;
+    let mixConfidence = 0.0;
+
+    if (closestDom) {
+      const domLab = rgbToLab(hexToRgb(closestDom).r, hexToRgb(closestDom).g, hexToRgb(closestDom).b);
+      const { dist, t } = distToSegment(candLab, bgLab, domLab);
+      if (dist <= maxMixDist) {
+        isMixture = true;
+        mixConfidence = Math.max(0.75, 1.0 - (dist / maxMixDist) * 0.4);
+        if (t <= 0.35) {
+          // Closer to background on mixture line
+          closestDom = bgColor;
+        }
+      }
+    }
 
     let confidence = 0.0;
-    if (isDerivative) {
+    if (mixConfidence > 0) {
+      confidence = mixConfidence;
+    } else if (minDE <= maxDeltaE && isMixture) {
       confidence = Math.max(0.75, 1.0 - separationRatio * 0.5);
     } else if (minDE <= maxDeltaE * 0.7) {
       confidence = 0.70;
@@ -265,7 +325,7 @@ export function absorbGeneralizedAntialiasRegions(
       intermediateColor: candColor,
       ownerColor: closestDom,
       deltaE: Number(minDE.toFixed(2)),
-      isMixtureWithBackground: separationRatio < 0.60,
+      isMixtureWithBackground: isMixture,
       pathCount: candStat.pathCount,
       totalArea: Number(candStat.totalArea.toFixed(2)),
       classification,

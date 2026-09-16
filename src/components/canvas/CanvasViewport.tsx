@@ -409,7 +409,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
           <Upload className="w-5 h-5 text-indigo-400 shrink-0" />
           <div>
             <p className="font-semibold text-slate-200">Comece adicionando sua arte</p>
-            <p className="text-[11px] text-slate-400">Arraste uma imagem PNG/JPG ou use o botão Importar no topo.</p>
+            <p className="text-[11px] text-slate-400">Arraste um arquivo PNG, JPG ou PDF, ou use o botão Importar no topo.</p>
           </div>
         </div>
       )}
@@ -418,7 +418,7 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
       {isDragOver && (
         <div className="absolute inset-0 bg-indigo-950/70 backdrop-blur-sm border-2 border-dashed border-indigo-400 flex flex-col items-center justify-center text-white pointer-events-none z-30 animate-in fade-in">
           <Upload className="w-10 h-10 text-indigo-300 animate-bounce mb-2" />
-          <span className="text-sm font-semibold">Solte o arquivo PNG ou JPG aqui</span>
+          <span className="text-sm font-semibold">Solte o arquivo PNG, JPG ou PDF aqui</span>
           <span className="text-xs text-indigo-200 mt-1">O objeto será centralizado e registrado no PDM</span>
         </div>
       )}

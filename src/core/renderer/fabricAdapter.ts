@@ -216,6 +216,8 @@ export class FabricAdapter {
           this.syncRasterNode(node as RasterNode, comparisonMode);
         } else if (node.type === 'group') {
           this.syncVectorGroupNode(node as VectorGroupNode, doc, comparisonMode, overlayOpacity);
+        } else if (node.type === 'vector_path') {
+          this.syncVectorPathNode(node as VectorPathNode, comparisonMode);
         } else if (node.type === 'cut_contour') {
           this.syncCutContourNode(node as CutContourNode);
         } else if (node.type === 'technical_guide') {
@@ -448,6 +450,67 @@ export class FabricAdapter {
 
       this.objectMap.set(groupNode.id, fabricGroup);
       this.canvas.add(fabricGroup);
+    }
+  }
+
+  private syncVectorPathNode(
+    pathNode: VectorPathNode,
+    comparisonMode: 'default' | 'overlay' | 'vector_only' | 'raster_only' = 'default'
+  ): void {
+    const existingObj = this.objectMap.get(pathNode.id) as fabric.Path | undefined;
+    const comparisonAllowsVector = comparisonMode !== 'raster_only';
+    const isVisible = pathNode.visible && comparisonAllowsVector;
+
+    const leftPx = mmToPx(pathNode.position_mm.x);
+    const topPx = mmToPx(pathNode.position_mm.y);
+    const strokeWidthPx = pathNode.strokeWidth_mm > 0 ? mmToPx(pathNode.strokeWidth_mm) : 0;
+
+    if (existingObj) {
+      existingObj.set({
+        left: leftPx,
+        top: topPx,
+        fill: pathNode.fill || undefined,
+        stroke: pathNode.stroke || undefined,
+        strokeWidth: strokeWidthPx,
+        visible: isVisible,
+        selectable: !pathNode.locked && isVisible,
+        evented: !pathNode.locked && isVisible,
+        opacity: pathNode.opacity ?? 1.0,
+      });
+      existingObj.setCoords();
+      return;
+    }
+
+    try {
+      const fabricPath = new fabric.Path(pathNode.d, {
+        left: leftPx,
+        top: topPx,
+        fill: pathNode.fill || undefined,
+        stroke: pathNode.stroke || undefined,
+        strokeWidth: strokeWidthPx,
+        scaleX: mmToPx(1),
+        scaleY: mmToPx(1),
+        visible: isVisible,
+        selectable: !pathNode.locked && isVisible,
+        evented: !pathNode.locked && isVisible,
+        opacity: pathNode.opacity ?? 1.0,
+        originX: 'left',
+        originY: 'top',
+        cornerColor: '#6366f1',
+        cornerStrokeColor: '#ffffff',
+        borderColor: '#6366f1',
+        cornerSize: 8,
+        transparentCorners: false,
+        padding: 2,
+      });
+
+      (fabricPath as unknown as { pdmNodeId: string }).pdmNodeId = pathNode.id;
+      fabricPath.setCoords();
+
+      this.objectMap.set(pathNode.id, fabricPath);
+      this.canvas.add(fabricPath);
+    } catch (err) {
+      console.warn(`Erro ao converter path ${pathNode.id} para Fabric:`, err);
     }
   }
 

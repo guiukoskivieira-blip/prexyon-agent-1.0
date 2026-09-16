@@ -29,11 +29,14 @@ export interface ChatPanelProps {
   doc?: PrexyonDocument;
   onApplyDoc?: (newDoc: PrexyonDocument, description?: string) => void;
   selectedNodeId?: string | null;
+  selectedNodeIds?: string[];
   addToast?: (type: 'success' | 'error' | 'info', text: string) => void;
   isProd?: boolean;
   isCutContourVisible?: boolean;
   onToggleCutContourVisibility?: () => void;
-  onHighlightNode?: (nodeId: string) => void;
+  onHighlightNode?: (nodeId: string | null) => void;
+  onSelectNodes?: (nodeIds: string[]) => void;
+  onUndo?: () => void;
 }
 
 /**
@@ -174,6 +177,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   isCutContourVisible = true,
   onToggleCutContourVisibility,
   onHighlightNode,
+  onSelectNodes,
+  onUndo,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -216,6 +221,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setInputValue('');
     setIsProcessing(true);
 
+    const lowerClean = cleanText.toLowerCase();
+    if (
+      onUndo &&
+      (lowerClean === 'desfaça' ||
+        lowerClean === 'desfazer' ||
+        lowerClean === 'desfaz' ||
+        lowerClean === 'undo' ||
+        lowerClean.includes('volte a última') ||
+        lowerClean.includes('voltar a última') ||
+        lowerClean.includes('volte a ultima') ||
+        lowerClean.includes('voltar a ultima'))
+    ) {
+      onUndo();
+      const agentMsgId = `agent_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: agentMsgId,
+          role: 'agent',
+          text: 'Última ação desfeita com sucesso.',
+          timestamp: Date.now(),
+        },
+      ]);
+      setIsProcessing(false);
+      return;
+    }
+
     try {
       // 1. Pré-execução técnica no cliente (remoção de fundo, máscaras DTF UV e vetorização VTracer)
       const { doc: activeDoc, receipts: clientReceipts } = await runClientPreExecution(
@@ -248,6 +280,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         const returnedDoc = mergeAgentResultDocument(doc, data.doc);
         if (onApplyDoc) {
           onApplyDoc(returnedDoc, cleanText);
+        }
+
+        // 3.1. Se ferramentas de seleção foram executadas, atualiza a seleção na UI
+        if (Array.isArray(data.executedTools)) {
+          for (const exec of data.executedTools) {
+            if (exec.name === 'select_by_fill_color' && exec.result?.success && exec.result?.data?.matchedNodeIds?.length > 0) {
+              const matched: string[] = exec.result.data.matchedNodeIds;
+              if (onSelectNodes) onSelectNodes(matched);
+              if (onHighlightNode && matched[0]) onHighlightNode(matched[0]);
+            }
+          }
         }
 
         // 4. Exportações validadas no servidor são materializadas pelo motor real do navegador.

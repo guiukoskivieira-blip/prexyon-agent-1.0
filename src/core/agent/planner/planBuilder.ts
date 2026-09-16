@@ -13,6 +13,7 @@ import {
   parseInnerContoursFromText,
   parseMoveCommandFromNaturalText,
 } from './unitNormalizer';
+import { detectVectorPropertyIntent } from '../vectorColorResolver';
 
 /**
  * Constrói um AgentActionPlan determinístico e tipado a partir de intenção em linguagem natural.
@@ -23,6 +24,94 @@ export function buildActionPlanFromUserRequest(
   _selectedNodeId?: string
 ): AgentActionPlan {
   const text = message.toLowerCase().trim();
+
+  // 0.V. Detecção de Intenções de Edição e Manipulação Vetorial (ETAPA 8.30.4)
+  const vectorIntent = detectVectorPropertyIntent(message, doc, _selectedNodeId);
+  if (vectorIntent) {
+    if (vectorIntent.intent === 'UNDO') {
+      return {
+        schemaVersion: '1.0',
+        intent: 'MODIFY',
+        target: { type: 'DOCUMENT' },
+        steps: [],
+        explanation: 'Última ação desfeita com sucesso.',
+      };
+    }
+
+    if (vectorIntent.intent === 'SELECT_BY_FILL_COLOR') {
+      const steps: PlannedAction[] = [];
+      for (const fill of vectorIntent.resolvedDocumentFills || []) {
+        steps.push({
+          id: `step_select_fill_${Date.now()}`,
+          tool: 'select_by_fill_color',
+          arguments: { colorHex: fill },
+          description: `Selecionar objetos com preenchimento ${fill}.`,
+        });
+      }
+      return {
+        schemaVersion: '1.0',
+        intent: 'MODIFY',
+        target: { type: 'DOCUMENT' },
+        steps,
+        explanation: steps.length > 0
+          ? `Selecionei ${vectorIntent.matchedNodeIds?.length || 1} objeto(s) ${vectorIntent.colorFamily || 'vetoriais'}.`
+          : `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} neste documento.`,
+      };
+    }
+
+    if (vectorIntent.intent === 'REPLACE_FILL_COLOR') {
+      const steps: PlannedAction[] = [];
+      if (vectorIntent.targetSelectionOnly) {
+        if (_selectedNodeId && doc.nodes[_selectedNodeId]) {
+          steps.push({
+            id: `step_rep_fill_${Date.now()}`,
+            tool: 'replace_fill_color',
+            arguments: { nodeIds: [_selectedNodeId], toColorHex: vectorIntent.toColorHex || '#000000' },
+            description: `Alterar cor de preenchimento do nó selecionado.`,
+          });
+        }
+      } else {
+        for (const fill of vectorIntent.resolvedDocumentFills || []) {
+          steps.push({
+            id: `step_rep_fill_${Date.now()}`,
+            tool: 'replace_fill_color',
+            arguments: { fromColorHex: fill, toColorHex: vectorIntent.toColorHex || '#000000' },
+            description: `Substituir cor ${fill} por ${vectorIntent.toColorHex}.`,
+          });
+        }
+      }
+      return {
+        schemaVersion: '1.0',
+        intent: 'MODIFY',
+        target: { type: 'DOCUMENT' },
+        steps,
+        explanation: steps.length > 0
+          ? `Cor dos objetos ${vectorIntent.colorFamily || 'vetoriais'} alterada para ${vectorIntent.toColorFamily || vectorIntent.toColorHex}.`
+          : `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} no documento para substituir.`,
+      };
+    }
+
+    if (vectorIntent.intent === 'DELETE_BY_FILL_COLOR') {
+      const steps: PlannedAction[] = [];
+      if (vectorIntent.matchedNodeIds && vectorIntent.matchedNodeIds.length > 0) {
+        steps.push({
+          id: `step_del_nodes_${Date.now()}`,
+          tool: 'delete_selected_nodes',
+          arguments: { nodeIds: vectorIntent.matchedNodeIds },
+          description: `Excluir objetos ${vectorIntent.colorFamily}.`,
+        });
+      }
+      return {
+        schemaVersion: '1.0',
+        intent: 'MODIFY',
+        target: { type: 'DOCUMENT' },
+        steps,
+        explanation: steps.length > 0
+          ? `${vectorIntent.matchedNodeIds?.length} objeto(s) ${vectorIntent.colorFamily || 'vetoriais'} apagado(s) com sucesso.`
+          : `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} para apagar.`,
+      };
+    }
+  }
 
   // 1. Detecção de Processo de Produção
   let process: ProductionProcess = 'UNSPECIFIED';

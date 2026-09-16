@@ -28,6 +28,15 @@ import { removeBackgroundTool } from './definitions/removeBackgroundTool';
 import { centerNodeTool } from './definitions/centerNodeTool';
 import { fitArtboardTool } from './definitions/fitArtboardTool';
 import { flipNodeTool } from './definitions/flipNodeTool';
+import { importVectorPdfTool } from './definitions/importVectorPdfTool';
+import {
+  selectByFillColorTool,
+  replaceFillColorTool,
+  ungroupSelectedNodeTool,
+  groupSelectedNodesTool,
+  deleteSelectedNodesTool,
+} from './definitions/vectorPropertyTools';
+import { documentSummaryTool } from './definitions/documentSummaryTool';
 import { ToolExecutionContext, ToolResult } from './types';
 
 export * from './types';
@@ -55,6 +64,9 @@ export * from './definitions/removeBackgroundTool';
 export * from './definitions/centerNodeTool';
 export * from './definitions/fitArtboardTool';
 export * from './definitions/flipNodeTool';
+export * from './definitions/importVectorPdfTool';
+export * from './definitions/vectorPropertyTools';
+export * from './definitions/documentSummaryTool';
 
 /**
  * Instância padrão pré-configurada com todas as ferramentas essenciais do Prexyon Agent.
@@ -83,6 +95,13 @@ export const defaultToolRegistry = new ToolRegistry([
   centerNodeTool,
   fitArtboardTool,
   flipNodeTool,
+  importVectorPdfTool,
+  selectByFillColorTool,
+  replaceFillColorTool,
+  ungroupSelectedNodeTool,
+  groupSelectedNodesTool,
+  deleteSelectedNodesTool,
+  documentSummaryTool,
 ]);
 
 /**

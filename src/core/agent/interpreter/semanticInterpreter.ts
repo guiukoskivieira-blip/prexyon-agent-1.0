@@ -6,6 +6,7 @@ import type {
 import { GEMINI_REQUEST_TIMEOUT_MS } from '../providers/geminiProvider';
 import { SEMANTIC_INTERPRETATION_SCHEMA, SEMANTIC_INTERPRETER_SYSTEM_INSTRUCTION } from './schema';
 import { validateSemanticInterpretation } from './validator';
+import { applySemanticSafetyGuard } from './semanticSafetyGuard';
 
 export type { SemanticStructuredOutputProvider } from './contract';
 
@@ -22,7 +23,7 @@ export class SemanticInterpreter {
       systemInstruction: SEMANTIC_INTERPRETER_SYSTEM_INSTRUCTION,
       responseSchema: SEMANTIC_INTERPRETATION_SCHEMA,
     });
-    return validateSemanticInterpretation(output);
+    return applySemanticSafetyGuard(validateSemanticInterpretation(output));
   }
 }
 

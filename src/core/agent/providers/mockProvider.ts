@@ -8,6 +8,7 @@ import {
   parseCutContourOffsetFromText,
   isMultiIntentRequest,
 } from '../planner';
+import { detectVectorPropertyIntent } from '../vectorColorResolver';
 
 export interface ScriptedTurn {
   response: AIProviderResponse;
@@ -150,6 +151,167 @@ export function createDeterministicTurnsForRequest(
       },
     });
     return turns;
+  }
+
+  // 0.V. Comandos de Edição e Manipulação Vetorial (ETAPA 8.30.4)
+  const vectorIntent = detectVectorPropertyIntent(message, doc, selectedNodeId);
+  if (vectorIntent) {
+    if (vectorIntent.intent === 'UNDO') {
+      return [
+        {
+          response: {
+            text: 'Última ação desfeita com sucesso.',
+            finishReason: 'STOP',
+          },
+        },
+      ];
+    }
+
+    if (vectorIntent.intent === 'SELECT_BY_FILL_COLOR') {
+      if (!vectorIntent.resolvedDocumentFills || vectorIntent.resolvedDocumentFills.length === 0 || (vectorIntent.matchedNodeIds?.length || 0) === 0) {
+        return [
+          {
+            response: {
+              text: `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} neste documento.`,
+              finishReason: 'STOP',
+            },
+          },
+        ];
+      }
+
+      const turns: ScriptedTurn[] = [];
+      for (const fill of vectorIntent.resolvedDocumentFills) {
+        turns.push({
+          response: {
+            functionCalls: [
+              {
+                id: `call_select_fill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                name: 'select_by_fill_color',
+                args: {
+                  colorHex: fill,
+                },
+              },
+            ],
+          },
+        });
+      }
+      turns.push({
+        response: {
+          text: `Selecionei ${vectorIntent.matchedNodeIds?.length || 1} objeto(s) ${vectorIntent.colorFamily || 'vetoriais'}.`,
+          finishReason: 'STOP',
+        },
+      });
+      return turns;
+    }
+
+    if (vectorIntent.intent === 'REPLACE_FILL_COLOR') {
+      if (vectorIntent.targetSelectionOnly) {
+        if (selectedNodeId && doc.nodes[selectedNodeId]) {
+          return [
+            {
+              response: {
+                functionCalls: [
+                  {
+                    id: `call_rep_fill_${Date.now()}`,
+                    name: 'replace_fill_color',
+                    args: {
+                      nodeIds: [selectedNodeId],
+                      toColorHex: vectorIntent.toColorHex || '#000000',
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              response: {
+                text: `Cor de preenchimento do objeto selecionado alterada para ${vectorIntent.toColorFamily || vectorIntent.toColorHex}.`,
+                finishReason: 'STOP',
+              },
+            },
+          ];
+        } else {
+          return [
+            {
+              response: {
+                text: 'Nenhum objeto está selecionado para alteração de cor.',
+                finishReason: 'STOP',
+              },
+            },
+          ];
+        }
+      }
+
+      if (!vectorIntent.resolvedDocumentFills || vectorIntent.resolvedDocumentFills.length === 0) {
+        return [
+          {
+            response: {
+              text: `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} no documento para substituir.`,
+              finishReason: 'STOP',
+            },
+          },
+        ];
+      }
+
+      const turns: ScriptedTurn[] = [];
+      for (const fill of vectorIntent.resolvedDocumentFills) {
+        turns.push({
+          response: {
+            functionCalls: [
+              {
+                id: `call_rep_fill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                name: 'replace_fill_color',
+                args: {
+                  fromColorHex: fill,
+                  toColorHex: vectorIntent.toColorHex || '#000000',
+                },
+              },
+            ],
+          },
+        });
+      }
+      turns.push({
+        response: {
+          text: `Cor dos objetos ${vectorIntent.colorFamily || 'vetoriais'} alterada para ${vectorIntent.toColorFamily || vectorIntent.toColorHex}.`,
+          finishReason: 'STOP',
+        },
+      });
+      return turns;
+    }
+
+    if (vectorIntent.intent === 'DELETE_BY_FILL_COLOR') {
+      if (!vectorIntent.matchedNodeIds || vectorIntent.matchedNodeIds.length === 0) {
+        return [
+          {
+            response: {
+              text: `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} para apagar.`,
+              finishReason: 'STOP',
+            },
+          },
+        ];
+      }
+
+      return [
+        {
+          response: {
+            functionCalls: [
+              {
+                id: `call_del_nodes_${Date.now()}`,
+                name: 'delete_selected_nodes',
+                args: {
+                  nodeIds: vectorIntent.matchedNodeIds,
+                },
+              },
+            ],
+          },
+        },
+        {
+          response: {
+            text: `${vectorIntent.matchedNodeIds.length} objeto(s) ${vectorIntent.colorFamily || 'vetoriais'} apagado(s) com sucesso.`,
+            finishReason: 'STOP',
+          },
+        },
+      ];
+    }
   }
 
   // 0.0. Comando de Remoção de Fundo Branco / Transparência

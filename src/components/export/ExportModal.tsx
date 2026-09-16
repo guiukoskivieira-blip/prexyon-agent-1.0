@@ -53,7 +53,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const artworkBounds = useMemo(() => getArtworkBounds(doc, selectedNodeId), [doc, selectedNodeId]);
+  const artworkBounds = useMemo(() => getArtworkBounds(doc), [doc]);
   const [format, setFormat] = useState<ExportFormat>('png');
   const [dpi, setDpi] = useState<ExportDpi>(300);
   const [background, setBackground] = useState<ExportBackground>('transparent');

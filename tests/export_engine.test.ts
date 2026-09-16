@@ -525,21 +525,21 @@ describe('ETAPA 5 — FASE 5.4: EXPORTAÇÃO / SAÍDA DE PRODUÇÃO V1 (E01 a E3
     expect(vectorIndex).toBeLessThan(cutIndex);
   });
 
-  // E27 — clip no Trim funciona
+  // E27 — clip no Trim funciona quando solicitado
   it('E27 — SVG sem sangria inclui clipPath delimitado exatamente no TrimBox (100x100mm)', () => {
     const doc = createTestDocument(100, 100);
-    const result = exportDocumentToSvg(doc, { format: 'svg', includeBleed: false });
+    const result = exportDocumentToSvg(doc, { format: 'svg', includeBleed: false, includeClipBoundary: true });
 
     expect(result.dataString).toContain('<clipPath id="export-boundary-clip">');
     expect(result.dataString).toContain('<rect x="0" y="0" width="100" height="100" />');
   });
 
-  // E28 — clip no Bleed funciona
+  // E28 — clip no Bleed funciona quando solicitado
   it('E28 — SVG com sangria inclui clipPath delimitado na BleedBox expandida (106x106mm)', () => {
     let doc = createTestDocument(100, 100);
     doc = updateBleedSettings(doc, { enabled: true, top_mm: 3, right_mm: 3, bottom_mm: 3, left_mm: 3 });
 
-    const result = exportDocumentToSvg(doc, { format: 'svg', includeBleed: true });
+    const result = exportDocumentToSvg(doc, { format: 'svg', includeBleed: true, includeClipBoundary: true });
 
     expect(result.dataString).toContain('<rect x="0" y="0" width="106" height="106" />');
   });

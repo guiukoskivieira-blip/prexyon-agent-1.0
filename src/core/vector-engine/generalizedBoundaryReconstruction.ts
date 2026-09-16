@@ -1,10 +1,10 @@
 /**
- * PRYX ETAPA 8.10B — Generalized Boundary Reconstruction after Antialias Absorption
+ * PRYX ETAPA 8.11A — Generalized Boundary Reconstruction after Antialias Absorption
  * 
  * General-purpose boundary reconstruction and seam dissolution engine.
  * Eliminates internal tessellation seams between adjacent same-owner regions,
- * extracts unified outer graphic contours, and performs feature-aware Schneider
- * Bézier curve fitting while preserving critical structural cusps and facial details.
+ * extracts unified outer graphic contours, and performs scale-aware feature-preserving
+ * Schneider Bézier curve fitting while protecting structural cusps, serifs, and fine details.
  */
 
 import { RgbaRaster } from './types';
@@ -22,13 +22,19 @@ export interface BoundaryReconstructionOptions {
   maxDeltaEThreshold?: number;
 
   /**
+   * Maximum orthogonal distance in CIELAB space to the linear mixture line between two dominant colors.
+   * Default: 18.0
+   */
+  maxMixtureDistanceThreshold?: number;
+
+  /**
    * Minimum confidence threshold for automatic antialias absorption.
    * Default: 0.65
    */
   confidenceThreshold?: number;
 
   /**
-   * Maximum allowed curve deviation tolerance in pixels.
+   * Base maximum allowed curve deviation tolerance in pixels (at reference 800x1200 resolution).
    * Default: 1.2
    */
   maxDeviationTolerance?: number;
@@ -46,7 +52,7 @@ export interface BoundaryReconstructionOptions {
   cuspAngleThresholdDeg?: number;
 
   /**
-   * Minimum area in square pixels for standalone isolated noise filtering.
+   * Base minimum area in square pixels for standalone isolated noise filtering (at reference 800x1200 resolution).
    * Default: 6.0 px²
    */
   minIsolatedNoiseArea?: number;
@@ -93,7 +99,7 @@ function distSq(r1: number, g1: number, b1: number, r2: number, g2: number, b2: 
 }
 
 /**
- * Reconstructs clean unified boundaries after antialias absorption.
+ * Reconstructs clean unified boundaries after antialias absorption with scale normalization.
  */
 export async function reconstructGeneralizedBoundaries(
   raster: RgbaRaster,
@@ -101,17 +107,26 @@ export async function reconstructGeneralizedBoundaries(
   options: BoundaryReconstructionOptions = {}
 ): Promise<BoundaryReconstructionResult> {
   const maxDeltaE = options.maxDeltaEThreshold ?? 28.0;
+  const maxMixDist = options.maxMixtureDistanceThreshold ?? 18.0;
   const confThreshold = options.confidenceThreshold ?? 0.65;
-  const maxDevTol = options.maxDeviationTolerance ?? 1.2;
+  const baseMaxDevTol = options.maxDeviationTolerance ?? 1.2;
   const cornerAngle = options.cornerAngleThresholdDeg ?? 38.0;
   const cuspAngle = options.cuspAngleThresholdDeg ?? 65.0;
-  const minNoiseArea = options.minIsolatedNoiseArea ?? 6.0;
+  const baseMinNoiseArea = options.minIsolatedNoiseArea ?? 6.0;
 
+  const { width, height, data } = raster;
   const baselineStats = analyzeSvgStats(baselineSvg);
+
+  // Resolution-invariant scale factor (relative to 800x1200 canvas diagonal)
+  const refDiagonal = Math.hypot(800, 1200);
+  const currentDiagonal = Math.hypot(width, height);
+  const scaleRatio = currentDiagonal / refDiagonal;
+  const scaledNoiseArea = baseMinNoiseArea * Math.max(1.0, scaleRatio * scaleRatio);
 
   // 1. Analyze baseline SVG & Antialias Lineages
   const antialiasResult = absorbGeneralizedAntialiasRegions(baselineSvg, raster, {
     maxDeltaEThreshold: maxDeltaE,
+    maxMixtureDistanceThreshold: maxMixDist,
     confidenceThreshold: confThreshold,
   });
 
@@ -122,7 +137,6 @@ export async function reconstructGeneralizedBoundaries(
   });
 
   // 2. Pre-dissolve antialiasing at raster level using mapped dominant palette
-  const { width, height, data } = raster;
   const consolidatedData = new Uint8Array(data.length);
 
   for (let i = 0; i < data.length; i += 4) {
@@ -156,7 +170,7 @@ export async function reconstructGeneralizedBoundaries(
   const vectoExecutor = new NodeCliVectoExecutor();
   const rawUnifiedSvg = await vectoExecutor.vectorize(consolidatedRaster);
 
-  // 4. Parse unified paths and filter spurious isolated noise specks (area < minNoiseArea)
+  // 4. Parse unified paths and filter spurious isolated noise specks (area < scaledNoiseArea)
   const pathRegex = /<path([^>]+)\/>|<path([^>]+)>[\s\S]*?<\/path>/gi;
   const unifiedMatches = Array.from(rawUnifiedSvg.matchAll(pathRegex));
 
@@ -170,8 +184,8 @@ export async function reconstructGeneralizedBoundaries(
     const d = dMatch ? dMatch[1] : '';
     const geom = analyzePathGeometry(d);
 
-    // Filter tiny isolated speckles that have no holes and area < minNoiseArea
-    if (geom.area < minNoiseArea && geom.subpaths <= 1) {
+    // Filter tiny isolated speckles that have no holes and area < scaledNoiseArea
+    if (geom.area < scaledNoiseArea && geom.subpaths <= 1) {
       isolatedNoiseFiltered++;
       continue;
     }
@@ -191,10 +205,11 @@ ${validPathTags.join('\n')}
 
   // 5. Feature-Aware Professional Curve Reconstruction (Schneider Fitting)
   const curveOptions: CurveReconstructionOptions = {
-    maxDeviationTolerance: maxDevTol,
+    maxDeviationTolerance: baseMaxDevTol,
     cornerAngleThresholdDeg: cornerAngle,
     cuspAngleThresholdDeg: cuspAngle,
     lineTolerance: 0.5,
+    scaleFactor: scaleRatio,
   };
 
   const curveResult = reconstructProfessionalCurves(filteredSvg, curveOptions);

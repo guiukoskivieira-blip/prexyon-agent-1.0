@@ -20,10 +20,39 @@ export const SEMANTIC_CAPABILITIES = [
 
 export type SemanticCapability = (typeof SEMANTIC_CAPABILITIES)[number];
 
-export interface SemanticIntent {
-  capability: SemanticCapability;
-  parameters: Record<string, unknown>;
+export interface ResizeParameters { widthMm?: number; heightMm?: number; preserveAspectRatio?: boolean; }
+export interface MoveParameters { xMm?: number; yMm?: number; }
+export interface FlipParameters { axis?: 'HORIZONTAL' | 'VERTICAL'; }
+export interface CutContourParameters { offsetMm?: number; includeInnerContours?: boolean; cutPurpose?: 'CUT' | 'UNSPECIFIED'; }
+export interface PrepareStickerParameters extends ResizeParameters { cutOffsetMm?: number; includeInnerContours?: boolean; }
+export interface PrepareDtfUvParameters extends ResizeParameters { generateWhite?: boolean; generateClear?: boolean; }
+export interface ClearSeparationParameters { mode?: 'ARTWORK' | 'FULL'; }
+
+export interface SemanticParametersByCapability {
+  RESIZE: ResizeParameters;
+  MOVE: MoveParameters;
+  CENTER: Record<never, never>;
+  FIT_ARTBOARD: Record<never, never>;
+  FLIP: FlipParameters;
+  VECTORIZE: Record<never, never>;
+  REMOVE_BACKGROUND: Record<never, never>;
+  CREATE_CUT_CONTOUR: CutContourParameters;
+  UPDATE_CUT_CONTOUR: CutContourParameters;
+  PREFLIGHT: Record<never, never>;
+  PREPARE_STICKER: PrepareStickerParameters;
+  PREPARE_DTF_UV: PrepareDtfUvParameters;
+  CREATE_WHITE_UNDERBASE: Record<never, never>;
+  CREATE_CLEAR_SEPARATION: ClearSeparationParameters;
+  CREATE_PRODUCTION_PACKAGE: Record<never, never>;
+  AUTO_FIX: Record<never, never>;
 }
+
+export type SemanticIntent = {
+  [Capability in SemanticCapability]: {
+    capability: Capability;
+    parameters: SemanticParametersByCapability[Capability];
+  };
+}[SemanticCapability];
 
 export interface UnsupportedRequest {
   capability: string;

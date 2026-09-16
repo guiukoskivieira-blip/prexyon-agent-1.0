@@ -1314,3 +1314,262 @@ export function mergeAgentResultDocument(
   };
 }
 
+/**
+ * Desagrupa um VectorGroupNode no PDM, promovendo todos os seus filhos a nós raiz independentes.
+ * Preserva exatamente a geometria, cor, IDs e aparência visual.
+ */
+export function ungroupNode(
+  doc: PrexyonDocument,
+  groupId: string
+): { doc: PrexyonDocument; ungroupedNodeIds: string[] } {
+  const groupNode = doc.nodes[groupId];
+  if (!groupNode || groupNode.type !== 'group') {
+    throw new Error(`Grupo "${groupId}" não encontrado para desagrupamento.`);
+  }
+
+  const group = groupNode as VectorGroupNode;
+  const childrenIds = [...(group.childrenIds || [])];
+
+  if (childrenIds.length === 0) {
+    return { doc: removeNode(doc, groupId), ungroupedNodeIds: [] };
+  }
+
+  const newNodes = { ...doc.nodes };
+  delete newNodes[groupId];
+
+  // Atualiza cada filho para remover parentId e garantir visibilidade e integridade
+  for (const childId of childrenIds) {
+    const child = newNodes[childId];
+    if (child) {
+      newNodes[childId] = {
+        ...child,
+        parentId: undefined,
+        visible: group.visible !== false ? child.visible : false,
+      };
+    }
+  }
+
+  // Substitui groupId pelos childrenIds em rootNodeIds preservando a ordem z
+  const groupIndex = doc.rootNodeIds.indexOf(groupId);
+  const nextRootIds = [...doc.rootNodeIds];
+  if (groupIndex !== -1) {
+    nextRootIds.splice(groupIndex, 1, ...childrenIds);
+  } else {
+    nextRootIds.push(...childrenIds);
+  }
+
+  return {
+    doc: {
+      ...doc,
+      nodes: newNodes,
+      rootNodeIds: nextRootIds,
+      updatedAt: new Date().toISOString(),
+    },
+    ungroupedNodeIds: childrenIds,
+  };
+}
+
+/**
+ * Agrupa múltiplos nós do PDM sob um novo VectorGroupNode.
+ */
+export function groupNodes(
+  doc: PrexyonDocument,
+  nodeIds: string[],
+  groupName: string = 'Grupo Vetorial'
+): { doc: PrexyonDocument; groupNode: VectorGroupNode } {
+  if (!nodeIds || nodeIds.length === 0) {
+    throw new Error('Nenhum nó fornecido para agrupamento.');
+  }
+
+  const validNodes: DocumentNode[] = [];
+  for (const id of nodeIds) {
+    const node = doc.nodes[id];
+    if (node) validNodes.push(node);
+  }
+
+  if (validNodes.length === 0) {
+    throw new Error('Nenhum nó válido encontrado no documento para agrupamento.');
+  }
+
+  // Calcula Bounding Box combinada
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const n of validNodes) {
+    const nx = n.position_mm.x;
+    const ny = n.position_mm.y;
+    const nw = (n as any).physicalWidth_mm || 1;
+    const nh = (n as any).physicalHeight_mm || 1;
+    if (nx < minX) minX = nx;
+    if (ny < minY) minY = ny;
+    if (nx + nw > maxX) maxX = nx + nw;
+    if (ny + nh > maxY) maxY = ny + nh;
+  }
+
+  const width_mm = roundPrecision(Math.max(1, maxX - minX), 2);
+  const height_mm = roundPrecision(Math.max(1, maxY - minY), 2);
+  const groupId = generateUUID();
+
+  const groupNode: VectorGroupNode = {
+    id: groupId,
+    type: 'group',
+    name: groupName,
+    visible: true,
+    locked: false,
+    position_mm: { x: roundPrecision(minX, 2), y: roundPrecision(minY, 2) },
+    rotation_deg: 0,
+    opacity: 1.0,
+    physicalWidth_mm: width_mm,
+    physicalHeight_mm: height_mm,
+    aspectRatio: height_mm > 0 ? roundPrecision(width_mm / height_mm, 4) : 1,
+    sourceViewBox: { width: width_mm, height: height_mm },
+    childrenIds: nodeIds,
+  };
+
+  const newNodes = { ...doc.nodes, [groupId]: groupNode };
+  for (const id of nodeIds) {
+    if (newNodes[id]) {
+      newNodes[id] = { ...newNodes[id], parentId: groupId };
+    }
+  }
+
+  // Substitui a primeira ocorrência dos nós por groupId e remove os outros de rootNodeIds
+  const firstIndex = Math.min(...nodeIds.map((id) => doc.rootNodeIds.indexOf(id)).filter((idx) => idx !== -1));
+  const remainingRootIds = doc.rootNodeIds.filter((id) => !nodeIds.includes(id));
+
+  if (firstIndex !== -1 && firstIndex < remainingRootIds.length) {
+    remainingRootIds.splice(firstIndex, 0, groupId);
+  } else {
+    remainingRootIds.push(groupId);
+  }
+
+  return {
+    doc: {
+      ...doc,
+      nodes: newNodes,
+      rootNodeIds: remainingRootIds,
+      updatedAt: new Date().toISOString(),
+    },
+    groupNode,
+  };
+}
+
+/**
+ * Atualiza propriedades visuais (preenchimento, traço, opacidade) de um nó vetorial de forma pura.
+ */
+export function updateNodeStyle(
+  doc: PrexyonDocument,
+  nodeId: string,
+  updates: {
+    fill?: string | null;
+    stroke?: string | null;
+    strokeWidth_mm?: number;
+    opacity?: number;
+    visible?: boolean;
+    locked?: boolean;
+  }
+): PrexyonDocument {
+  const node = doc.nodes[nodeId];
+  if (!node) {
+    throw new Error(`Nó "${nodeId}" não encontrado no documento.`);
+  }
+
+  const updatedNode = {
+    ...node,
+    ...(updates.fill !== undefined ? { fill: updates.fill } : {}),
+    ...(updates.stroke !== undefined ? { stroke: updates.stroke } : {}),
+    ...(updates.strokeWidth_mm !== undefined ? { strokeWidth_mm: updates.strokeWidth_mm } : {}),
+    ...(updates.opacity !== undefined ? { opacity: updates.opacity } : {}),
+    ...(updates.visible !== undefined ? { visible: updates.visible } : {}),
+    ...(updates.locked !== undefined ? { locked: updates.locked } : {}),
+  };
+
+  return {
+    ...doc,
+    nodes: {
+      ...doc.nodes,
+      [nodeId]: updatedNode as DocumentNode,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Duplica um nó no PDM com deslocamento padrão de +5mm.
+ */
+export function duplicateNode(
+  doc: PrexyonDocument,
+  nodeId: string,
+  offset_mm: { x: number; y: number } = { x: 5, y: 5 }
+): { doc: PrexyonDocument; duplicatedNodeId: string } {
+  const node = doc.nodes[nodeId];
+  if (!node) {
+    throw new Error(`Nó "${nodeId}" não encontrado para duplicação.`);
+  }
+
+  const newId = generateUUID();
+  const nextPos = {
+    x: roundPrecision(node.position_mm.x + offset_mm.x, 2),
+    y: roundPrecision(node.position_mm.y + offset_mm.y, 2),
+  };
+
+  if (node.type === 'group') {
+    const group = node as VectorGroupNode;
+    const newChildrenIds: string[] = [];
+    const childUpdates: Record<string, DocumentNode> = {};
+
+    for (const childId of group.childrenIds) {
+      const child = doc.nodes[childId];
+      if (child) {
+        const newChildId = generateUUID();
+        newChildrenIds.push(newChildId);
+        childUpdates[newChildId] = {
+          ...child,
+          id: newChildId,
+          parentId: newId,
+          position_mm: {
+            x: roundPrecision(child.position_mm.x + offset_mm.x, 2),
+            y: roundPrecision(child.position_mm.y + offset_mm.y, 2),
+          },
+        };
+      }
+    }
+
+    const duplicatedGroup: VectorGroupNode = {
+      ...group,
+      id: newId,
+      name: `${group.name} (Cópia)`,
+      position_mm: nextPos,
+      childrenIds: newChildrenIds,
+    };
+
+    return {
+      doc: {
+        ...doc,
+        nodes: {
+          ...doc.nodes,
+          ...childUpdates,
+          [newId]: duplicatedGroup,
+        },
+        rootNodeIds: [...doc.rootNodeIds, newId],
+        updatedAt: new Date().toISOString(),
+      },
+      duplicatedNodeId: newId,
+    };
+  }
+
+  const duplicatedNode: DocumentNode = {
+    ...node,
+    id: newId,
+    name: `${node.name} (Cópia)`,
+    position_mm: nextPos,
+  };
+
+  return {
+    doc: addNode(doc, duplicatedNode),
+    duplicatedNodeId: newId,
+  };
+}
+

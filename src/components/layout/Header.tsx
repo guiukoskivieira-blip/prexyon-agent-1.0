@@ -9,7 +9,9 @@ import {
   RefreshCw,
   Undo2,
   Redo2,
-  Download
+  Download,
+  FolderOpen,
+  FolderPlus,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +33,10 @@ interface HeaderProps {
   onCenterNode?: () => void;
   onFitArtboard?: () => void;
   onFlipNode?: () => void;
+  canUngroup?: boolean;
+  canGroup?: boolean;
+  onUngroup?: () => void;
+  onGroup?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -52,6 +58,10 @@ export const Header: React.FC<HeaderProps> = ({
   onCenterNode,
   onFitArtboard,
   onFlipNode,
+  canUngroup = false,
+  canGroup = false,
+  onUngroup,
+  onGroup,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -96,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".png, .jpg, .jpeg, image/png, image/jpeg"
+          accept=".png, .jpg, .jpeg, .pdf, image/png, image/jpeg, application/pdf"
           onChange={handleFileChange}
           className="hidden"
         />
@@ -105,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition-all shadow-md shadow-indigo-600/20 active:scale-[0.98]"
         >
           <Upload className="w-3.5 h-3.5" />
-          <span>Importar Arquivo (PNG/JPG)</span>
+          <span>Importar Arquivo</span>
         </button>
 
         {/* Botão de Exportação de Produção */}
@@ -169,6 +179,36 @@ export const Header: React.FC<HeaderProps> = ({
               className="px-2 py-1.5 bg-surface-subtle hover:bg-surface-hover text-slate-300 hover:text-white border border-surface-border text-xs rounded-lg transition-colors"
             >
               Espelhar
+            </button>
+          )}
+          {onUngroup && (
+            <button
+              onClick={onUngroup}
+              disabled={!canUngroup}
+              title="Desagrupar elemento selecionado (Ctrl+Shift+G)"
+              className={`px-2.5 py-1.5 border text-xs rounded-lg transition-all flex items-center gap-1.5 ${
+                canUngroup
+                  ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border-indigo-500/50 hover:border-indigo-400 font-medium shadow-sm active:scale-[0.98]'
+                  : 'bg-surface-subtle/40 text-slate-600 border-surface-border cursor-not-allowed opacity-40'
+              }`}
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Desagrupar</span>
+            </button>
+          )}
+          {onGroup && (
+            <button
+              onClick={onGroup}
+              disabled={!canGroup}
+              title="Agrupar elementos selecionados (Ctrl+G)"
+              className={`px-2.5 py-1.5 border text-xs rounded-lg transition-all flex items-center gap-1.5 ${
+                canGroup
+                  ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border-indigo-500/50 hover:border-indigo-400 font-medium shadow-sm active:scale-[0.98]'
+                  : 'bg-surface-subtle/40 text-slate-600 border-surface-border cursor-not-allowed opacity-40'
+              }`}
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              <span>Agrupar</span>
             </button>
           )}
         </div>
