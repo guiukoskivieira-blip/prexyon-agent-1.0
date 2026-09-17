@@ -271,11 +271,38 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             selectedNodeId: selectedNodeId || undefined,
           },
         }),
+        signal: AbortSignal.timeout(20000),
       });
 
-      const data = await response.json();
+      let data: any = null;
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (jsonErr) {
+          console.error('[ChatPanel] Falha ao analisar resposta JSON do servidor:', jsonErr);
+        }
+      } else {
+        const text = await response.text();
+        console.warn(`[ChatPanel] Resposta HTTP ${response.status} não é JSON:`, text.slice(0, 300));
+      }
 
-      if (response.ok && data.success) {
+      if (!response.ok && !data) {
+        const errorMsgId = `err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: errorMsgId,
+            role: 'error',
+            text: `O servidor do assistente retornou um erro temporário (Status ${response.status}). Tente novamente em instantes.`,
+            timestamp: Date.now(),
+          },
+        ]);
+        setIsProcessing(false);
+        return;
+      }
+
+      if (response.ok && data?.success) {
         // 3. Aplica o PDM retornado com merge seguro que preserva os buffers locais (com histórico Undo/Redo)
         const returnedDoc = mergeAgentResultDocument(doc, data.doc);
         if (onApplyDoc) {
@@ -442,6 +469,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         ]);
       }
     } catch (err: unknown) {
+      console.error('[ChatPanel] Erro durante processamento da requisição:', err);
+      const isTimeout =
+        (err as any)?.name === 'TimeoutError' ||
+        (err as any)?.name === 'AbortError' ||
+        String(err).toLowerCase().includes('timeout');
+
       // 7. Falha de rede / erro de comunicação
       const netErrorMsgId = `net_err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       setMessages((prev) => [
@@ -449,7 +482,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         {
           id: netErrorMsgId,
           role: 'error',
-          text: 'Falha de comunicação com o servidor do assistente. Tente novamente em instantes.',
+          text: isTimeout
+            ? 'Tempo limite de resposta do servidor esgotado. Tente novamente em instantes.'
+            : 'Falha de comunicação com o servidor do assistente. Tente novamente em instantes.',
           timestamp: Date.now(),
         },
       ]);

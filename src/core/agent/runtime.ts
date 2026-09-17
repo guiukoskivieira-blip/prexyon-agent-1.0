@@ -368,6 +368,7 @@ export class AgentRuntime {
         const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
 
         let plan: import('./planner').AgentActionPlan | null = null;
+        let providerError: any = null;
         try {
           plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
             systemPrompt,
@@ -375,13 +376,14 @@ export class AgentRuntime {
             model: options?.model,
           });
         } catch (providerErr: any) {
+          providerError = providerErr;
           console.warn('[AgentRuntime] generateActionPlan falhou no provedor:', providerErr?.message || providerErr);
         }
 
         const { buildActionPlanFromUserRequest } = await import('./planner/planBuilder');
         const deterministicPlan = buildActionPlanFromUserRequest(userMessage, currentDoc, options?.selectedNodeId);
 
-        if (deterministicPlan && deterministicPlan.steps && deterministicPlan.steps.length > 0 && deterministicPlan.intent !== 'ASK_USER') {
+        if (deterministicPlan && deterministicPlan.intent !== 'ASK_USER') {
           if (!plan || !plan.steps || plan.steps.length === 0) {
             plan = deterministicPlan;
           } else {
@@ -436,6 +438,27 @@ export class AgentRuntime {
               }
             }
           }
+        }
+
+        if (providerError && (!plan || (!plan.steps?.length && !plan.explanation))) {
+          const isTimeout =
+            providerError?.name === 'TimeoutError' ||
+            providerError?.code === 'PROVIDER_TIMEOUT' ||
+            providerError?.message?.includes('Timeout');
+          return {
+            success: false,
+            reply: isTimeout
+              ? 'A solicitação excedeu o tempo limite de resposta do modelo.'
+              : 'Erro na comunicação com o provedor de IA.',
+            executedTools: [],
+            doc: currentDoc,
+            iterations: 1,
+            status: 'error',
+            error: {
+              code: isTimeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
+              message: providerError instanceof Error ? providerError.message : 'Erro na API Gemini.',
+            },
+          };
         }
 
         if (plan && plan.schemaVersion === '1.0') {
