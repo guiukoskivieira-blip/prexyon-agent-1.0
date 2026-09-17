@@ -41,6 +41,7 @@ export interface AIProviderOptions {
   temperature?: number;
   model?: string;
   apiKey?: string;
+  timeoutMs?: number;
 }
 
 export interface AIProvider {
@@ -63,6 +64,7 @@ export interface AgentRunOptions {
   toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
   skillId?: string;
   skillParams?: Record<string, any>;
+  requestBudgetMs?: number;
 }
 
 export interface ExecutedToolRecord {
@@ -88,6 +90,12 @@ export interface AgentRunResult {
     message: string;
     details?: any;
   };
+  executionPath?: 'deterministic_fast_path' | 'llm_plan' | 'llm_multiturn' | 'fallback';
+  intent?: string;
+  toolNames?: string[];
+  providerCalled?: boolean;
+  providerCallCount?: number;
+  durationMs?: number;
 }
 
 export interface ClientExecutionReceipt {

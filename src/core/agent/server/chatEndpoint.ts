@@ -55,7 +55,8 @@ export async function processAgentChatRequest(
     };
   }
 
-  if (!req.doc || typeof req.doc !== 'object' || !req.doc.id || !req.doc.dimensions || !req.doc.nodes) {
+  const rawDoc = req.doc || (req as any).document;
+  if (!rawDoc || typeof rawDoc !== 'object' || !rawDoc.id || !rawDoc.dimensions || !rawDoc.nodes) {
     return {
       success: false,
       reply: '',
@@ -70,7 +71,7 @@ export async function processAgentChatRequest(
   }
 
   const reqStartTime = Date.now();
-  const doc = normalizeDocument(req.doc as PrexyonDocument);
+  const doc = normalizeDocument(rawDoc as PrexyonDocument);
 
   // Reconhece contexto DTF UV explícito na mensagem e atualiza o profile do documento
   const lowerMsg = req.message.toLowerCase();
@@ -151,5 +152,9 @@ export async function processAgentChatRequest(
     reply: reconciled.reply,
     doc: sanitizeDocumentForAgentTransport(finalDoc),
     error: reconciled.error || result.error,
+    executionPath: result.executionPath || 'llm_plan',
+    providerCalled: result.providerCalled ?? true,
+    providerCallCount: result.providerCallCount ?? (result.providerCalled ? 1 : 0),
+    durationMs: Date.now() - reqStartTime,
   };
 }

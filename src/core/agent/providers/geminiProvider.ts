@@ -214,6 +214,7 @@ export class GeminiProvider implements AIProvider {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     console.log('[GeminiProvider] request started');
+    const timeoutMs = options?.timeoutMs || GEMINI_REQUEST_TIMEOUT_MS;
     let response: Response;
     try {
       response = await fetch(endpoint, {
@@ -222,12 +223,12 @@ export class GeminiProvider implements AIProvider {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (fetchErr: any) {
       if (fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError') {
-        console.warn(`[GeminiProvider] timeout after ${GEMINI_REQUEST_TIMEOUT_MS}ms`);
-        const err = new Error(`[GeminiProvider Error]: Timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms na API Gemini.`);
+        console.warn(`[GeminiProvider] timeout after ${timeoutMs}ms`);
+        const err = new Error(`[GeminiProvider Error]: Timeout após ${timeoutMs}ms na API Gemini.`);
         (err as any).name = 'TimeoutError';
         (err as any).code = 'PROVIDER_TIMEOUT';
         throw err;
@@ -315,6 +316,7 @@ export class GeminiProvider implements AIProvider {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     console.log('[GeminiProvider] request started');
+    const timeoutMs = options?.timeoutMs || GEMINI_REQUEST_TIMEOUT_MS;
     let response: Response;
     try {
       response = await fetch(endpoint, {
@@ -323,12 +325,12 @@ export class GeminiProvider implements AIProvider {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (fetchErr: any) {
       if (fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError') {
-        console.warn(`[GeminiProvider] timeout after ${GEMINI_REQUEST_TIMEOUT_MS}ms`);
-        const err = new Error(`[GeminiProvider Error]: Timeout após ${GEMINI_REQUEST_TIMEOUT_MS}ms na API Gemini.`);
+        console.warn(`[GeminiProvider] timeout after ${timeoutMs}ms`);
+        const err = new Error(`[GeminiProvider Error]: Timeout após ${timeoutMs}ms na API Gemini.`);
         (err as any).name = 'TimeoutError';
         (err as any).code = 'PROVIDER_TIMEOUT';
         throw err;

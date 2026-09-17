@@ -21,7 +21,11 @@ import { buildDocumentContextSummary, buildAgentCapabilitiesSummary } from './co
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from './providers/base';
 import { validateActionPlan, executeActionPlan, AgentActionPlan, reconcileAgentResponseWithExecutionEvidence } from './planner';
 
+import { GEMINI_REQUEST_TIMEOUT_MS } from './providers/geminiProvider';
+
 export const DEFAULT_MAX_ITERATIONS = 5;
+export const GLOBAL_RUNTIME_BUDGET_MS = 14000;
+export const PROVIDER_SAFETY_MARGIN_MS = 1500;
 
 /**
  * Remove payloads binários/pesados (Data URL, código XML de SVG, manifesto completo)
@@ -156,6 +160,15 @@ export class AgentRuntime {
     const maxIterations = options?.maxIterations || DEFAULT_MAX_ITERATIONS;
     const tools = this.registry.getToolDeclarations();
     const executedTools: ExecutedToolRecord[] = [];
+
+    const startTime = Date.now();
+    const requestBudgetMs = options?.requestBudgetMs || GLOBAL_RUNTIME_BUDGET_MS;
+    const deadline = startTime + requestBudgetMs;
+    let providerCallCount = 0;
+
+    const getRemainingBudgetMs = () => Math.max(0, deadline - Date.now());
+    const canMakeProviderCall = () => getRemainingBudgetMs() > PROVIDER_SAFETY_MARGIN_MS;
+    const getProviderTimeoutMs = () => Math.min(GEMINI_REQUEST_TIMEOUT_MS, Math.max(1000, getRemainingBudgetMs() - 500));
 
     let currentDoc = normalizeDocument(initialDoc);
     let iteration = 0;
@@ -359,6 +372,94 @@ export class AgentRuntime {
       }
     }
 
+    // =========================================================================
+    // ETAPA 0.F: DETERMINISTIC FAST-PATH BEFORE LLM ORCHESTRATION (HOTFIX 8.30.12)
+    // =========================================================================
+    // Avalia se a solicitação possui intenção determinística resolvida com alta confiança
+    // para as operações elegíveis:
+    // - SELECT_BY_FILL_COLOR
+    // - REPLACE_FILL_COLOR
+    // - DELETE_BY_FILL_COLOR
+    // - UNDO
+    //
+    // CRITÉRIOS RÍGIDOS DE ELEGIBILIDADE (FAIL CLOSED):
+    // 1. DETERMINISTIC_INTENT_RESOLVED === true
+    // 2. PLAN_COMPLETE === true
+    // 3. PLAN_VALID === true (validado pelo PlanValidator contra o ToolRegistry)
+    // 4. REQUIRED_ARGUMENTS_VALID === true
+    // 5. TOOLS_REGISTERED === true
+    //
+    // Se elegível: executa diretamente pelo ToolRegistry SEM chamada ao Gemini (0 calls).
+    // Se não elegível: prossegue para o fluxo LLM tradicional protegido por orçamento global.
+    // =========================================================================
+    const { detectVectorPropertyIntent } = await import('./vectorColorResolver');
+    const vectorIntent = detectVectorPropertyIntent(userMessage, currentDoc, options?.selectedNodeId);
+
+    if (vectorIntent) {
+      const { buildActionPlanFromUserRequest } = await import('./planner/planBuilder');
+      const deterministicPlan = buildActionPlanFromUserRequest(userMessage, currentDoc, options?.selectedNodeId);
+
+      if (deterministicPlan && deterministicPlan.schemaVersion === '1.0' && deterministicPlan.intent !== 'ASK_USER') {
+        const validation = validateActionPlan(deterministicPlan, currentDoc, options?.selectedNodeId, this.registry);
+
+        if (validation.valid && validation.resolvedPlan) {
+          const resolvedPlan = validation.resolvedPlan;
+
+          // Caso 1: Fast-Path No-Match ou Informacional (0 steps executáveis)
+          // Ex: "selecione todos os objetos roxos" -> 0 matches encontrados
+          // Responde deterministicamente SEM chamar Gemini, SEM mutar PDM, SEM tocar histórico.
+          if (resolvedPlan.steps.length === 0) {
+            return {
+              success: true,
+              reply: resolvedPlan.explanation || 'Nenhum objeto correspondente encontrado no documento.',
+              executedTools: [],
+              doc: currentDoc,
+              selectedNodeId: null,
+              selectedNodeIds: [],
+              effect: vectorIntent.intent === 'SELECT_BY_FILL_COLOR' ? 'selection' : 'read_only',
+              iterations: 1,
+              status: 'completed',
+              executionPath: 'deterministic_fast_path',
+              intent: vectorIntent.intent,
+              toolNames: vectorIntent.intent === 'SELECT_BY_FILL_COLOR' ? ['select_by_fill_color'] : [],
+              providerCalled: false,
+              providerCallCount: 0,
+              durationMs: Date.now() - startTime,
+            };
+          }
+
+          // Caso 2: Fast-Path com Ações Executáveis (ex: select_by_fill_color, replace_fill_color, delete_selected_nodes)
+          const planExecResult = await executeActionPlan(resolvedPlan, currentDoc, {
+            registry: this.registry,
+            clientExecutionReceipts: options?.clientExecutionReceipts,
+            toolExecutionContext: {
+              ...options?.toolExecutionContext,
+              selectedNodeId: options?.selectedNodeId,
+            },
+          });
+
+          return {
+            success: planExecResult.success,
+            reply: planExecResult.reply,
+            executedTools: planExecResult.executedTools,
+            doc: planExecResult.doc,
+            selectedNodeId: planExecResult.selectedNodeId,
+            selectedNodeIds: planExecResult.selectedNodeIds,
+            effect: planExecResult.effect,
+            iterations: 1,
+            status: planExecResult.success ? 'completed' : 'error',
+            error: planExecResult.error,
+            executionPath: 'deterministic_fast_path',
+            intent: vectorIntent.intent,
+            toolNames: resolvedPlan.steps.map((s) => s.tool),
+            providerCalled: false,
+            providerCallCount: 0,
+            durationMs: Date.now() - startTime,
+          };
+        }
+      }
+    }
+
     // Inicializa histórico da conversa com histórico anterior (se houver) + mensagem atual
     const messages: ChatMessage[] = [
       ...(options?.history || []),
@@ -373,13 +474,20 @@ export class AgentRuntime {
         const basePrompt = options?.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPT;
         const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
 
+        if (!canMakeProviderCall()) {
+          console.warn('[AgentRuntime] Orçamento de tempo esgotado antes de generateActionPlan.');
+          throw new Error('[AgentRuntime Error]: Orçamento de tempo esgotado.');
+        }
+
         let plan: import('./planner').AgentActionPlan | null = null;
         let providerError: any = null;
         try {
+          providerCallCount++;
           plan = await (this.provider as any).generateActionPlan(userMessage, tools, {
             systemPrompt,
             temperature: options?.temperature,
             model: options?.model,
+            timeoutMs: getProviderTimeoutMs(),
           });
         } catch (providerErr: any) {
           providerError = providerErr;
@@ -464,6 +572,10 @@ export class AgentRuntime {
               code: isTimeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
               message: providerError instanceof Error ? providerError.message : 'Erro na API Gemini.',
             },
+            executionPath: 'llm_plan',
+            providerCalled: true,
+            providerCallCount,
+            durationMs: Date.now() - startTime,
           };
         }
 
@@ -483,6 +595,12 @@ export class AgentRuntime {
                 code: isPolicyBlocked ? 'POLICY_GATE_BLOCKED' : (isToolNotFound ? 'TOOL_NOT_FOUND' : 'PLAN_VALIDATION_FAILED'),
                 message: validation.errors.join('; '),
               },
+              executionPath: 'llm_plan',
+              intent: plan.intent,
+              toolNames: plan.steps?.map((s: any) => s.tool) || [],
+              providerCalled: true,
+              providerCallCount,
+              durationMs: Date.now() - startTime,
             };
           }
 
@@ -496,6 +614,12 @@ export class AgentRuntime {
               doc: currentDoc,
               iterations: 1,
               status: 'completed',
+              executionPath: 'llm_plan',
+              intent: 'ASK_USER',
+              toolNames: [],
+              providerCalled: true,
+              providerCallCount,
+              durationMs: Date.now() - startTime,
             };
           }
 
@@ -513,6 +637,12 @@ export class AgentRuntime {
               doc: finalDoc,
               iterations: 1,
               status: 'completed',
+              executionPath: 'llm_plan',
+              intent: resolvedPlan.intent,
+              toolNames: [],
+              providerCalled: true,
+              providerCallCount,
+              durationMs: Date.now() - startTime,
             };
           }
 
@@ -536,6 +666,12 @@ export class AgentRuntime {
             iterations: 1,
             status: planExecResult.success ? 'completed' : 'error',
             error: planExecResult.error,
+            executionPath: 'llm_plan',
+            intent: resolvedPlan.intent,
+            toolNames: resolvedPlan.steps.map((s) => s.tool),
+            providerCalled: true,
+            providerCallCount,
+            durationMs: Date.now() - startTime,
           };
         }
       } catch (err: any) {
@@ -566,6 +702,12 @@ export class AgentRuntime {
                 iterations: 1,
                 status: planExecResult.success ? 'completed' : 'error',
                 error: planExecResult.error,
+                executionPath: 'fallback',
+                intent: fallbackPlan.intent,
+                toolNames: validation.resolvedPlan.steps.map((s) => s.tool),
+                providerCalled: providerCallCount > 0,
+                providerCallCount,
+                durationMs: Date.now() - startTime,
               };
             }
           }
@@ -587,6 +729,10 @@ export class AgentRuntime {
             code: isTimeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
             message: err instanceof Error ? err.message : 'Erro na API Gemini.',
           },
+          executionPath: 'fallback',
+          providerCalled: providerCallCount > 0,
+          providerCallCount,
+          durationMs: Date.now() - startTime,
         };
       }
     }
@@ -595,6 +741,11 @@ export class AgentRuntime {
       while (iteration < maxIterations) {
         iteration++;
 
+        if (!canMakeProviderCall()) {
+          console.warn('[AgentRuntime] Orçamento de tempo esgotado no loop multi-turn. Encerrando iterações.');
+          break;
+        }
+
         // Constrói o contexto atualizado do documento PDM e o catálogo de capacidades para o prompt de sistema
         const docContext = buildDocumentContextSummary(currentDoc, options?.selectedNodeId);
         const capabilitiesContext = buildAgentCapabilitiesSummary(tools);
@@ -602,10 +753,12 @@ export class AgentRuntime {
         const systemPrompt = `${basePrompt}\n\n${capabilitiesContext}\n\n[CONTEXTO ATUAL DO DOCUMENTO PDM]:\n${docContext}`;
 
         // 1. Consulta o provedor de IA com as mensagens e ferramentas registradas
+        providerCallCount++;
         const providerResponse = await this.provider.generateResponse(messages, tools, {
           systemPrompt,
           temperature: options?.temperature,
           model: options?.model,
+          timeoutMs: getProviderTimeoutMs(),
         });
 
         // 2. Se o provedor gerou tool calls (Function Calling)
@@ -811,6 +964,10 @@ export class AgentRuntime {
           iterations: iteration,
           status: runtimeSuccess ? 'completed' : 'error',
           error: runtimeSuccess ? undefined : reconciled.error,
+          executionPath: 'llm_multiturn',
+          providerCalled: true,
+          providerCallCount,
+          durationMs: Date.now() - startTime,
         };
       }
 
@@ -826,6 +983,10 @@ export class AgentRuntime {
           code: 'MAX_ITERATIONS_EXCEEDED',
           message: `O assistente atingiu o limite de ${maxIterations} iterações de chamadas de ferramentas.`,
         },
+        executionPath: 'llm_multiturn',
+        providerCalled: providerCallCount > 0,
+        providerCallCount,
+        durationMs: Date.now() - startTime,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro durante a execução do AgentRuntime.';
@@ -841,6 +1002,10 @@ export class AgentRuntime {
           message: msg,
           details: err,
         },
+        executionPath: 'llm_multiturn',
+        providerCalled: providerCallCount > 0,
+        providerCallCount,
+        durationMs: Date.now() - startTime,
       };
     }
   }
