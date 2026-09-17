@@ -24,6 +24,14 @@ export class HistoryManager {
     return this.redoStack.length > 0;
   }
 
+  public get undoCount(): number {
+    return this.undoStack.length;
+  }
+
+  public get redoCount(): number {
+    return this.redoStack.length;
+  }
+
   public get lastUndoCommandName(): string | null {
     return this.undoStack.length > 0 ? this.undoStack[this.undoStack.length - 1].name : null;
   }

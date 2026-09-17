@@ -9,7 +9,7 @@ import { PrexyonDocument } from '../../pdm/types';
 import { normalizeDocument } from '../../pdm/document';
 import { ToolRegistry } from '../../tools/registry';
 import { defaultToolRegistry } from '../../tools';
-import { ToolExecutionContext } from '../../tools/types';
+import { ToolExecutionContext, getToolEffect } from '../../tools/types';
 import { ExecutedToolRecord } from '../types';
 import { AgentActionPlan, PlanExecutionResult, ActionStepExecutionResult } from './types';
 import { validateProductionDocument } from '../../validation/productionValidationEngine';
@@ -123,6 +123,7 @@ export async function executeActionPlan(
           message: `Ação "${step.tool}" já executada com sucesso no cliente.`,
           data: { clientExecutionVerified: true },
         },
+        effect: getToolEffect(step.tool),
         timestamp: Date.now(),
       });
       continue;
@@ -179,11 +180,14 @@ export async function executeActionPlan(
 
       const { sanitizeToolResultForLLM } = await import('../runtime');
       const cleanResult = sanitizeToolResultForLLM(execResult);
+      const toolDef = registry.getTool(step.tool);
+      const effect = getToolEffect(step.tool, (execResult as any)?.effect || toolDef?.effect);
 
       executedTools.push({
         toolName: step.tool,
         args: stepArgs,
         result: cleanResult,
+        effect,
         timestamp: Date.now(),
       });
 
@@ -263,6 +267,14 @@ export async function executeActionPlan(
     ? ((lastSelectTool.result as any)?.selectedNodeId ?? finalSelectedNodeIds?.[0] ?? null)
     : undefined;
 
+  // Computa o efeito geral da execução
+  let overallEffect: 'selection' | 'document_mutation' | 'read_only' = 'read_only';
+  if (executedTools.some((t) => t.effect === 'document_mutation')) {
+    overallEffect = 'document_mutation';
+  } else if (executedTools.some((t) => t.effect === 'selection') || finalSelectedNodeIds !== undefined) {
+    overallEffect = 'selection';
+  }
+
   return {
     success: reconciled.success,
     doc: currentDoc,
@@ -272,6 +284,7 @@ export async function executeActionPlan(
     executedTools,
     selectedNodeId: finalSelectedNodeId,
     selectedNodeIds: finalSelectedNodeIds,
+    effect: overallEffect,
     ...(reconciled.success
       ? {}
       : {

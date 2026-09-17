@@ -27,7 +27,7 @@ export interface ChatMessageItem {
 
 export interface ChatPanelProps {
   doc?: PrexyonDocument;
-  onApplyDoc?: (newDoc: PrexyonDocument, description?: string) => void;
+  onApplyDoc?: (newDoc: PrexyonDocument, description?: string, affectedNodeIds?: string[]) => void;
   selectedNodeId?: string | null;
   selectedNodeIds?: string[];
   addToast?: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -303,10 +303,21 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       }
 
       if (response.ok && data?.success) {
-        // 3. Aplica o PDM retornado com merge seguro que preserva os buffers locais (com histórico Undo/Redo)
-        const returnedDoc = mergeAgentResultDocument(doc, data.doc);
-        if (onApplyDoc) {
-          onApplyDoc(returnedDoc, cleanText);
+        // 3. Aplica o PDM retornado SOMENTE se houve mutação de documento (não muta em seleções ou consultas)
+        const hasMutatingTool = Array.isArray(data.executedTools) && data.executedTools.some((t: any) => {
+          const toolName = t.toolName || t.name;
+          return t.effect === 'document_mutation' ||
+            (!t.effect && toolName !== 'select_by_fill_color' && toolName !== 'preflight_document' && toolName !== 'analyze_production_readiness');
+        });
+
+        const isMutationEffect =
+          data.effect === 'document_mutation' ||
+          (data.effect !== 'selection' && data.effect !== 'read_only' && hasMutatingTool);
+
+        const returnedDoc = data.doc ? mergeAgentResultDocument(doc, data.doc) : doc;
+
+        if (isMutationEffect && onApplyDoc && data.doc) {
+          onApplyDoc(returnedDoc, cleanText, data.selectedNodeIds);
         }
 
         // 3.1. Se ferramentas de seleção foram executadas, atualiza a seleção na UI
@@ -437,9 +448,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
       } else {
         // 6. Resposta factual de bloqueio/erro retornada pelo backend/reconciler
-        if (data?.doc && onApplyDoc) {
+        const hasSuccessfulMutation = Array.isArray(data?.executedTools) && data.executedTools.some((t: any) => {
+          return t.effect === 'document_mutation' && t.result?.success;
+        });
+        if (hasSuccessfulMutation && data?.doc && onApplyDoc) {
           const returnedDoc = mergeAgentResultDocument(doc, data.doc);
-          onApplyDoc(returnedDoc, cleanText);
+          onApplyDoc(returnedDoc, cleanText, data.selectedNodeIds);
         }
 
         let reviewModel: ProductionReviewModel | undefined;

@@ -146,6 +146,7 @@ export async function processAgentChatRequest(
 
   return {
     ...result,
+    effect: result.effect,
     success: reconciled.success,
     reply: reconciled.reply,
     doc: sanitizeDocumentForAgentTransport(finalDoc),

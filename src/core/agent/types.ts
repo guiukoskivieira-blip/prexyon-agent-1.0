@@ -5,7 +5,7 @@
  */
 
 import { PrexyonDocument } from '../pdm/types';
-import { ToolDeclaration, ToolExecutionContext, ToolResult } from '../tools/types';
+import { ToolDeclaration, ToolExecutionContext, ToolResult, ToolEffect } from '../tools/types';
 
 export type ChatRole = 'user' | 'model' | 'assistant' | 'tool' | 'system';
 
@@ -69,6 +69,7 @@ export interface ExecutedToolRecord {
   toolName: string;
   args: Record<string, any>;
   result: ToolResult;
+  effect?: ToolEffect;
   timestamp: number;
 }
 
@@ -79,6 +80,7 @@ export interface AgentRunResult {
   doc?: PrexyonDocument;
   selectedNodeId?: string | null;
   selectedNodeIds?: string[];
+  effect?: ToolEffect;
   iterations: number;
   status: 'completed' | 'error' | 'max_iterations_reached';
   error?: {

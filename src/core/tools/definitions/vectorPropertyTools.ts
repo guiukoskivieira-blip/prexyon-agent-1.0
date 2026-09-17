@@ -36,6 +36,7 @@ export interface SelectByFillColorResultData {
 
 export const selectByFillColorTool: ToolDefinition<SelectByFillColorArgs, SelectByFillColorResultData> = {
   name: 'select_by_fill_color',
+  effect: 'selection',
   description: 'Localiza e seleciona todos os objetos vetoriais com a cor de preenchimento especificada.',
   parameters: {
     type: 'object',
@@ -100,6 +101,7 @@ export const selectByFillColorTool: ToolDefinition<SelectByFillColorArgs, Select
 
     return {
       success: true,
+      effect: 'selection',
       doc,
       selectedNodeId: matchedNodeIds[0] ?? null,
       selectedNodeIds: matchedNodeIds,
@@ -132,6 +134,7 @@ export interface ReplaceFillColorResultData {
 
 export const replaceFillColorTool: ToolDefinition<ReplaceFillColorArgs, ReplaceFillColorResultData> = {
   name: 'replace_fill_color',
+  effect: 'document_mutation',
   description: 'Altera a cor de preenchimento dos nós especificados (ou de todos os nós com determinada cor de origem).',
   parameters: {
     type: 'object',
@@ -251,6 +254,7 @@ export const replaceFillColorTool: ToolDefinition<ReplaceFillColorArgs, ReplaceF
 
     return {
       success: true,
+      effect: 'document_mutation',
       doc: finalDoc,
       data: {
         modifiedCount: affectedNodes.length,
@@ -277,6 +281,7 @@ export interface UngroupSelectedNodeResultData {
 
 export const ungroupSelectedNodeTool: ToolDefinition<UngroupSelectedNodeArgs, UngroupSelectedNodeResultData> = {
   name: 'ungroup_selected_node',
+  effect: 'document_mutation',
   description: 'Desagrupa um nó de grupo no PDM, promovendo todos os seus filhos a nós raiz independentes.',
   parameters: {
     type: 'object',
@@ -328,6 +333,7 @@ export const ungroupSelectedNodeTool: ToolDefinition<UngroupSelectedNodeArgs, Un
 
     return {
       success: true,
+      effect: 'document_mutation',
       doc: finalDoc,
       data: {
         groupId,
@@ -355,6 +361,7 @@ export interface GroupSelectedNodesResultData {
 
 export const groupSelectedNodesTool: ToolDefinition<GroupSelectedNodesArgs, GroupSelectedNodesResultData> = {
   name: 'group_selected_nodes',
+  effect: 'document_mutation',
   description: 'Agrupa uma lista de nós do PDM sob um novo VectorGroupNode.',
   parameters: {
     type: 'object',
@@ -391,6 +398,7 @@ export const groupSelectedNodesTool: ToolDefinition<GroupSelectedNodesArgs, Grou
 
     return {
       success: true,
+      effect: 'document_mutation',
       doc: finalDoc,
       data: {
         groupId: command.groupNodeId || '',
@@ -416,6 +424,7 @@ export interface DeleteSelectedNodesResultData {
 
 export const deleteSelectedNodesTool: ToolDefinition<DeleteSelectedNodesArgs, DeleteSelectedNodesResultData> = {
   name: 'delete_selected_nodes',
+  effect: 'document_mutation',
   description: 'Remove múltiplos nós do PDM com suporte completo a Undo/Redo.',
   parameters: {
     type: 'object',
@@ -467,6 +476,7 @@ export const deleteSelectedNodesTool: ToolDefinition<DeleteSelectedNodesArgs, De
 
     return {
       success: true,
+      effect: 'document_mutation',
       doc: finalDoc,
       data: {
         deletedCount: deletedNodes.length,

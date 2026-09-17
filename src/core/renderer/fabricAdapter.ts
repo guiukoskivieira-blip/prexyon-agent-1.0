@@ -265,12 +265,26 @@ export class FabricAdapter {
       this.reconcileCanvasObjects(doc);
 
       // 4. Sincroniza a seleção (única ou múltipla)
-      const targetIds =
+      const rawTargetIds =
         selectedNodeIds && selectedNodeIds.length > 0
           ? selectedNodeIds
           : selectedNodeId
           ? [selectedNodeId]
           : [];
+
+      // Resolução hierárquica: se o id do alvo for filho de um grupo, resolve para o grupo pai no canvas
+      const targetIds = Array.from(
+        new Set(
+          rawTargetIds.map((id) => {
+            if (this.objectMap.has(id)) return id;
+            const node = doc.nodes[id];
+            if (node?.parentId && this.objectMap.has(node.parentId)) {
+              return node.parentId;
+            }
+            return id;
+          })
+        )
+      );
 
       if (targetIds.length > 1) {
         const targetObjects = targetIds
@@ -493,6 +507,23 @@ export class FabricAdapter {
         opacity: effectiveOpacity,
       });
       existingObj.setCoords();
+
+      // Sincroniza cores e traços dos nós filhos dentro do grupo Fabric
+      if (typeof existingObj.getObjects === 'function') {
+        const groupObjects = existingObj.getObjects();
+        for (let i = 0; i < groupNode.childrenIds.length; i++) {
+          const childId = groupNode.childrenIds[i];
+          const childNode = doc.nodes[childId] as VectorPathNode | undefined;
+          const fabricChild = groupObjects[i];
+          if (childNode && fabricChild && childNode.type === 'vector_path') {
+            fabricChild.set({
+              fill: childNode.fill || undefined,
+              stroke: childNode.stroke || undefined,
+              strokeWidth: childNode.strokeWidth_mm > 0 ? mmToPx(childNode.strokeWidth_mm) : 0,
+            });
+          }
+        }
+      }
     } else {
       // Constrói os caminhos Fabric.Path para cada filho do grupo
       const fabricPaths: fabric.Path[] = [];

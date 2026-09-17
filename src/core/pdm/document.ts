@@ -1573,3 +1573,37 @@ export function duplicateNode(
   };
 }
 
+/**
+ * Reconcilia o estado de seleção com a integridade atual do documento PDM.
+ * Remove IDs de nós que foram deletados ou que não existem no documento,
+ * preservando a consistência entre PDM, Fabric e Histórico.
+ */
+export function reconcileSelectionWithDocument(
+  doc: PrexyonDocument,
+  selectedNodeIds: string[] = [],
+  primarySelectedId?: string | null
+): { selectedNodeIds: string[]; selectedNodeId: string | null } {
+  if (!doc || !doc.nodes) {
+    return { selectedNodeIds: [], selectedNodeId: null };
+  }
+
+  // Filtra IDs que realmente existem no documento
+  const validNodeIds = selectedNodeIds.filter((id) => Boolean(doc.nodes[id]));
+
+  // Determina o nó primário
+  let validPrimaryId: string | null = null;
+  if (primarySelectedId && doc.nodes[primarySelectedId]) {
+    validPrimaryId = primarySelectedId;
+    if (!validNodeIds.includes(primarySelectedId)) {
+      validNodeIds.push(primarySelectedId);
+    }
+  } else if (validNodeIds.length > 0) {
+    validPrimaryId = validNodeIds[0];
+  }
+
+  return {
+    selectedNodeIds: validNodeIds,
+    selectedNodeId: validPrimaryId,
+  };
+}
+

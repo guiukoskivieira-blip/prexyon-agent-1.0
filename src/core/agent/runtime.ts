@@ -9,6 +9,7 @@ import { PrexyonDocument } from '../pdm/types';
 import { normalizeDocument } from '../pdm/document';
 import { ToolRegistry } from '../tools/registry';
 import { defaultToolRegistry } from '../tools';
+import { getToolEffect } from '../tools/types';
 import {
   AIProvider,
   ChatMessage,
@@ -220,6 +221,7 @@ export class AgentRuntime {
           reply: skillRes.reason || `Adesivo preparado para produção com sucesso. Status: ${skillRes.status}.`,
           executedTools: skillRes.executedTools,
           doc: skillRes.resultingDocument,
+          effect: 'document_mutation',
           iterations: 1,
           status: isOk ? 'completed' : 'error',
           error: isOk
@@ -251,6 +253,7 @@ export class AgentRuntime {
           reply: skillRes.reason || `Arte preparada para DTF UV com sucesso. Status: ${skillRes.status}.`,
           executedTools: skillRes.executedTools,
           doc: skillRes.resultingDocument,
+          effect: 'document_mutation',
           iterations: 1,
           status: isOk ? 'completed' : 'error',
           error: isOk
@@ -281,6 +284,7 @@ export class AgentRuntime {
           reply: skillRes.reason || `Faca de corte criada com sucesso. Status: ${skillRes.status}.`,
           executedTools: skillRes.executedTools,
           doc: skillRes.resultingDocument,
+          effect: 'document_mutation',
           iterations: 1,
           status: isOk ? 'completed' : 'error',
           error: isOk
@@ -311,6 +315,7 @@ export class AgentRuntime {
           reply: skillRes.reason || `Arte vetorizada com sucesso. Status: ${skillRes.status}.`,
           executedTools: skillRes.executedTools,
           doc: skillRes.resultingDocument,
+          effect: 'document_mutation',
           iterations: 1,
           status: isOk ? 'completed' : 'error',
           error: isOk
@@ -341,6 +346,7 @@ export class AgentRuntime {
           reply: skillRes.reason || `Preflight do documento concluído com sucesso. Status: ${skillRes.status}.`,
           executedTools: skillRes.executedTools,
           doc: skillRes.resultingDocument,
+          effect: 'read_only',
           iterations: 1,
           status: isOk ? 'completed' : 'error',
           error: isOk
@@ -526,6 +532,7 @@ export class AgentRuntime {
             doc: planExecResult.doc,
             selectedNodeId: planExecResult.selectedNodeId,
             selectedNodeIds: planExecResult.selectedNodeIds,
+            effect: planExecResult.effect,
             iterations: 1,
             status: planExecResult.success ? 'completed' : 'error',
             error: planExecResult.error,
@@ -555,6 +562,7 @@ export class AgentRuntime {
                 doc: planExecResult.doc,
                 selectedNodeId: planExecResult.selectedNodeId,
                 selectedNodeIds: planExecResult.selectedNodeIds,
+                effect: planExecResult.effect,
                 iterations: 1,
                 status: planExecResult.success ? 'completed' : 'error',
                 error: planExecResult.error,
@@ -720,10 +728,14 @@ export class AgentRuntime {
               doc: currentDoc,
             });
 
+            const toolDef = this.registry.getTool(call.name);
+            const toolEffect = getToolEffect(call.name, executionResult.effect || toolDef?.effect);
+
             executedTools.push({
               toolName: call.name,
               args: execArgs,
               result: executionResult,
+              effect: toolEffect,
               timestamp: Date.now(),
             });
 
@@ -781,6 +793,13 @@ export class AgentRuntime {
           ? ((lastSelectTool.result as any)?.selectedNodeId ?? finalSelectedNodeIds?.[0] ?? null)
           : undefined;
 
+        let overallEffect: 'selection' | 'document_mutation' | 'read_only' = 'read_only';
+        if (executedTools.some((t) => t.effect === 'document_mutation')) {
+          overallEffect = 'document_mutation';
+        } else if (executedTools.some((t) => t.effect === 'selection') || finalSelectedNodeIds !== undefined) {
+          overallEffect = 'selection';
+        }
+
         return {
           success: runtimeSuccess,
           reply: reconciled.reply,
@@ -788,6 +807,7 @@ export class AgentRuntime {
           doc: currentDoc,
           selectedNodeId: finalSelectedNodeId,
           selectedNodeIds: finalSelectedNodeIds,
+          effect: overallEffect,
           iterations: iteration,
           status: runtimeSuccess ? 'completed' : 'error',
           error: runtimeSuccess ? undefined : reconciled.error,

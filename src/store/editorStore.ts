@@ -44,6 +44,7 @@ import {
   serializeDocument,
   deserializeDocument,
   findCutContourForSourceNode,
+  reconcileSelectionWithDocument,
 } from '../core/pdm/document';
 import { validateRasterFile, validatePhysicalDimension } from '../core/pdm/validation';
 import { calculateInitialRasterDimensions } from '../core/pdm/policy';
@@ -377,13 +378,18 @@ export function useEditorStore() {
     const res = historyManagerRef.current.undo(doc);
     if (res) {
       setDoc(res.doc);
-      if (res.selectedNodeId !== undefined) {
-        setSelectedNodeId(res.selectedNodeId);
-      }
+      const targetIds = res.selectedNodeIds !== undefined
+        ? res.selectedNodeIds
+        : (res.selectedNodeId !== undefined ? (res.selectedNodeId ? [res.selectedNodeId] : []) : selectedNodeIds);
+      const targetPrimary = res.selectedNodeId !== undefined ? res.selectedNodeId : selectedNodeId;
+      const rec = reconcileSelectionWithDocument(res.doc, targetIds, targetPrimary);
+      setSelectedNodeIds(rec.selectedNodeIds);
+      setSelectedNodeIdState(rec.selectedNodeId);
+
       setHistoryVersion((v) => v + 1);
       addToast('info', 'Ação desfeita.');
     }
-  }, [doc, addToast]);
+  }, [doc, selectedNodeId, selectedNodeIds, addToast]);
 
   /**
    * Executa o comando de REFAZER (Redo).
@@ -393,13 +399,18 @@ export function useEditorStore() {
     const res = historyManagerRef.current.redo(doc);
     if (res) {
       setDoc(res.doc);
-      if (res.selectedNodeId !== undefined) {
-        setSelectedNodeId(res.selectedNodeId);
-      }
+      const targetIds = res.selectedNodeIds !== undefined
+        ? res.selectedNodeIds
+        : (res.selectedNodeId !== undefined ? (res.selectedNodeId ? [res.selectedNodeId] : []) : selectedNodeIds);
+      const targetPrimary = res.selectedNodeId !== undefined ? res.selectedNodeId : selectedNodeId;
+      const rec = reconcileSelectionWithDocument(res.doc, targetIds, targetPrimary);
+      setSelectedNodeIds(rec.selectedNodeIds);
+      setSelectedNodeIdState(rec.selectedNodeId);
+
       setHistoryVersion((v) => v + 1);
       addToast('info', 'Ação refeita.');
     }
-  }, [doc, addToast]);
+  }, [doc, selectedNodeId, selectedNodeIds, addToast]);
 
   /**
    * Atualiza a largura física de um nó (em mm).
@@ -636,8 +647,13 @@ export function useEditorStore() {
         return;
       }
 
-      if (prevNode.type !== 'raster_image' && prevNode.type !== 'group' && prevNode.type !== 'cut_contour') return;
-      const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode;
+      if (
+        prevNode.type !== 'raster_image' &&
+        prevNode.type !== 'group' &&
+        prevNode.type !== 'cut_contour' &&
+        prevNode.type !== 'vector_path'
+      ) return;
+      const targetNode = prevNode as RasterNode | VectorGroupNode | CutContourNode | VectorPathNode;
 
       const prev = {
         position_mm: { ...targetNode.position_mm },
@@ -1758,16 +1774,25 @@ export function useEditorStore() {
    * Permite que as ações do agente sejam revertidas via Undo/Redo (Ctrl+Z / Ctrl+Y).
    */
   const applyAgentDocumentChange = useCallback(
-    (newDoc: PrexyonDocument, description: string = 'Ação do Agente') => {
+    (newDoc: PrexyonDocument, description: string = 'Ação do Agente', affectedNodeIds?: string[]) => {
       if (!newDoc || JSON.stringify(doc) === JSON.stringify(newDoc)) {
         return;
       }
-      const cmd = new ApplyAgentDocumentChangeCommand(doc, newDoc, description);
+      const cmd = new ApplyAgentDocumentChangeCommand(doc, newDoc, description, affectedNodeIds);
       const res = historyManagerRef.current.executeCommand(cmd, doc);
       setDoc(res.doc);
+      if (res.selectedNodeIds !== undefined) {
+        const rec = reconcileSelectionWithDocument(res.doc, res.selectedNodeIds, res.selectedNodeId);
+        setSelectedNodeIds(rec.selectedNodeIds);
+        setSelectedNodeIdState(rec.selectedNodeId);
+      } else {
+        const rec = reconcileSelectionWithDocument(res.doc, selectedNodeIds, selectedNodeId);
+        setSelectedNodeIds(rec.selectedNodeIds);
+        setSelectedNodeIdState(rec.selectedNodeId);
+      }
       setHistoryVersion((v) => v + 1);
     },
-    [doc]
+    [doc, selectedNodeId, selectedNodeIds]
   );
 
   /**
@@ -1907,6 +1932,20 @@ export function useEditorStore() {
       applyAgentDocumentChange,
     ]
   );
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__PREXYON_STORE__ = {
+        doc,
+        selectedNodeId,
+        selectedNodeIds,
+        canUndo,
+        canRedo,
+        historyManager: historyManagerRef.current,
+        actions,
+      };
+    }
+  }, [doc, selectedNodeId, selectedNodeIds, canUndo, canRedo, actions]);
 
   return {
     doc,

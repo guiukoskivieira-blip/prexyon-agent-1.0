@@ -26,12 +26,34 @@ export interface ToolErrorDetail {
   details?: any;
 }
 
+export type ToolEffect = 'selection' | 'document_mutation' | 'read_only';
+
+export function getToolEffect(toolName: string, explicitEffect?: ToolEffect): ToolEffect {
+  if (explicitEffect) return explicitEffect;
+  if (toolName === 'select_by_fill_color' || toolName.startsWith('select_')) {
+    return 'selection';
+  }
+  if (
+    toolName === 'validate_production_document' ||
+    toolName === 'preflight_document' ||
+    toolName === 'get_document_summary' ||
+    toolName === 'export_production' ||
+    toolName.startsWith('audit_') ||
+    toolName.startsWith('inspect_') ||
+    toolName.startsWith('measure_')
+  ) {
+    return 'read_only';
+  }
+  return 'document_mutation';
+}
+
 export interface ToolSuccessResult<T = any> {
   success: true;
   data: T;
   doc?: PrexyonDocument;
   selectedNodeId?: string | null;
   selectedNodeIds?: string[];
+  effect?: ToolEffect;
   message?: string;
   reply?: string;
 }
@@ -39,6 +61,7 @@ export interface ToolSuccessResult<T = any> {
 export interface ToolErrorResult {
   success: false;
   error: ToolErrorDetail;
+  effect?: ToolEffect;
 }
 
 export type ToolResult<T = any> = ToolSuccessResult<T> | ToolErrorResult;
@@ -70,6 +93,7 @@ export interface ToolExecutionContext {
 export interface ToolDefinition<TArgs = any, TResult = any> {
   name: string;
   description: string;
+  effect?: ToolEffect;
   parameters: ToolParametersSchema;
   execute: (args: TArgs, context: ToolExecutionContext) => Promise<ToolResult<TResult>>;
 }

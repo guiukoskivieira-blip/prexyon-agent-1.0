@@ -38,6 +38,7 @@ import {
 export interface CommandResult {
   doc: PrexyonDocument;
   selectedNodeId?: string | null;
+  selectedNodeIds?: string[];
 }
 
 export interface DocumentCommand {
@@ -837,7 +838,8 @@ export class ApplyAgentDocumentChangeCommand implements DocumentCommand {
   constructor(
     private readonly prevDoc: PrexyonDocument,
     private readonly nextDoc: PrexyonDocument,
-    description: string = 'Ação do Agente'
+    description: string = 'Ação do Agente',
+    public readonly affectedNodeIds?: string[]
   ) {
     this.id = `cmd_agent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     this.name = description;
@@ -847,12 +849,16 @@ export class ApplyAgentDocumentChangeCommand implements DocumentCommand {
   execute(_currentDoc: PrexyonDocument): CommandResult {
     return {
       doc: this.nextDoc,
+      selectedNodeIds: this.affectedNodeIds,
+      selectedNodeId: this.affectedNodeIds?.[0] ?? null,
     };
   }
 
   undo(_currentDoc: PrexyonDocument): CommandResult {
     return {
       doc: this.prevDoc,
+      selectedNodeIds: this.affectedNodeIds,
+      selectedNodeId: this.affectedNodeIds?.[0] ?? null,
     };
   }
 }
@@ -1273,7 +1279,11 @@ export class ChangeFillColorCommand implements DocumentCommand {
     for (const item of this.affectedNodes) {
       newDoc = updateNodeStyle(newDoc, item.nodeId, { fill: item.nextFill });
     }
-    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.affectedNodes[0]?.nodeId ?? null,
+      selectedNodeIds: this.affectedNodes.map((n) => n.nodeId),
+    };
   }
 
   undo(doc: PrexyonDocument): CommandResult {
@@ -1281,7 +1291,11 @@ export class ChangeFillColorCommand implements DocumentCommand {
     for (const item of this.affectedNodes) {
       newDoc = updateNodeStyle(newDoc, item.nodeId, { fill: item.prevFill });
     }
-    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.affectedNodes[0]?.nodeId ?? null,
+      selectedNodeIds: this.affectedNodes.map((n) => n.nodeId),
+    };
   }
 }
 
@@ -1306,7 +1320,11 @@ export class ChangeStrokeColorCommand implements DocumentCommand {
     for (const item of this.affectedNodes) {
       newDoc = updateNodeStyle(newDoc, item.nodeId, { stroke: item.nextStroke });
     }
-    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.affectedNodes[0]?.nodeId ?? null,
+      selectedNodeIds: this.affectedNodes.map((n) => n.nodeId),
+    };
   }
 
   undo(doc: PrexyonDocument): CommandResult {
@@ -1314,7 +1332,11 @@ export class ChangeStrokeColorCommand implements DocumentCommand {
     for (const item of this.affectedNodes) {
       newDoc = updateNodeStyle(newDoc, item.nodeId, { stroke: item.prevStroke });
     }
-    return { doc: newDoc, selectedNodeId: this.affectedNodes[0]?.nodeId ?? null };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.affectedNodes[0]?.nodeId ?? null,
+      selectedNodeIds: this.affectedNodes.map((n) => n.nodeId),
+    };
   }
 }
 
@@ -1340,6 +1362,7 @@ export class UngroupNodeCommand implements DocumentCommand {
     return {
       doc: newDoc,
       selectedNodeId: ungroupedNodeIds[0] ?? null,
+      selectedNodeIds: ungroupedNodeIds,
     };
   }
 
@@ -1369,6 +1392,7 @@ export class UngroupNodeCommand implements DocumentCommand {
         updatedAt: new Date().toISOString(),
       },
       selectedNodeId: this.groupNode.id,
+      selectedNodeIds: [this.groupNode.id],
     };
   }
 }
@@ -1397,6 +1421,7 @@ export class GroupNodesCommand implements DocumentCommand {
     return {
       doc: newDoc,
       selectedNodeId: groupNode.id,
+      selectedNodeIds: [groupNode.id],
     };
   }
 
@@ -1406,6 +1431,7 @@ export class GroupNodesCommand implements DocumentCommand {
     return {
       doc: newDoc,
       selectedNodeId: this.nodeIds[0] ?? null,
+      selectedNodeIds: this.nodeIds,
     };
   }
 }
@@ -1432,7 +1458,7 @@ export class DeleteMultipleNodesCommand implements DocumentCommand {
     for (const node of this.deletedNodes) {
       newDoc = removeNode(newDoc, node.id);
     }
-    return { doc: newDoc, selectedNodeId: null };
+    return { doc: newDoc, selectedNodeId: null, selectedNodeIds: [] };
   }
 
   undo(doc: PrexyonDocument): CommandResult {
@@ -1440,7 +1466,11 @@ export class DeleteMultipleNodesCommand implements DocumentCommand {
     for (const node of this.deletedNodes) {
       newDoc = addNode(newDoc, node);
     }
-    return { doc: newDoc, selectedNodeId: this.deletedNodes[0]?.id ?? null };
+    return {
+      doc: newDoc,
+      selectedNodeId: this.deletedNodes[0]?.id ?? null,
+      selectedNodeIds: this.deletedNodes.map((n) => n.id),
+    };
   }
 }
 

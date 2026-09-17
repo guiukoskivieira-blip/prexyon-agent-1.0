@@ -99,6 +99,7 @@ export interface PlanExecutionResult {
   executedTools: ExecutedToolRecord[];
   selectedNodeId?: string | null;
   selectedNodeIds?: string[];
+  effect?: 'selection' | 'document_mutation' | 'read_only';
   error?: {
     code: string;
     message: string;
