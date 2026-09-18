@@ -53,6 +53,8 @@ export interface AIProvider {
   ): Promise<AIProviderResponse>;
 }
 
+import { PendingAction } from './clarification/types';
+
 export interface AgentRunOptions {
   maxIterations?: number;
   systemPrompt?: string;
@@ -60,11 +62,13 @@ export interface AgentRunOptions {
   model?: string;
   history?: ChatMessage[];
   selectedNodeId?: string;
+  selectedNodeIds?: string[];
   clientExecutionReceipts?: ClientExecutionReceipt[];
   toolExecutionContext?: Omit<ToolExecutionContext, 'doc'>;
   skillId?: string;
   skillParams?: Record<string, any>;
   requestBudgetMs?: number;
+  pendingAction?: PendingAction | null;
 }
 
 export interface ExecutedToolRecord {
@@ -96,6 +100,7 @@ export interface AgentRunResult {
   providerCalled?: boolean;
   providerCallCount?: number;
   durationMs?: number;
+  pendingAction?: PendingAction | null;
 }
 
 export interface ClientExecutionReceipt {
@@ -120,12 +125,17 @@ export interface AgentChatRequestBody {
   clientExecutionReceipts?: ClientExecutionReceipt[];
   skillId?: string;
   skillParams?: Record<string, any>;
+  pendingAction?: PendingAction | null;
+  selectedNodeId?: string;
+  selectedNodeIds?: string[];
   options?: {
     maxIterations?: number;
     model?: string;
     temperature?: number;
     selectedNodeId?: string;
+    selectedNodeIds?: string[];
     skillId?: string;
     skillParams?: Record<string, any>;
+    pendingAction?: PendingAction | null;
   };
 }

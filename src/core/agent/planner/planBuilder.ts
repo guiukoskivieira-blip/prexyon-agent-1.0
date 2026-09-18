@@ -111,6 +111,28 @@ export function buildActionPlanFromUserRequest(
           : `Não encontrei objetos ${vectorIntent.colorFamily || 'com essa cor'} para apagar.`,
       };
     }
+
+    if (vectorIntent.intent === 'DELETE_SELECTED_NODES') {
+      const steps: PlannedAction[] = [];
+      const targetIds = _selectedNodeId ? [_selectedNodeId] : [];
+      if (targetIds.length > 0) {
+        steps.push({
+          id: `step_del_nodes_${Date.now()}`,
+          tool: 'delete_selected_nodes',
+          arguments: { nodeIds: targetIds },
+          description: `Excluir objetos selecionados.`,
+        });
+      }
+      return {
+        schemaVersion: '1.0',
+        intent: 'MODIFY',
+        target: { type: 'SELECTED_OBJECT' },
+        steps,
+        explanation: steps.length > 0
+          ? `${targetIds.length} objeto(s) selecionado(s) apagado(s) com sucesso.`
+          : 'Nenhum objeto selecionado para apagar.',
+      };
+    }
   }
 
   // 1. Detecção de Processo de Produção

@@ -182,6 +182,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pendingAction, setPendingAction] = useState<any | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([
     {
       id: 'msg_welcome',
@@ -190,6 +191,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       timestamp: Date.now(),
     },
   ]);
+
+  // Invalida pendingAction se o documento for alterado/trocado
+  useEffect(() => {
+    setPendingAction(null);
+  }, [doc?.id]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -266,9 +272,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         body: JSON.stringify({
           message: cleanText,
           doc: transportDoc,
+          pendingAction: pendingAction || undefined,
           clientExecutionReceipts: clientReceipts.length > 0 ? clientReceipts : undefined,
           options: {
             selectedNodeId: selectedNodeId || undefined,
+            pendingAction: pendingAction || undefined,
           },
         }),
         signal: AbortSignal.timeout(20000),
@@ -303,6 +311,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       }
 
       if (response.ok && data?.success) {
+        if (data.pendingAction) {
+          setPendingAction(data.pendingAction);
+        } else {
+          setPendingAction(null);
+        }
+
         // 3. Aplica o PDM retornado SOMENTE se houve mutação de documento (não muta em seleções ou consultas)
         const hasMutatingTool = Array.isArray(data.executedTools) && data.executedTools.some((t: any) => {
           const toolName = t.toolName || t.name;

@@ -80,6 +80,8 @@ export async function processAgentChatRequest(
   }
 
   const selectedNodeId = req.options?.selectedNodeId || (req as any).selectedNodeId;
+  const selectedNodeIds = req.options?.selectedNodeIds || (req as any).selectedNodeIds;
+  const pendingAction = req.pendingAction || req.options?.pendingAction || (req as any).pendingAction;
 
   // Seleção de Provedor: customProvider > Gemini (se chave presente e fora de ambiente de teste) > Mock Determinístico (Etapa 6.3)
   const isTestEnv = typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST));
@@ -98,6 +100,8 @@ export async function processAgentChatRequest(
     temperature: req.options?.temperature,
     history: req.history,
     selectedNodeId,
+    selectedNodeIds,
+    pendingAction,
     clientExecutionReceipts: req.clientExecutionReceipts,
     toolExecutionContext: {
       vtracerBridge: vtracerNodeBridge,
@@ -121,6 +125,8 @@ export async function processAgentChatRequest(
       const fallbackRuntime = new AgentRuntime(fallbackProvider, defaultToolRegistry);
       const fallbackResult = await fallbackRuntime.run(req.message, doc, {
         selectedNodeId,
+        selectedNodeIds,
+        pendingAction,
         toolExecutionContext: {
           vtracerBridge: vtracerNodeBridge,
         },
@@ -156,5 +162,6 @@ export async function processAgentChatRequest(
     providerCalled: result.providerCalled ?? true,
     providerCallCount: result.providerCallCount ?? (result.providerCalled ? 1 : 0),
     durationMs: Date.now() - reqStartTime,
+    pendingAction: result.pendingAction !== undefined ? result.pendingAction : null,
   };
 }

@@ -387,17 +387,214 @@ export class AgentRuntime {
     // 2. PLAN_COMPLETE === true
     // 3. PLAN_VALID === true (validado pelo PlanValidator contra o ToolRegistry)
     // 4. REQUIRED_ARGUMENTS_VALID === true
-    // 5. TOOLS_REGISTERED === true
+    // 6. CLARIFICATION_CONTRACT === COMPLETE / USE_DEFAULT / ASK_USER
     //
     // Se elegível: executa diretamente pelo ToolRegistry SEM chamada ao Gemini (0 calls).
+    // Se faltarem parâmetros críticos: retorna ASK_USER e cria PendingAction SEM chamada ao Gemini (0 calls).
     // Se não elegível: prossegue para o fluxo LLM tradicional protegido por orçamento global.
     // =========================================================================
+    const { resolveToolParameters, resolveContinuationReply } = await import('./clarification');
+    const resolutionContext: import('./clarification').ResolutionContext = {
+      doc: currentDoc,
+      selectedNodeId: options?.selectedNodeId,
+      selectedNodeIds: options?.selectedNodeIds,
+      pendingAction: options?.pendingAction,
+    };
+
+    // Sub-etapa 0.F.1: Continuação de PendingAction ativa
+    if (options?.pendingAction) {
+      const contResult = resolveContinuationReply(
+        options.pendingAction,
+        userMessage,
+        resolutionContext,
+        this.registry
+      );
+
+      if (contResult) {
+        if (contResult.status === 'COMPLETE' || contResult.status === 'USE_DEFAULT') {
+          const stepId = `step_cont_${Date.now()}`;
+          const plan: import('./planner').AgentActionPlan = {
+            schemaVersion: '1.0',
+            intent: 'MODIFY',
+            target: { type: 'SELECTED_OBJECT' },
+            steps: [
+              {
+                id: stepId,
+                tool: contResult.tool,
+                arguments: contResult.resolvedArgs,
+                description: `Executar ${contResult.tool} com parâmetros completados pelo operador.`,
+              },
+            ],
+          };
+
+          const validation = validateActionPlan(plan, currentDoc, options?.selectedNodeId, this.registry);
+          if (validation.valid && validation.resolvedPlan) {
+            const planExecResult = await executeActionPlan(validation.resolvedPlan, currentDoc, {
+              registry: this.registry,
+              clientExecutionReceipts: options?.clientExecutionReceipts,
+              toolExecutionContext: {
+                ...options?.toolExecutionContext,
+                selectedNodeId: options?.selectedNodeId,
+              },
+            });
+
+            return {
+              success: planExecResult.success,
+              reply: planExecResult.reply,
+              executedTools: planExecResult.executedTools,
+              doc: planExecResult.doc,
+              selectedNodeId: planExecResult.selectedNodeId,
+              selectedNodeIds: planExecResult.selectedNodeIds,
+              effect: planExecResult.effect,
+              iterations: 1,
+              status: planExecResult.success ? 'completed' : 'error',
+              error: planExecResult.error,
+              executionPath: 'deterministic_fast_path',
+              intent: options.pendingAction.intent,
+              toolNames: [contResult.tool],
+              providerCalled: false,
+              providerCallCount: 0,
+              durationMs: Date.now() - startTime,
+              pendingAction: null,
+            };
+          }
+        } else if (contResult.status === 'ASK_USER') {
+          return {
+            success: true,
+            reply: contResult.question || 'Por favor, informe as informações complementares.',
+            executedTools: [],
+            doc: currentDoc,
+            selectedNodeId: options?.selectedNodeId ?? null,
+            selectedNodeIds: options?.selectedNodeIds,
+            effect: 'read_only',
+            iterations: 1,
+            status: 'completed',
+            executionPath: 'deterministic_fast_path',
+            intent: 'ASK_USER',
+            toolNames: [contResult.tool],
+            providerCalled: false,
+            providerCallCount: 0,
+            durationMs: Date.now() - startTime,
+            pendingAction: contResult.pendingAction,
+          };
+        } else if (contResult.status === 'UNSUPPORTED') {
+          return {
+            success: false,
+            reply: contResult.unsupportedReason || 'Formato ou operação não suportada.',
+            executedTools: [],
+            doc: currentDoc,
+            effect: 'read_only',
+            iterations: 1,
+            status: 'error',
+            executionPath: 'deterministic_fast_path',
+            intent: 'UNSUPPORTED',
+            toolNames: [contResult.tool],
+            providerCalled: false,
+            providerCallCount: 0,
+            durationMs: Date.now() - startTime,
+            pendingAction: contResult.pendingAction,
+          };
+        }
+      }
+    }
+
+    // Sub-etapa 0.F.2: Detecção de Intenção Vetorial e Clarification Contract
     const { detectVectorPropertyIntent } = await import('./vectorColorResolver');
     const vectorIntent = detectVectorPropertyIntent(userMessage, currentDoc, options?.selectedNodeId);
 
     if (vectorIntent) {
+      // Mapeia para ferramenta primária e valida parâmetros necessários
+      let primaryTool: string | null = null;
+      const initialArgs: Record<string, any> = {};
+
+      if (vectorIntent.intent === 'REPLACE_FILL_COLOR') {
+        primaryTool = 'replace_fill_color';
+        if (vectorIntent.toColorHex) initialArgs.toColorHex = vectorIntent.toColorHex;
+        if (vectorIntent.resolvedDocumentFills?.length) initialArgs.fromColorHex = vectorIntent.resolvedDocumentFills[0];
+        if (vectorIntent.matchedNodeIds?.length) initialArgs.nodeIds = vectorIntent.matchedNodeIds;
+        else if (vectorIntent.targetSelectionOnly) {
+          if (options?.selectedNodeIds?.length) initialArgs.nodeIds = options.selectedNodeIds;
+          else if (options?.selectedNodeId) initialArgs.nodeIds = [options.selectedNodeId];
+        }
+      } else if (vectorIntent.intent === 'DELETE_SELECTED_NODES' || vectorIntent.intent === 'DELETE_BY_FILL_COLOR') {
+        primaryTool = 'delete_selected_nodes';
+        if (vectorIntent.matchedNodeIds?.length) initialArgs.nodeIds = vectorIntent.matchedNodeIds;
+        else if (vectorIntent.targetSelectionOnly) {
+          if (options?.selectedNodeIds?.length) initialArgs.nodeIds = options.selectedNodeIds;
+          else if (options?.selectedNodeId) initialArgs.nodeIds = [options.selectedNodeId];
+        }
+      } else if (vectorIntent.intent === 'SELECT_BY_FILL_COLOR') {
+        primaryTool = 'select_by_fill_color';
+        if (vectorIntent.colorFamily) initialArgs.colorHex = vectorIntent.colorFamily;
+      }
+
+      if (primaryTool) {
+        const paramResolution = resolveToolParameters(
+          primaryTool,
+          initialArgs,
+          resolutionContext,
+          this.registry,
+          vectorIntent.intent
+        );
+
+        if (paramResolution.status === 'ASK_USER') {
+          return {
+            success: true,
+            reply: paramResolution.question || 'Por favor, informe os parâmetros necessários.',
+            executedTools: [],
+            doc: currentDoc,
+            selectedNodeId: options?.selectedNodeId ?? null,
+            selectedNodeIds: options?.selectedNodeIds,
+            effect: 'read_only',
+            iterations: 1,
+            status: 'completed',
+            executionPath: 'deterministic_fast_path',
+            intent: 'ASK_USER',
+            toolNames: [primaryTool],
+            providerCalled: false,
+            providerCallCount: 0,
+            durationMs: Date.now() - startTime,
+            pendingAction: paramResolution.pendingAction,
+          };
+        }
+
+        if (paramResolution.status === 'UNSUPPORTED') {
+          return {
+            success: false,
+            reply: paramResolution.unsupportedReason || 'Operação ou formato não suportado.',
+            executedTools: [],
+            doc: currentDoc,
+            effect: 'read_only',
+            iterations: 1,
+            status: 'error',
+            executionPath: 'deterministic_fast_path',
+            intent: 'UNSUPPORTED',
+            toolNames: [primaryTool],
+            providerCalled: false,
+            providerCallCount: 0,
+            durationMs: Date.now() - startTime,
+          };
+        }
+      }
+
       const { buildActionPlanFromUserRequest } = await import('./planner/planBuilder');
       const deterministicPlan = buildActionPlanFromUserRequest(userMessage, currentDoc, options?.selectedNodeId);
+
+      // Injeta nodeIds resolvidos caso a seleção tenha múltiplos nós (ex: TEST E com 9 nós selecionados)
+      if (
+        deterministicPlan &&
+        options?.selectedNodeIds &&
+        options.selectedNodeIds.length > 0 &&
+        deterministicPlan.steps?.length > 0
+      ) {
+        for (const step of deterministicPlan.steps) {
+          if (step.tool === 'delete_selected_nodes' || step.tool === 'replace_fill_color') {
+            if (vectorIntent.targetSelectionOnly) {
+              step.arguments.nodeIds = [...options.selectedNodeIds];
+            }
+          }
+        }
+      }
 
       if (deterministicPlan && deterministicPlan.schemaVersion === '1.0' && deterministicPlan.intent !== 'ASK_USER') {
         const validation = validateActionPlan(deterministicPlan, currentDoc, options?.selectedNodeId, this.registry);
@@ -406,8 +603,6 @@ export class AgentRuntime {
           const resolvedPlan = validation.resolvedPlan;
 
           // Caso 1: Fast-Path No-Match ou Informacional (0 steps executáveis)
-          // Ex: "selecione todos os objetos roxos" -> 0 matches encontrados
-          // Responde deterministicamente SEM chamar Gemini, SEM mutar PDM, SEM tocar histórico.
           if (resolvedPlan.steps.length === 0) {
             return {
               success: true,
@@ -425,6 +620,7 @@ export class AgentRuntime {
               providerCalled: false,
               providerCallCount: 0,
               durationMs: Date.now() - startTime,
+              pendingAction: null,
             };
           }
 
@@ -455,6 +651,7 @@ export class AgentRuntime {
             providerCalled: false,
             providerCallCount: 0,
             durationMs: Date.now() - startTime,
+            pendingAction: null,
           };
         }
       }

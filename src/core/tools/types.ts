@@ -72,6 +72,12 @@ export interface ToolParameterProperty {
   enum?: (string | number)[];
   default?: any;
   items?: ToolParameterProperty;
+  required?: boolean;
+  acceptedFormats?: ('HEX' | 'RGB' | 'CMYK' | 'PANTONE' | 'mm' | 'cm' | string)[];
+  unit?: string;
+  canResolveFrom?: ('current_selection' | 'explicit_property_filter' | 'document_default')[];
+  clarificationPrompt?: string;
+  requiresClarificationWhenMissing?: boolean;
 }
 
 export interface ToolParametersSchema {

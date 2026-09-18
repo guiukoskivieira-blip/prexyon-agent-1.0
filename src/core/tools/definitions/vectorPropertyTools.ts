@@ -41,7 +41,14 @@ export const selectByFillColorTool: ToolDefinition<SelectByFillColorArgs, Select
   parameters: {
     type: 'object',
     properties: {
-      colorHex: { type: 'string', description: 'Cor em formato hexadecimal (ex: #ffffff, #ff313d, #000000) ou nome da cor.' },
+      colorHex: {
+        type: 'string',
+        description: 'Cor em formato hexadecimal (ex: #ffffff, #ff313d, #000000) ou nome da cor.',
+        required: true,
+        acceptedFormats: ['HEX', 'RGB', 'CMYK', 'PANTONE'],
+        clarificationPrompt: 'Qual cor você quer selecionar? Pode informar HEX (#0057FF) ou nome da cor.',
+        requiresClarificationWhenMissing: true,
+      },
       targetGroupId: { type: 'string', description: 'ID opcional do grupo para restringir a busca.' },
       exactMatch: { type: 'boolean', description: 'Se true (padrão), compara valor exato ignorando maiúsculas.' },
     },
@@ -139,9 +146,25 @@ export const replaceFillColorTool: ToolDefinition<ReplaceFillColorArgs, ReplaceF
   parameters: {
     type: 'object',
     properties: {
-      nodeIds: { type: 'array', items: { type: 'string', description: 'ID do nó' }, description: 'Lista de IDs dos nós a modificar.' },
-      fromColorHex: { type: 'string', description: 'Cor de origem a ser substituída (se nodeIds não for fornecido).' },
-      toColorHex: { type: 'string', description: 'Nova cor de preenchimento em hexadecimal.' },
+      nodeIds: {
+        type: 'array',
+        items: { type: 'string', description: 'ID do nó' },
+        description: 'Lista de IDs dos nós a modificar.',
+        canResolveFrom: ['current_selection'],
+      },
+      fromColorHex: {
+        type: 'string',
+        description: 'Cor de origem a ser substituída (se nodeIds não for fornecido).',
+        canResolveFrom: ['explicit_property_filter'],
+      },
+      toColorHex: {
+        type: 'string',
+        description: 'Nova cor de preenchimento em hexadecimal.',
+        required: true,
+        acceptedFormats: ['HEX', 'RGB', 'CMYK', 'PANTONE'],
+        clarificationPrompt: 'Qual cor você quer usar? Pode informar HEX (#0057FF) ou RGB.',
+        requiresClarificationWhenMissing: true,
+      },
     },
     required: ['toColorHex'],
   },
@@ -429,7 +452,15 @@ export const deleteSelectedNodesTool: ToolDefinition<DeleteSelectedNodesArgs, De
   parameters: {
     type: 'object',
     properties: {
-      nodeIds: { type: 'array', items: { type: 'string', description: 'ID do nó' }, description: 'Lista de IDs dos nós a excluir.' },
+      nodeIds: {
+        type: 'array',
+        items: { type: 'string', description: 'ID do nó' },
+        description: 'Lista de IDs dos nós a excluir.',
+        required: true,
+        canResolveFrom: ['current_selection', 'explicit_property_filter'],
+        clarificationPrompt: 'Qual objeto ou conjunto de objetos você quer excluir?',
+        requiresClarificationWhenMissing: true,
+      },
     },
     required: ['nodeIds'],
   },

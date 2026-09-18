@@ -115,7 +115,7 @@ export const CANONICAL_COLOR_HEXES: Record<string, string> = {
 /**
  * Mapeamento de termos naturais para famílias de cor.
  */
-const COLOR_NAME_MAP: Record<string, string> = {
+export const COLOR_NAME_MAP: Record<string, string> = {
   vermelho: 'vermelho',
   vermelhos: 'vermelho',
   vermelha: 'vermelho',
@@ -226,6 +226,7 @@ export type VectorIntentType =
   | 'SELECT_BY_FILL_COLOR'
   | 'REPLACE_FILL_COLOR'
   | 'DELETE_BY_FILL_COLOR'
+  | 'DELETE_SELECTED_NODES'
   | 'UNDO';
 
 export interface VectorIntentResult {
@@ -310,11 +311,21 @@ export function detectVectorPropertyIntent(
       }
     }
 
-    const destFamily = destColorWord ? normalizeColorWord(destColorWord) : null;
-    const toColorHex = destFamily ? getCanonicalHexForColorName(destFamily) : null;
+    let toColorHex: string | null = null;
+    let destFamily: string | null = null;
+
+    if (destColorWord) {
+      if (destColorWord.startsWith('#') || /^[0-9a-fA-F]{6}$/.test(destColorWord)) {
+        toColorHex = destColorWord.startsWith('#') ? destColorWord.toLowerCase() : `#${destColorWord.toLowerCase()}`;
+        destFamily = normalizeColorWord(toColorHex);
+      } else {
+        destFamily = normalizeColorWord(destColorWord);
+        toColorHex = destFamily ? getCanonicalHexForColorName(destFamily) : null;
+      }
+    }
 
     if (toColorHex) {
-      if (isTargetSelection) {
+      if (isTargetSelection || _selectedNodeId) {
         return {
           intent: 'REPLACE_FILL_COLOR',
           targetSelectionOnly: true,
@@ -357,6 +368,24 @@ export function detectVectorPropertyIntent(
           };
         }
       }
+
+      // Informou toColorHex mas não indicou seleção nem cor de origem (ex: "troque para #0057FF" sem nada selecionado)
+      return {
+        intent: 'REPLACE_FILL_COLOR',
+        toColorHex,
+        toColorFamily: destFamily || undefined,
+      };
+    } else {
+      // Não informou toColorHex (ex: "troque a cor do objeto selecionado" ou "troque a cor")
+      if (isTargetSelection || _selectedNodeId) {
+        return {
+          intent: 'REPLACE_FILL_COLOR',
+          targetSelectionOnly: true,
+        };
+      }
+      return {
+        intent: 'REPLACE_FILL_COLOR',
+      };
     }
   }
 
@@ -406,6 +435,18 @@ export function detectVectorPropertyIntent(
           matchedNodeIds,
         };
       }
+    }
+
+    const isTargetSelection =
+      text.includes('selecionad') ||
+      text.includes('selecao') ||
+      text.includes('selection');
+
+    if (isTargetSelection || _selectedNodeId) {
+      return {
+        intent: 'DELETE_SELECTED_NODES',
+        targetSelectionOnly: true,
+      };
     }
   }
 
